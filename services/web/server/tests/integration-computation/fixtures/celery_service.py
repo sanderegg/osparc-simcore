@@ -8,9 +8,9 @@ import celery
 import celery.bin.base
 import celery.bin.celery
 import celery.platforms
-
 import pytest
 import tenacity
+
 
 @pytest.fixture(scope="session")
 def celery_service(app_config, docker_stack):

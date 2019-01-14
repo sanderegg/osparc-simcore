@@ -6,7 +6,7 @@ jobs:
   include:
     # build cache images ----------------------------------------------------------------------
     - if: branch = master
-      stage: Build docker cache images
+      stage: build docker cache images
       language: python
       python:
         - "3.6"
@@ -38,7 +38,7 @@ jobs:
         - lsb_release -a
         - docker -v
         - bash ops/travis/install_docker_compose
-        # shutdown postgres because sometimes is is already up ???
+        # shutdown postgres because sometimes is already up ???
         - sudo service postgresql stop
         # wait for postgresql to shutdown
         - while sudo lsof -Pi :5432 -sTCP:LISTEN -t; do sleep 1; done
@@ -77,7 +77,7 @@ jobs:
         - lsb_release -a
         - docker -v
         - bash ops/travis/install_docker_compose
-        # shutdown postgres because sometimes is is already up ???
+        # shutdown postgres because sometimes is already up ???
         - sudo service postgresql stop
         # wait for postgresql to shutdown
         - while sudo lsof -Pi :5432 -sTCP:LISTEN -t; do sleep 1; done
@@ -95,6 +95,7 @@ jobs:
         - pytest --cov=simcore_service_director -v services/director/tests
       after_success:
       - coveralls
+
     # test python, simcore-sdk ----------------------------------------------------------------------
     - stage: unit testing
       name: simcore-sdk
@@ -111,7 +112,7 @@ jobs:
         - lsb_release -a
         - docker -v
         - bash ops/travis/install_docker_compose
-        # shutdown postgres because sometimes is is already up ???
+        # shutdown postgres because sometimes is already up ???
         - sudo service postgresql stop
         # wait for postgresql to shutdown
         - while sudo lsof -Pi :5432 -sTCP:LISTEN -t; do sleep 1; done
@@ -152,7 +153,7 @@ jobs:
         - lsb_release -a
         - docker -v
         - bash ops/travis/install_docker_compose
-        # shutdown postgres because sometimes is is already up ???
+        # shutdown postgres because sometimes is already up ???
         - sudo service postgresql stop
         # wait for postgresql to shutdown
         - while sudo lsof -Pi :5432 -sTCP:LISTEN -t; do sleep 1; done
@@ -189,7 +190,7 @@ jobs:
         - lsb_release -a
         - docker -v
         - bash ops/travis/install_docker_compose
-        # shutdown postgres because sometimes is is already up ???
+        # shutdown postgres because sometimes is already up ???
         - sudo service postgresql stop
         # wait for postgresql to shutdown
         - while sudo lsof -Pi :5432 -sTCP:LISTEN -t; do sleep 1; done
@@ -209,9 +210,10 @@ jobs:
         - pytest -v services/apihub/tests
       after_success:
       - coveralls
+
     # test python, linting ----------------------------------------------------------------------
     - stage: unit testing
-      name: Python linting
+      name: python linting
       language: python
       python:
         - "3.6"
@@ -271,7 +273,7 @@ jobs:
         - lsb_release -a
         - docker -v
         - bash ops/travis/install_docker_compose
-        # shutdown postgres because sometimes is is already up ???
+        # shutdown postgres because sometimes is already up ???
         - sudo service postgresql stop
         # wait for postgresql to shutdown
         - while sudo lsof -Pi :5432 -sTCP:LISTEN -t; do sleep 1; done
@@ -290,7 +292,6 @@ jobs:
         - pytest --cov=simcore_service_webserver -v services/web/server/tests/integration-computation
       after_success:
       - coveralls
-
 notifications:
   email:
     on_success: never

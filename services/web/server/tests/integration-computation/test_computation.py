@@ -13,8 +13,6 @@ from pathlib import Path
 import pytest
 import yaml
 from aiohttp import web
-from simcore_sdk.models.pipeline_models import (SUCCESS, ComputationalPipeline,
-                                                ComputationalTask)
 from simcore_service_webserver.computation import setup_computation
 from simcore_service_webserver.db import setup_db
 from simcore_service_webserver.rest import setup_rest
@@ -24,6 +22,8 @@ from simcore_service_webserver.users import setup_users
 
 from servicelib.application_keys import APP_CONFIG_KEY
 from servicelib.rest_responses import unwrap_envelope
+from simcore_sdk.models.pipeline_models import (SUCCESS, ComputationalPipeline,
+                                                ComputationalTask)
 
 API_VERSION = "v0"
 
@@ -77,10 +77,11 @@ def mock_workbench_adjacency_list(here):
     file_path = here / "workbench_sleeper_dag_adjacency_list.json"
     with file_path.open() as fp:
         return json.load(fp)
+
 # ------------------------------------------
 
 async def test_check_health(docker_stack, client):
-    resp = await client.get("/v0/")
+    resp = await client.get("/%s/" % API_VERSION)
     payload = await resp.json()
 
     assert resp.status == 200, str(payload)
@@ -119,7 +120,7 @@ def _check_db_contents(project_id, postgres_session, mock_workbench_payload, moc
         assert task_db.image["tag"] == mock_pipeline[task_db.node_id]["version"]
 
 def _check_sleeper_services_completed(project_id, postgres_session):
-    # we wait 15 secs before testing...    
+    # we wait 15 secs before testing...
     time.sleep(15)
     pipeline_db = postgres_session.query(ComputationalPipeline).filter(ComputationalPipeline.project_id == project_id).one()
     tasks_db = postgres_session.query(ComputationalTask).filter(ComputationalTask.project_id == project_id).all()
@@ -129,9 +130,8 @@ def _check_sleeper_services_completed(project_id, postgres_session):
             assert task_db.state == SUCCESS
 
 async def test_start_pipeline(sleeper_service, client, project_id:str, mock_workbench_payload, mock_workbench_adjacency_list, postgres_session, celery_service):
-    # import pdb; pdb.set_trace()
-    resp = await client.post("/v0/computation/pipeline/{}/start".format(project_id),
-        json = mock_workbench_payload,
+    resp = await client.post("/{}/computation/pipeline/{}/start".format(API_VERSION, project_id),
+        json=mock_workbench_payload,
     )
     assert resp.status == 200, str(await resp.text())
     payload = await resp.json()
@@ -143,13 +143,14 @@ async def test_start_pipeline(sleeper_service, client, project_id:str, mock_work
     assert "pipeline_name" in data
     assert "project_id" in data
     assert data['project_id'] == project_id
+
     # check db comp_pipeline
     _check_db_contents(project_id, postgres_session, mock_workbench_payload, mock_workbench_adjacency_list, check_outputs=False)
     # _check_sleeper_services_completed(project_id, postgres_session)
 
-async def test_update_pipeline(docker_stack, client, project_id:str, mock_workbench_payload, mock_workbench_adjacency_list, postgres_session):    
-    resp = await client.put("/v0/computation/pipeline/{}".format(project_id),
-        json = mock_workbench_payload,
+async def test_update_pipeline(docker_stack, client, project_id:str, mock_workbench_payload, mock_workbench_adjacency_list, postgres_session):
+    resp = await client.put("/{}/computation/pipeline/{}".format(API_VERSION, project_id),
+        json=mock_workbench_payload,
     )
     assert resp.status == 204, str(await resp.text())
     payload = await resp.json()

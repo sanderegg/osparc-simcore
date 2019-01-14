@@ -2,7 +2,12 @@ docker~=3.6
 sqlalchemy==1.2.9
 tenacity~=4.12
 
+
+# installs web-server
 ./../..
+
+# TODO: these are dependencies of web-server. should not be repeated here!
+# They are not installed above because installation needs to go via -r requirements/prod.txt
 ./../../../../../packages/simcore-sdk
 ./../../../../../packages/service-library
 ./../../../../../packages/director-sdk/python

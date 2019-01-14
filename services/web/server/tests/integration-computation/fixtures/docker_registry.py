@@ -8,6 +8,7 @@ import docker
 import pytest
 import tenacity
 
+
 @pytest.fixture(scope="session")
 def docker_registry():
     # run the registry outside of the stack
@@ -47,9 +48,9 @@ def _wait_till_registry_is_responsive(url):
     docker_client.login(registry=url, username="simcore")
     return True
 
-#pull from itisfoundation/sleeper and push into local registry
 @pytest.fixture(scope="session")
 def sleeper_service(docker_registry):
+    """ pulls from itisfoundation/sleeper and push into local registry """
     client = docker.from_env()
     image = client.images.pull("itisfoundation/sleeper", tag="1.0.0")
     assert not image is None

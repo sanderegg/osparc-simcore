@@ -18,16 +18,17 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Dict
 
+import pytest
+import yaml
+
 import celery
 import celery.bin.base
 import celery.bin.celery
 import celery.platforms
 import docker
-import pytest
 import sqlalchemy as sa
 import tenacity
 import trafaret_config
-import yaml
 from simcore_sdk.models import metadata
 from simcore_service_webserver.application_config import app_schema
 from simcore_service_webserver.cli import create_environ
@@ -47,7 +48,7 @@ def _get_ip()->str:
         # doesn't even have to be reachable
         s.connect(('10.255.255.255', 1))
         IP = s.getsockname()[0]
-    except Exception: #pylint: disable=W0703
+    except Exception: # pylint: disable=W0703
         IP = '127.0.0.1'
     finally:
         s.close()
@@ -105,7 +106,7 @@ def devel_environ(env_devel_file) -> Dict[str, str]:
             if line and not line.startswith("#"):
                 key, value = line.split("=")
                 env_devel[key] = str(value)
-    # change some of the environ to accomodate the test case            
+    # change some of the environ to accomodate the test case
     # ensure the test runs not as root if not under linux
     if 'RUN_DOCKER_ENGINE_ROOT' in env_devel:
         env_devel['RUN_DOCKER_ENGINE_ROOT'] = '0' if os.name == 'posix' else '1'
@@ -139,7 +140,7 @@ def webserver_environ(devel_environ, services_docker_compose) -> Dict[str, str]:
     # OVERRIDES:
     #   One of the biggest differences with respect to the real system
     #   is that the webserver application is replaced by a light-weight
-    #   version tha loads only the subsystems under test. For that reason,
+    #   version that loads only the subsystems under test. For that reason,
     #   the test webserver is built-up in webserver_service fixture that runs
     #   on the host.
     environ['DIRECTOR_HOST'] = '127.0.0.1'
@@ -268,7 +269,7 @@ def resolve_environ(service, environ):
                 variable, default = value.split(":")
                 value = environ.get(variable, default[1:])
             else:
-                value = environ.get(value, value)   
+                value = environ.get(value, value)
 
         _environs[key] = value
     return _environs
@@ -277,7 +278,7 @@ def _recreate_compose_file(keep, services_compose, docker_compose_path, devel_en
     # reads service/docker-compose.yml
     content = deepcopy(services_compose)
 
-    # remove unnecessary services    
+    # remove unnecessary services
     remove = [name for name in content['services'] if name not in keep]
     for name in remove:
         content['services'].pop(name, None)
