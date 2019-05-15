@@ -17,10 +17,12 @@ export DOCKER=docker.exe
 WINDOWS_MODE=ON
 else ifneq (,$(findstring Darwin,$(VERSION)))
 $(info    detected OSX)
+SHELL = /bin/bash
 export DOCKER_COMPOSE=docker-compose
 export DOCKER=docker
 else
 $(info    detected native linux)
+SHELL = /bin/bash
 export DOCKER_COMPOSE=docker-compose
 export DOCKER=docker
 endif
@@ -39,7 +41,6 @@ SERVICES_LIST := apihub director sidecar storage webserver
 CACHED_SERVICES_LIST := ${SERVICES_LIST} webclient
 DYNAMIC_SERVICE_FOLDERS_LIST := services/dy-jupyter services/dy-2Dgraph/use-cases services/dy-3dvis services/dy-modeling
 CLIENT_WEB_OUTPUT:=$(CURDIR)/services/web/client/source-output
-TRAVIS_PLATFORM_STAGE_VERSION := $(shell date +"%Y-%m-%d").${TRAVIS_BUILD_NUMBER}.$(shell git rev-parse HEAD)
 
 export VCS_URL:=$(shell git config --get remote.origin.url)
 export VCS_REF:=$(shell git rev-parse --short HEAD)
@@ -54,15 +55,16 @@ export DOCKER_IMAGE_TAG := ${DEFAULT_DOCKER_IMAGE_TAG}
 endif # DOCKER_IMAGE_TAG
 $(info DOCKER_IMAGE_TAG set to ${DOCKER_IMAGE_TAG})
 
-DEFAULT_DOCKER_IMAGE_PREFIX := services_
-ifdef DOCKER_IMAGE_PREFIX
+# default to local (no registry)
+DEFAULT_DOCKER_REGISTRY := itisfoundation
+ifdef DOCKER_REGISTRY
 # check it ends with /
-export DOCKER_IMAGE_PREFIX := $(shell echo ${DOCKER_IMAGE_PREFIX} | sed -r "s/^(\w+)(\/?)$$/\1\//g")
+export DOCKER_REGISTRY := $(shell echo ${DOCKER_REGISTRY} | sed -r "s/^(\w+)(\/?)$$/\1\//g")
 else
-$(warning DOCKER_IMAGE_PREFIX variable is undefined, using default ${DEFAULT_DOCKER_IMAGE_PREFIX})
-export DOCKER_IMAGE_PREFIX := ${DEFAULT_DOCKER_IMAGE_PREFIX}
-endif # DOCKER_IMAGE_PREFIX
-$(info DOCKER_IMAGE_PREFIX set to ${DOCKER_IMAGE_PREFIX})
+$(warning DOCKER_REGISTRY variable is undefined, using default ${DEFAULT_DOCKER_REGISTRY})
+export DOCKER_REGISTRY := ${DEFAULT_DOCKER_REGISTRY}
+endif # DOCKER_REGISTRY
+$(info DOCKER_REGISTRY set to ${DOCKER_REGISTRY})
 
 ## Tools ------------------------------------------------------------------------------------------------------
 #
@@ -92,7 +94,6 @@ endif
 .PHONY: build
 # target: build: – Builds all core service images.
 build: .env .tmp-webclient-build
-	@echo "building using ${DOCKER_IMAGE_PREFIX} and ${DOCKER_IMAGE_TAG}"
 	${DOCKER_COMPOSE} -f services/docker-compose.yml build --parallel ${SERVICES_LIST};
 
 .PHONY: build-devel .tmp-webclient-build
@@ -207,7 +208,7 @@ pull-cache:
 # target: build-cache – Builds service images and tags them as 'cache'
 build-cache:
 	${DOCKER_COMPOSE} -f services/docker-compose.yml -f services/docker-compose.cache.yml build --parallel apihub director sidecar storage webclient
-	${DOCKER} tag ${DOCKER_IMAGE_PREFIX}webclient:cache services_webclient:build
+	${DOCKER} tag ${DOCKER_REGISTRY}webclient:cache services_webclient:build
 	${DOCKER_COMPOSE} -f services/docker-compose.yml -f services/docker-compose.cache.yml build webserver
 
 
@@ -225,14 +226,12 @@ push-cache:
 #target: tag – Tags service images
 tag:
 	for i in $(SERVICES_LIST); do \
-		${DOCKER} tag ${DOCKER_IMAGE_PREFIX}$$i:${DOCKER_IMAGE_TAG} ${DOCKER_IMAGE_PREFIX_NEW}$$i:${DOCKER_IMAGE_TAG_NEW}; \
+		${DOCKER} tag ${DOCKER_REGISTRY}$$i:${DOCKER_IMAGE_TAG} ${DOCKER_REGISTRY_NEW}$$i:${DOCKER_IMAGE_TAG_NEW}; \
 	done
 
 # target: push – Pushes images into a registry
 push:
-	for i in $(SERVICES_LIST); do \
-		${DOCKER} push ${DOCKER_IMAGE_PREFIX}$$i:${DOCKER_IMAGE_TAG}; \
-	done
+	${DOCKER_COMPOSE} -f services/docker-compose.yml push ${SERVICES_LIST}
 
 # target: pull – Pulls images from a registry
 pull:
@@ -300,7 +299,7 @@ setup-check: .env .vscode/settings.json
 # target: .venv – Creates a python virtual environment with dev tools (pip, pylint, ...)
 	python3 -m venv .venv
 	.venv/bin/pip3 install --upgrade pip wheel setuptools
-	.venv/bin/pip3 install pylint autopep8 virtualenv
+	.venv/bin/pip3 install pylint autopep8 virtualenv pip-tools
 	@echo "To activate the venv, execute 'source .venv/bin/activate' or '.venv/Scripts/activate.bat' (WIN)"
 
 .venv27: .venv
@@ -309,6 +308,17 @@ setup-check: .env .vscode/settings.json
 	.venv/bin/virtualenv --python=python2 .venv27
 	@echo "To activate the venv27, execute 'source .venv27/bin/activate' or '.venv27/Scripts/activate.bat' (WIN)"
 
+
+.PHONY: requirements
+# target: requirements – Compiles ALL PiP requirements (.in->.txt) WARNING: UNDER DEVELOPMENT!!
+requirements:
+	pushd packages/s3wrapper/requirements && $(MAKE) -f Makefile all && popd
+	pushd packages/service-library/requirements && $(MAKE) -f Makefile all && popd
+	pushd packages/simcore-sdk/requirements && $(MAKE) -f Makefile all && popd
+	pushd services/web/server/requirements && $(MAKE) -f Makefile all && popd
+	pushd services/storage/requirements && $(MAKE) -f Makefile all && popd
+	pushd services/sidecar/requirements && $(MAKE) -f Makefile all && popd
+	pushd services/director/requirements && $(MAKE) -f Makefile all && popd
 
 
 ## -------------------------------
