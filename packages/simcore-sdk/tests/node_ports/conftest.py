@@ -1,16 +1,17 @@
  #pylint: disable=W0621, unused-argument, too-many-arguments, no-name-in-module
 import json
+import os
 import uuid
 from pathlib import Path
 from typing import Any, List, Tuple
 
 import pytest
 import yarl
+
 from helpers import helpers
 from simcore_sdk.models.pipeline_models import (Base, ComputationalPipeline,
                                                 ComputationalTask)
 from simcore_sdk.node_ports import node_config
-
 
 
 @pytest.fixture
@@ -52,8 +53,19 @@ def file_uuid(project_id, node_uuid)->str:
 def here()->Path:
     yield Path(__file__).parent
 
+@pytest.fixture("session")
+def image_environ():
+    docker_registry = os.environ.get("DOCKER_REGISTRY")
+    if docker_registry:
+        if not str(docker_registry).endswith("/"):
+            docker_registry = docker_registry + "/"
+            os.environ["DOCKER_REGISTRY"] = docker_registry
+    docker_image_tag = os.environ.get("DOCKER_IMAGE_TAG")
+    if not docker_image_tag:
+        os.environ["DOCKER_IMAGE_TAG"] = "latest"
+
 @pytest.fixture(scope='session')
-def docker_compose_file(bucket, pytestconfig, here): # pylint:disable=unused-argument
+def docker_compose_file(bucket, pytestconfig, here, image_environ): # pylint:disable=unused-argument
     my_path = here /'docker-compose.yml'
 
     yield my_path
