@@ -24,7 +24,7 @@ jobs:
     # build images ----------------------------------------------------------------------
     - stage: build / unit-testing
       # in pull request we do not have credentials to push, so this is useless
-      if: NOT type = pull_request AND tag IS blank
+      if: tag IS blank AND env(DOCKER_REGISTRY) is present AND env(DOCKER_USERNAME) is present AND env(DOCKER_PASSWORD) is present
       name: build simcore images
       sudo: required
       before_install:
