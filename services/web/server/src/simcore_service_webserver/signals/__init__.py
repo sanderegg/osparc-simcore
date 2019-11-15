@@ -1,28 +1,37 @@
+import asyncio
 import logging
 from collections import defaultdict
-from typing import Dict
+from functools import wraps
 
-from aiohttp import web
-
-from .config import APP_EVENTS_REGISTRY_KEY
 from .types import SignalType
 
 log = logging.getLogger(__name__)
 
-def setup(app: web.Application) -> bool:
-    event_registry = defaultdict(list)
-    app[APP_EVENTS_REGISTRY_KEY] = event_registry
-    return True
+event_registry = defaultdict(list)
 
+async def emit(event: SignalType, *args, **kwargs):
+    if not event_registry[event]:
+        return
 
-def get_event_registry(app: web.Application) -> Dict:
-    registry = app[APP_EVENTS_REGISTRY_KEY]
-    return registry
+    coroutines = [observer(*args, **kwargs) for observer in event_registry[event]]
+    # all coroutine called in //
+    await asyncio.gather(*coroutines, return_exceptions=True)
 
-# alias
-setup_signals = setup
+def observe(event: SignalType):
+    def decorator(func):
+        if func not in event_registry[event]:
+            log.debug("registering %s to event %s", func, event)
+            event_registry[event].append(func)
+
+        @wraps(func)
+        def wrapped(*args, **kwargs):
+            return func(*args, **kwargs)
+        return wrapped
+    return decorator
+
 
 __all__ = (
-    'setup_signals'
     'SignalType'
+    'observe'
+    'emit'
 )
