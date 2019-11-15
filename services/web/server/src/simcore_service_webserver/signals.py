@@ -7,7 +7,7 @@ log = logging.getLogger(__name__)
 
 event_registry = defaultdict(list)
 
-async def notify(event: str, *args, **kwargs):
+async def emit(event: str, *args, **kwargs):
     if not event_registry[event]:
         return
 
