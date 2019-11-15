@@ -72,5 +72,5 @@ async def disconnect(sid: str, app: web.Application):
         if not registry.remove_socket(sid):
             # mark user for disconnection
             # signal if no socket ids are left
-            await signals.emit(signals.SignalName.SIGNAL_USER_DISCONNECT, user_id, app)
+            await signals.emit(signals.SignalType.SIGNAL_USER_DISCONNECT, user_id, app)
     log.debug("client %s disconnected", sid)
