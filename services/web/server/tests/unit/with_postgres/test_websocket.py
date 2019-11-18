@@ -90,12 +90,15 @@ async def socketio_url(client) -> str:
 
 @pytest.fixture()
 async def socketio_client(socketio_url: str, security_cookie: str):
-    sio = socketio.AsyncClient()
+    clients = []    
     async def connect():
+        sio = socketio.AsyncClient()
         await sio.connect(socketio_url, headers={'Cookie': security_cookie})
+        clients.append(sio)
         return sio
     yield connect
-    await sio.disconnect()
+    for sio in clients:
+        await sio.disconnect()
 
 # async def test_anonymous_websocket_connection(client):
 async def test_anonymous_websocket_connection(socketio_client):
@@ -109,14 +112,29 @@ async def test_anonymous_websocket_connection(socketio_client):
     (UserRole.USER, web.HTTPOk),
     (UserRole.TESTER, web.HTTPOk),
 ])
-async def test_websocket_connection(client, logged_user, socketio_client, expected):
-    sio = await socketio_client()
+async def test_websocket_connections(client, logged_user, socketio_client, expected):
     app = client.server.app
     socket_registry = get_socket_registry(app)
+
+    sio = await socketio_client()
     assert socket_registry.find_owner(sio.sid) == logged_user["id"]
     assert sio.sid in socket_registry.find_sockets(logged_user["id"])
+    assert len(socket_registry.find_sockets(logged_user["id"])) == 1
+
+    sio2 = await socketio_client()
+    assert socket_registry.find_owner(sio2.sid) == logged_user["id"]
+    assert sio2.sid in socket_registry.find_sockets(logged_user["id"])
+    assert len(socket_registry.find_sockets(logged_user["id"])) == 2
 
     await sio.disconnect()
-
     assert not socket_registry.find_owner(sio.sid)
     assert not sio.sid in socket_registry.find_sockets(logged_user["id"])
+
+    assert socket_registry.find_owner(sio2.sid) == logged_user["id"]
+    assert sio2.sid in socket_registry.find_sockets(logged_user["id"])
+    assert len(socket_registry.find_sockets(logged_user["id"])) == 1
+
+    await sio2.disconnect()
+    assert not socket_registry.find_owner(sio2.sid)
+    assert not sio2.sid in socket_registry.find_sockets(logged_user["id"])
+    assert not socket_registry.find_sockets(logged_user["id"])
