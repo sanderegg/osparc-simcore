@@ -10,6 +10,7 @@ import logging
 from typing import Dict
 
 from aiohttp import web
+from socketio.exceptions import ConnectionRefusedError
 
 from .. import signals
 from ..login.decorators import RQT_USERID_KEY, login_required
@@ -31,12 +32,12 @@ async def connect(sid: str, environ: Dict, app: web.Application) -> bool:
     Returns:
         [type] -- True if socket.io connection accepted
     """
+    # import pdb; pdb.set_trace()
     request = environ[_SOCKET_IO_AIOHTTP_REQUEST_KEY]
     try:
         await authenticate_user(sid, app, request)
     except web.HTTPUnauthorized:
-        log.exception("Websocket connection unauthorized")
-        return False
+        raise ConnectionRefusedError("authentification failed")
 
     log.debug("client %s connects", sid)
     return True
