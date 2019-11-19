@@ -32,14 +32,13 @@ async def connect(sid: str, environ: Dict, app: web.Application) -> bool:
     Returns:
         [type] -- True if socket.io connection accepted
     """
-    # import pdb; pdb.set_trace()
+    log.debug("client connecting in room %s", sid)
     request = environ[_SOCKET_IO_AIOHTTP_REQUEST_KEY]
     try:
         await authenticate_user(sid, app, request)
     except web.HTTPUnauthorized:
         raise ConnectionRefusedError("authentification failed")
 
-    log.debug("client %s connects", sid)
     return True
 
 @login_required
@@ -47,6 +46,7 @@ async def authenticate_user(sid: str, app: web.Application, request: web.Request
     """throws web.HTTPUnauthorized when the user is not recognized. Keeps the original request.
     """
     userid = request.get(RQT_USERID_KEY, ANONYMOUS_USER_ID)
+    log.debug("client %s authenticated", userid)
     registry = get_socket_registry(app)
     registry.add_socket(userid, sid)
     sio = get_socket_server(app)
@@ -64,6 +64,7 @@ async def disconnect(sid: str, app: web.Application):
         sid {str} -- the socket ID
         app {web.Application} -- the aiohttp app
     """
+    log.debug("client in room %s disconnecting", sid)
     sio = get_socket_server(app)
     registry = get_socket_registry(app)
     async with sio.session(sid) as session:
@@ -74,4 +75,4 @@ async def disconnect(sid: str, app: web.Application):
             # mark user for disconnection
             # signal if no socket ids are left
             await signals.emit(signals.SignalType.SIGNAL_USER_DISCONNECT, user_id, app)
-    log.debug("client %s disconnected", sid)
+        log.debug("client %s disconnected from room %s", user_id, sid)
