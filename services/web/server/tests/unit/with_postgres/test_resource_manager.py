@@ -4,7 +4,8 @@
 # pylint:disable=unused-argument
 # pylint:disable=redefined-outer-name
 
-from asyncio import Future
+
+from asyncio import Future, sleep
 from copy import deepcopy
 
 import pytest
@@ -123,13 +124,41 @@ async def empty_user_project(client, empty_project, logged_user):
         yield project
         print("<----- removed project", project["name"])
 
-@pytest.mark.parametrize("user_role", [
-    (UserRole.GUEST),
-    (UserRole.USER),
-    (UserRole.TESTER),
-])
-async def test_interactive_services_removed_after_logout(loop, client, logged_user, empty_user_project, mocked_director_handlers):
-    # create dynamic service
+@pytest.fixture()
+async def security_cookie(client) -> str:
+    # get the cookie by calling the root entrypoint
+    resp = await client.get("/v0/")
+    payload = await resp.json()
+    assert resp.status == 200, str(payload)
+    data, error = unwrap_envelope(payload)
+    assert data
+    assert not error
+
+    cookie = ""
+    if "Cookie" in resp.request_info.headers:
+        cookie = resp.request_info.headers["Cookie"]
+    yield cookie
+
+@pytest.fixture()
+async def socketio_url(client) -> str:
+    SOCKET_IO_PATH = '/socket.io/'
+    return str(client.make_url(SOCKET_IO_PATH))
+
+@pytest.fixture()
+async def socketio_client(socketio_url: str, security_cookie: str):
+    clients = []
+    async def connect():
+        sio = socketio.AsyncClient()
+        await sio.connect(socketio_url, headers={'Cookie': security_cookie})
+        clients.append(sio)
+        return sio
+    yield connect
+    for sio in clients:
+        await sio.disconnect()
+
+
+@pytest.fixture
+async def mocked_dynamic_service(loop, client, logged_user, empty_user_project, mocked_director_handlers):
     SERVICE_UUID = "some_uuid"
     url = client.app.router["running_interactive_services_post"].url_for().with_query(
         {
@@ -143,6 +172,16 @@ async def test_interactive_services_removed_after_logout(loop, client, logged_us
     resp = await client.post(url)
     data, _error = await assert_status(resp, expected_cls=web.HTTPCreated)
     mocked_director_handlers["running_interactive_services_post"].assert_called_once()
+
+@pytest.mark.parametrize("user_role", [
+    (UserRole.GUEST),
+    (UserRole.USER),
+    (UserRole.TESTER),
+])
+async def test_interactive_services_removed_after_logout(loop, client, mocked_dynamic_service, mocked_director_handlers):
+    # login - logged_user fixture
+    # create empty study - empty_user_project fixture
+    # create dynamic service - mocked_dynamic_service fixture
     # logout
     logout_url = client.app.router['auth_logout'].url_for()
     r = await client.get(logout_url)
@@ -151,22 +190,80 @@ async def test_interactive_services_removed_after_logout(loop, client, logged_us
     # assert dynamic service is removed
     mocked_director_handlers["_delete_all_services"].assert_called_once()
 
-async def test_interactive_services_remain_after_websocket_reconnection(loop):
-    # login
-    # create websocket
-    # create study
-    # create dynamic service
-    # disconnect websocket
-    # reconnect websocket
+@pytest.mark.parametrize("user_role", [
+    (UserRole.GUEST),
+    (UserRole.USER),
+    (UserRole.TESTER),
+])
+async def test_interactive_services_remain_after_websocket_reconnection(loop, client, mocked_dynamic_service, mocked_director_handlers, socketio_client):
+    SERVICE_DELETION_DELAY = 10
+    # login - logged_user fixture
+    # create empty study - empty_user_project fixture
+    # create dynamic service - mocked_dynamic_service fixture
+    # create first websocket
+    sio = await socketio_client()
+    assert sio.sid
+    # create second websocket
+    sio2 = await socketio_client()
+    assert sio2.sid
+    assert sio.sid != sio2.sid
+    # disconnect first websocket
+    await sio.disconnect()
     # assert dynamic service is still around
-    pass
+    mocked_director_handlers["_delete_all_services"].assert_not_called()
+    # disconnect second websocket
+    await sio2.disconnect()
+    # assert dynamic service is still around for now
+    mocked_director_handlers["_delete_all_services"].assert_not_called()
+    # reconnect websocket
+    sio = await socketio_client()
+    assert sio.sid
+    # assert dynamic service is still around
+    mocked_director_handlers["_delete_all_services"].assert_not_called()
+    await sleep(SERVICE_DELETION_DELAY+1)
+    # assert dynamic service is still around
+    mocked_director_handlers["_delete_all_services"].assert_not_called()
 
-async def test_interactive_services_removed_after_websocket_disconnection_for_some_time(loop):
-    # login
+@pytest.mark.parametrize("user_role", [
+    (UserRole.GUEST),
+    (UserRole.USER),
+    (UserRole.TESTER),
+])
+async def test_interactive_services_remain_after_one_of_two_websocket_disconnects(loop, client, mocked_dynamic_service, mocked_director_handlers, socketio_client):
+    # login - logged_user fixture
+    # create empty study - empty_user_project fixture
+    # create dynamic service - mocked_dynamic_service fixture
+    # create first websocket
+    sio = await socketio_client()
+    assert sio.sid
+    # create second websocket
+    sio2 = await socketio_client()
+    assert sio2.sid
+    assert sio.sid != sio2.sid
+    # disconnect first websocket
+    await sio.disconnect()    
+    # assert dynamic service is still around
+    mocked_director_handlers["_delete_all_services"].assert_not_called()
+
+@pytest.mark.parametrize("user_role", [
+    (UserRole.GUEST),
+    (UserRole.USER),
+    (UserRole.TESTER),
+])
+async def test_interactive_services_removed_after_websocket_disconnection_for_some_time(loop, client, mocked_dynamic_service, mocked_director_handlers, socketio_client):
+    SERVICE_DELETION_DELAY = 10
+    # create server with delay set to DELAY
+    # login - logged_user fixture
+    # create empty study - empty_user_project fixture
+    # create dynamic service - mocked_dynamic_service fixture
     # create websocket
-    # create study
-    # create dynamic service
+    sio = await socketio_client()
+    assert sio.sid
     # disconnect websocket
-    # wait for specific delay
+    await sio.disconnect()    
+    # assert dynamic service is still around
+    mocked_director_handlers["_delete_all_services"].assert_not_called()
+    # wait the defined delay
+    await sleep(SERVICE_DELETION_DELAY+1)
     # assert dynamic service is removed
-    pass
+    mocked_director_handlers["_delete_all_services"].assert_called_once()
