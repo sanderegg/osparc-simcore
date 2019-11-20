@@ -98,26 +98,6 @@ async def pika_connection(loop, rabbit_broker):
     yield connection
     await connection.close()
 
-@pytest.fixture
-async def log_channel(loop, rabbit_config, pika_connection):
-    channel = await pika_connection.channel()
-    pika_log_channel = rabbit_config["channels"]["log"]
-    logs_exchange = await channel.declare_exchange(
-        pika_log_channel, aio_pika.ExchangeType.FANOUT,
-        auto_delete=True
-    )
-    yield logs_exchange
-
-@pytest.fixture
-async def progress_channel(loop, rabbit_config, pika_connection):
-    channel = await pika_connection.channel()
-    pika_progress_channel = rabbit_config["channels"]["log"]
-    progress_exchange = await channel.declare_exchange(
-        pika_progress_channel, aio_pika.ExchangeType.FANOUT,
-        auto_delete=True
-    )
-    yield progress_exchange
-
 @pytest.fixture(scope="session")
 def node_uuid() -> str:
     return str(uuid4())
@@ -152,7 +132,41 @@ def fake_progress_message(node_uuid: str, user_id: str, project_id: str):
 
 # ------------------------------------------
 
-async def assert_rabbit_websocket_connection(socket_event_name, logged_user, socketio_client, mocker, rabbit_channel, channel_message):
+@pytest.fixture(params=["log", "progress"])
+async def all_in_one(request, loop, rabbit_config, pika_connection, node_uuid, user_id, project_id):
+    # create rabbit pika exchange channel
+    channel = await pika_connection.channel()
+    pika_channel = rabbit_config["channels"][request.param]
+    pika_exchange = await channel.declare_exchange(
+        pika_channel, aio_pika.ExchangeType.FANOUT,
+        auto_delete=True
+    )
+
+    # create corresponding message
+    message = {
+        "Channel":request.param.title(),
+        "Progress": 0.56,
+        "Node": node_uuid,
+        "user_id": user_id,
+        "project_id": project_id
+    }
+
+    # socket event
+    socket_event_name = "logger" if request.param is "log" else "progress"
+    yield {"rabbit_channel": pika_exchange, "data": message, "socket_name": socket_event_name}
+
+@pytest.mark.parametrize("user_role", [    
+    (UserRole.GUEST),
+    (UserRole.USER),
+    (UserRole.TESTER),
+])
+async def test_rabbit_websocket_connection(logged_user, 
+                                            socketio_client, mocker, 
+                                            all_in_one):
+    rabbit_channel = all_in_one["rabbit_channel"]
+    channel_message = all_in_one["data"]
+    socket_event_name = all_in_one["socket_name"]
+
     sio = await socketio_client()
     # register mock function
     log_fct = mocker.Mock()    
@@ -178,22 +192,22 @@ async def assert_rabbit_websocket_connection(socket_event_name, logged_user, soc
     calls = [call(json.dumps(channel_message))]
     log_fct.assert_has_calls(calls)
 
-@pytest.mark.parametrize("user_role", [    
-    (UserRole.GUEST),
-    (UserRole.USER),
-    (UserRole.TESTER),
-])
-async def test_rabbit_log_connection(loop, client, logged_user, 
-                                    socketio_client, log_channel, 
-                                    mocker, fake_log_message):
-    await assert_rabbit_websocket_connection('logger', logged_user, socketio_client, mocker, log_channel, fake_log_message)
+# @pytest.mark.parametrize("user_role", [    
+#     (UserRole.GUEST),
+#     (UserRole.USER),
+#     (UserRole.TESTER),
+# ])
+# async def test_rabbit_log_connection(loop, client, logged_user, 
+#                                     socketio_client, log_channel, 
+#                                     mocker, fake_log_message):
+#     await assert_rabbit_websocket_connection('logger', logged_user, socketio_client, mocker, log_channel, fake_log_message)
 
-@pytest.mark.parametrize("user_role", [    
-    (UserRole.GUEST),
-    (UserRole.USER),
-    (UserRole.TESTER),
-])
-async def test_rabbit_progress_connection(loop, client, logged_user, 
-                                    socketio_client, progress_channel, 
-                                    mocker, fake_progress_message):
-    await assert_rabbit_websocket_connection('progress', logged_user, socketio_client, mocker, progress_channel, fake_progress_message)
+# @pytest.mark.parametrize("user_role", [    
+#     (UserRole.GUEST),
+#     (UserRole.USER),
+#     (UserRole.TESTER),
+# ])
+# async def test_rabbit_progress_connection(loop, client, logged_user, 
+#                                     socketio_client, progress_channel, 
+#                                     mocker, fake_progress_message):
+#     await assert_rabbit_websocket_connection('progress', logged_user, socketio_client, mocker, progress_channel, fake_progress_message)
