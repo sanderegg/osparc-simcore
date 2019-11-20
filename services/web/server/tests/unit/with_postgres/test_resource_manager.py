@@ -14,6 +14,7 @@ from aiohttp import web
 from servicelib.application import create_safe_application
 from servicelib.rest_responses import unwrap_envelope
 from simcore_service_webserver.db import setup_db
+from simcore_service_webserver.director import registry as services_registry
 from simcore_service_webserver.director import setup_director
 from simcore_service_webserver.login import setup_login
 from simcore_service_webserver.projects import setup_projects
@@ -34,7 +35,7 @@ API_VERSION = "v0"
 @pytest.fixture
 async def mocked_director_handlers(loop, mocker):
     # Note: this needs to be activated before the setup takes place
-    mocks = []
+    mocks = {}
     running_service_dict = {
         "published_port": "23423",
         "service_uuid": "some_service_uuid",
@@ -44,13 +45,16 @@ async def mocked_director_handlers(loop, mocker):
         "service_port": "some_service_port",
         "service_state": "some_service_state"
     }
-    mocked_director_handler = mocker.patch('simcore_service_webserver.director.handlers.running_interactive_services_post',
-                return_value=web.json_response({"data":running_service_dict}, status=web.HTTPCreated.status_code))
-    mocks.append(mocked_director_handler)
+    mocked_director_running_interactive_services_post_handler = \
+        mocker.patch('simcore_service_webserver.director.handlers.running_interactive_services_post',
+        return_value=web.json_response({"data":running_service_dict}, status=web.HTTPCreated.status_code))
+    mocks["running_interactive_services_post"] = mocked_director_running_interactive_services_post_handler
+    mocked_director_delete_all_services_fct = mocker.patch('simcore_service_webserver.director.handlers._delete_all_services')
+    mocks["_delete_all_services"] = mocked_director_delete_all_services_fct
     yield mocks
 
 @pytest.fixture
-def client(loop, aiohttp_client, app_cfg, postgres_service, mocked_director_handlers):    
+def client(mocked_director_handlers, loop, aiohttp_client, app_cfg, postgres_service):    
     cfg = deepcopy(app_cfg)
 
     assert cfg["rest"]["version"] == API_VERSION
@@ -124,21 +128,28 @@ async def empty_user_project(client, empty_project, logged_user):
     (UserRole.USER),
     (UserRole.TESTER),
 ])
-async def test_interactive_services_removed_after_logout(loop, logged_user, empty_user_project, client, mocked_director_handlers):
+async def test_interactive_services_removed_after_logout(loop, client, logged_user, empty_user_project, mocked_director_handlers):
     # create dynamic service
+    SERVICE_UUID = "some_uuid"
     url = client.app.router["running_interactive_services_post"].url_for().with_query(
         {
+            "user_id": logged_user["id"],
             "project_id": empty_user_project["uuid"],
             "service_key": "simcore/services/dynamic/3d-viewer",
             "service_tag": "1.4.2",
-            "service_uuid": "some_uuid"
+            "service_uuid": SERVICE_UUID
         })
     
     resp = await client.post(url)
     data, _error = await assert_status(resp, expected_cls=web.HTTPCreated)
-    # mocked_director_handlers["running_interactive_services_post"].assert_called_once()
+    mocked_director_handlers["running_interactive_services_post"].assert_called_once()
     # logout
+    logout_url = client.app.router['auth_logout'].url_for()
+    r = await client.get(logout_url)
+    assert r.url_obj.path == logout_url.path
+    await assert_status(r, web.HTTPOk)
     # assert dynamic service is removed
+    mocked_director_handlers["_delete_all_services"].assert_called_once()
 
 async def test_interactive_services_remain_after_websocket_reconnection(loop):
     # login
