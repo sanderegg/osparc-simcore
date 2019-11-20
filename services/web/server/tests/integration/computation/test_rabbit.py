@@ -110,26 +110,6 @@ def user_id() -> str:
 def project_id() -> str:
     return "some_project_id"
 
-@pytest.fixture(scope="session")
-def fake_log_message(node_uuid: str, user_id: str, project_id: str):
-    yield {
-        "Channel":"Log",
-        "Messages": ["Some fake message"],
-        "Node": node_uuid,
-        "user_id": user_id,
-        "project_id": project_id
-    }
-
-@pytest.fixture(scope="session")
-def fake_progress_message(node_uuid: str, user_id: str, project_id: str):
-    yield {
-        "Channel":"Progress",
-        "Progress": 0.56,
-        "Node": node_uuid,
-        "user_id": user_id,
-        "project_id": project_id
-    }
-
 # ------------------------------------------
 
 @pytest.fixture(params=["log", "progress"])
@@ -191,23 +171,3 @@ async def test_rabbit_websocket_connection(logged_user,
     log_fct.assert_called()
     calls = [call(json.dumps(channel_message))]
     log_fct.assert_has_calls(calls)
-
-# @pytest.mark.parametrize("user_role", [    
-#     (UserRole.GUEST),
-#     (UserRole.USER),
-#     (UserRole.TESTER),
-# ])
-# async def test_rabbit_log_connection(loop, client, logged_user, 
-#                                     socketio_client, log_channel, 
-#                                     mocker, fake_log_message):
-#     await assert_rabbit_websocket_connection('logger', logged_user, socketio_client, mocker, log_channel, fake_log_message)
-
-# @pytest.mark.parametrize("user_role", [    
-#     (UserRole.GUEST),
-#     (UserRole.USER),
-#     (UserRole.TESTER),
-# ])
-# async def test_rabbit_progress_connection(loop, client, logged_user, 
-#                                     socketio_client, progress_channel, 
-#                                     mocker, fake_progress_message):
-#     await assert_rabbit_websocket_connection('progress', logged_user, socketio_client, mocker, progress_channel, fake_progress_message)
