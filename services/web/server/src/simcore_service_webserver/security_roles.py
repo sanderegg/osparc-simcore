@@ -45,6 +45,7 @@ ROLES_PERMISSIONS = {
   UserRole.USER: {
       "can": [
           "project.create",      # "studies.user.create",
+          "project.close",
           "project.delete",      # "study.node.create",
                                  # "study.node.delete",
                                  # "study.node.rename",
