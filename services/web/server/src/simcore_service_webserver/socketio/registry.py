@@ -6,12 +6,16 @@ import logging
 from collections import defaultdict
 from typing import Dict, List, Optional
 
+import aioredis
 import attr
 
 log = logging.getLogger(__name__)
 
 def _default_dict_factory():
     return defaultdict(list)
+
+class RedisUserSocketRegistry:
+
 
 
 @attr.s(auto_attribs=True)
