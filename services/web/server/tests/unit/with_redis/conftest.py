@@ -1,6 +1,7 @@
 import pytest
 from pathlib import Path
 import yaml
+from yarl import URL
 
 
 @pytest.fixture(scope='session')
@@ -20,4 +21,14 @@ def docker_compose_file(osparc_simcore_root_dir: Path, tmpdir: Path):
 
     yield tmp_dc_path
 
-    
+@pytest.fixture(scope='session')
+def redis_service(docker_services, docker_ip):
+
+    url = URL(f"redis://{docker_ip}:{docker_services.port_for("redis", 6379)}")
+
+    docker_services.wait_until_responsive(
+        check=lambda: is_redis_responsive(url),
+        timeout=30.0,
+        pause=0.1,
+    )
+    return url
