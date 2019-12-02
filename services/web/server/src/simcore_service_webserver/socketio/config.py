@@ -13,6 +13,7 @@ from socketio import AsyncServer
 
 CONFIG_SECTION_NAME = 'socketio'
 APP_CLIENT_SOCKET_SERVER_KEY = __name__ + ".socketio_socketio"
+APP_CLIENT_REDIS_CLIENT_KEY = __name__ + ".socketio_redis_client"
 APP_CLIENT_SOCKET_REGISTRY_KEY = __name__ + ".socketio_registry"
 APP_CLIENT_SOCKET_DECORATED_HANDLERS_KEY = __name__ + ".socketio_handlers"
 
@@ -35,3 +36,6 @@ def get_socket_server(app: web.Application) -> AsyncServer:
 
 def get_socket_registry(app: web.Application):
     return app[APP_CLIENT_SOCKET_REGISTRY_KEY]
+
+def get_redis_client(app: web.Application):
+    return app[APP_CLIENT_REDIS_CLIENT_KEY]

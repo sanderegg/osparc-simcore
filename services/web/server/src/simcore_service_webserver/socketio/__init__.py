@@ -13,7 +13,8 @@ from servicelib.application_setup import ModuleCategory, app_module_setup
 from . import handlers, handlers_utils
 from .config import (APP_CLIENT_SOCKET_REGISTRY_KEY,
                      APP_CLIENT_SOCKET_SERVER_KEY, CONFIG_SECTION_NAME)
-from .registry import InMemoryUserSocketRegistry
+from .redis import setup_redis_client
+from .registry import RedisUserSocketRegistry
 
 log = logging.getLogger(__name__)
 
@@ -30,7 +31,8 @@ def setup(app: web.Application):
     sio = AsyncServer(async_mode="aiohttp", client_manager=mgr, logging=log)
     sio.attach(app)
     app[APP_CLIENT_SOCKET_SERVER_KEY] = sio
-    app[APP_CLIENT_SOCKET_REGISTRY_KEY] = InMemoryUserSocketRegistry()
+    setup_redis_client(app)
+    app[APP_CLIENT_SOCKET_REGISTRY_KEY] = RedisUserSocketRegistry(app)
     handlers_utils.register_handlers(app, handlers)
 
 # alias
