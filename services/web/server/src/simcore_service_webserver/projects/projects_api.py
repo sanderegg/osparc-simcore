@@ -92,7 +92,7 @@ async def start_project_interactive_services(request: web.Request, project: Dict
                                 project_id=project["uuid"],
                                 service_key=service["key"],
                                 service_version=service["version"],
-                                service_uuid=service_uuid) for service_uuid, service in project["workbench"].items()]
+                                service_uuid=service_uuid) for service_uuid, service in project["workbench"].items() if "/dynamic/" in service["key"]]
     await gather(*start_service_tasks)
 
 
