@@ -15,8 +15,8 @@ DSN = "redis://{host}:{port}"
 
 async def redis_client(app: web.Application):
     cfg = app[APP_CONFIG_KEY][CONFIG_SECTION_NAME]
-    DSN.format(**cfg["redis"])
-    app[APP_CLIENT_REDIS_CLIENT_KEY] = await aioredis.create_redis_pool(DSN, encoding="utf-8")
+    url = DSN.format(**cfg["redis"])
+    app[APP_CLIENT_REDIS_CLIENT_KEY] = await aioredis.create_redis_pool(url, encoding="utf-8")
     yield
 
     app[APP_CLIENT_REDIS_CLIENT_KEY].close()
