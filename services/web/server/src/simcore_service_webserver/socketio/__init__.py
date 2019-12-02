@@ -12,9 +12,10 @@ from servicelib.application_setup import ModuleCategory, app_module_setup
 
 from . import handlers, handlers_utils
 from .config import (APP_CLIENT_SOCKET_REGISTRY_KEY,
-                     APP_CLIENT_SOCKET_SERVER_KEY, CONFIG_SECTION_NAME)
+                     APP_CLIENT_SOCKET_SERVER_KEY, CONFIG_SECTION_NAME,
+                     get_redis_client)
 from .redis import setup_redis_client
-from .registry import RedisUserSocketRegistry
+from .registry import InMemoryUserSocketRegistry, RedisUserSocketRegistry
 
 log = logging.getLogger(__name__)
 
@@ -32,7 +33,8 @@ def setup(app: web.Application):
     sio.attach(app)
     app[APP_CLIENT_SOCKET_SERVER_KEY] = sio
     setup_redis_client(app)
-    app[APP_CLIENT_SOCKET_REGISTRY_KEY] = RedisUserSocketRegistry(app)
+    app[APP_CLIENT_SOCKET_REGISTRY_KEY] = RedisUserSocketRegistry(app) if get_redis_client(app) \
+                                    else InMemoryUserSocketRegistry()
     handlers_utils.register_handlers(app, handlers)
 
 # alias

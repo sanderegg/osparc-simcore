@@ -175,10 +175,10 @@ services:
 
   redis:
     image: redis:5.0-alpine
+    init: true
     networks:
       - default
-    ports: 
-      - "6379:6379"
+
 volumes:
   input: {}
   output: {}

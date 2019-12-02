@@ -19,6 +19,11 @@ APP_CLIENT_SOCKET_DECORATED_HANDLERS_KEY = __name__ + ".socketio_handlers"
 
 schema = T.Dict({
     T.Key("enabled", default=True, optional=True): T.Or(T.Bool(), T.Int()),
+    T.Key("redis", optional=False): T.Dict({
+        T.Key("enabled", default=True, optional=True): T.Bool(),
+        T.Key("host", default="redis", optional=True): T.String(),
+        T.Key("port", default=6793, optional=True): T.Int(),
+    }),
     T.Key("message_queue", optional=True): T.Dict({
         T.Key("host", default='rabbit', optional=True): T.String(),
         T.Key("port", default=5672, optional=True): T.Int(),
