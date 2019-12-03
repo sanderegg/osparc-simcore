@@ -7,10 +7,22 @@ main:
   testing: true
   studies_access_enabled: True
   monitoring_enabled: True
+tracing:
+  enabled: True
+  zipkin_endpoint: http://jaeger:9411
 director:
   host: director
   port: 8001
   version: v0
+socketio:
+  enabled: True
+  redis:
+    enabled: True
+    host: redis
+    port: 6379
+  message_queue:
+    user: simcore
+    password: simcore
 db:
   init_tables: False
   postgres:
@@ -22,6 +34,9 @@ db:
     password: simcore
     port: 5432
     user: simcore
+resource_manager:
+  enabled: True
+  service_deletion_timeout_seconds: 900
 rabbit:
   enabled: True
   host: rabbit

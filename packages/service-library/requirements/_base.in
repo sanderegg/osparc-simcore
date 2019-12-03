@@ -9,7 +9,9 @@ openapi-core~=0.8.0 # there is an issue validating "number" type 3 is considered
 
 aiohttp
 aiopg[sa]
+aiozipkin
 ujson
 werkzeug
 jsonschema
 prometheus_client  # TODO: add as optional service-library[monitoring]
+trafaret

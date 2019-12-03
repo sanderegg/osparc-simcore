@@ -34,6 +34,7 @@ API_VERSION = "v0"
 # Selection of core and tool services started in this swarm fixture (integration)
 core_services = [
     'apihub',
+    'director',
     'postgres',
 ]
 
@@ -140,7 +141,7 @@ async def storage_subsystem_mock(loop, mocker):
 
     # requests storage to delete data
     #mock1 = mocker.patch('simcore_service_webserver.projects.projects_handlers.delete_data_folders_of_project', return_value=None)
-    mock1 = mocker.patch('simcore_service_webserver.projects.projects_handlers.delete_data_folders_of_project', return_value=Future())
+    mock1 = mocker.patch('simcore_service_webserver.projects.projects_handlers.projects_api.delete_data_folders_of_project', return_value=Future())
     mock1.return_value.set_result("")
     return mock, mock1
 
