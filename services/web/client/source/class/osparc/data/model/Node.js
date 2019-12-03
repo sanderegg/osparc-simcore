@@ -915,7 +915,7 @@ qx.Class.define("osparc.data.model.Node", {
     },
 
     removeNode: function() {
-      this.stopInteractiveService();
+      this.__stopDynamicService();
       const innerNodes = Object.values(this.getInnerNodes());
       for (const innerNode of innerNodes) {
         innerNode.removeNode();
@@ -935,7 +935,7 @@ qx.Class.define("osparc.data.model.Node", {
       }
     },
 
-    stopInteractiveService: function() {
+    __stopDynamicService: function() {
       if (this.isDynamic() && this.isRealService()) {
         osparc.utils.Services.stopInteractiveService(this.getNodeId());
         this.removeIFrame();
