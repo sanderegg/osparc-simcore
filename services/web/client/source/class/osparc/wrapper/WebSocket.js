@@ -182,7 +182,8 @@ qx.Class.define("osparc.wrapper.WebSocket", {
           "close",
           "reconnect",
           "reconnecting",
-          "error"
+          "error",
+          "logout"
         ].forEach(event => {
           this.on(event, ev => {
             this.fireDataEvent(event, ev);
