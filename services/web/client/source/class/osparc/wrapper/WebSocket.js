@@ -205,6 +205,13 @@ qx.Class.define("osparc.wrapper.WebSocket", {
       dynLoader.start();
     },
 
+    isConnected: function() {
+      if (this.getSocket()) {
+        return this.getSocket().connected;
+      }
+      return false;
+    },
+
     disconnect: function() {
       if (this.getSocket() !== null) {
         this.getSocket().removeAllListeners();
