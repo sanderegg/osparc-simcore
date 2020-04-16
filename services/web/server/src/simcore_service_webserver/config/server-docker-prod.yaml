@@ -21,6 +21,10 @@ director:
   host: ${DIRECTOR_HOST}
   port: ${DIRECTOR_PORT}
   version: v0
+application_proxy:
+  enabled: False
+reverse_proxy:
+  enabled: False
 db:
   # Default for WEBSERVER_DB_INITTABLES set in cli.py
   init_tables: ${WEBSERVER_DB_INITTABLES}

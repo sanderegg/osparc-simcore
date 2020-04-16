@@ -65,7 +65,7 @@ def create_application(config: Dict) -> web.Application:
     setup_projects(app)  # needs storage
     setup_studies_access(app)
     setup_activity(app)
-    setup_app_proxy(app)
+    setup_app_proxy(app) # TODO: fully disable when stand-alone x-reverse-proxy service is operational
     setup_resource_manager(app)
     setup_tags(app)
     setup_catalog(app)
