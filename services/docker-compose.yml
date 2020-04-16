@@ -218,6 +218,7 @@ services:
         "-c",
         "tcp_keepalives_count=5",
       ]
+
   redis:
     image: redis:5.0-alpine
     init: true

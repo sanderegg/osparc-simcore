@@ -4,7 +4,13 @@ A standalong traffik-based service used to redirect the traffic of backend inter
 
 All traffic going that needs to be reverse-proxied by the internal traefik instance must be labelled with io.simcore.zone: ${TRAEFIK_SIMCORE_ZONE} or it will be picked up by the external Traefik instance.
 
+
+Additional configurations:
+
+- ``TRAEFIK_SIMCORE_ZONE``: defines the name of the internal traefik zone (it acts as a constraint that traefik recognize to filter services that need reverse-proxy service)
+
+
 ## Development
 
-the traefik dashboard when running the stack in devel mode (traefik does not handle 2 dashboards at the moment)
+- the traefik dashboard when running the stack in devel mode (traefik does not handle 2 dashboards at the moment)
 - in devel mode, the traefik UI is accessible through http://127.0.0.1:8080
