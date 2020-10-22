@@ -120,10 +120,28 @@ qx.Class.define("osparc.desktop.ControlsBar", {
 
       const simCtrls = new qx.ui.toolbar.Part();
       const stopButton = this.__createStopButton();
+      stopButton.setEnabled(false);
       simCtrls.add(stopButton);
       const startButton = this.__createStartButton();
       simCtrls.add(startButton);
       this.add(simCtrls);
+
+      osparc.store.Store.getInstance().addListener("changeCurrentStudy", e => {
+        const study = e.getData();
+        if (study && study.getState() && study.getState().state) {
+          switch (study.getState().state.value) {
+            case "PENDING":
+            case "PUBLISHED":
+            case "STARTED":
+              startButton.setFetching(true);
+              stopButton.setEnabled(true);
+              break;
+            default:
+              startButton.setFetching(false);
+              stopButton.setEnabled(false);
+          }
+        }
+      });
     },
 
     __createShowSweeperButton: function() {
@@ -163,20 +181,6 @@ qx.Class.define("osparc.desktop.ControlsBar", {
 
     __createStartButton: function() {
       const startButton = this.__startButton = this.__createButton(this.tr("Run"), "play", "runStudyBtn", "startPipeline");
-      osparc.store.Store.getInstance().addListener("changeCurrentStudy", e => {
-        const study = e.getData();
-        if (study && study.getState() && study.getState().state) {
-          switch (study.getState().state.value) {
-            case "PENDING":
-            case "PUBLISHED":
-            case "STARTED":
-              startButton.setFetching(true);
-              break;
-            default:
-              startButton.setFetching(false);
-          }
-        }
-      });
       return startButton;
     },
     __createStopButton: function() {
