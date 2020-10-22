@@ -13,6 +13,8 @@ from uuid import uuid4
 import aio_pika
 import pytest
 import sqlalchemy as sa
+from models_library.celery import CeleryConfig
+from models_library.rabbit import RabbitConfig
 from simcore_sdk.models.pipeline_models import ComputationalPipeline, ComputationalTask
 from simcore_service_sidecar import config, utils
 from yarl import URL
@@ -58,7 +60,7 @@ async def mock_sidecar_get_volume_mount_point(monkeypatch):
 def sidecar_config(
     postgres_dsn: Dict[str, str],
     docker_registry: str,
-    rabbit_config: config.RabbitConfig,
+    rabbit_config: RabbitConfig,
     mock_sidecar_get_volume_mount_point,
 ) -> None:
     # NOTE: in integration tests the sidecar runs bare-metal which means docker volume cannot be used.
@@ -77,7 +79,7 @@ def sidecar_config(
     config.POSTGRES_USER = postgres_dsn["user"]
     config.POSTGRES_PW = postgres_dsn["password"]
 
-    config.RABBIT_CONFIG = rabbit_config
+    config.CELERY_CONFIG = CeleryConfig.create_from_env()
 
 
 class LockedCollector:

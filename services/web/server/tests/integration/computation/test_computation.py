@@ -1,22 +1,28 @@
 # pylint:disable=unused-variable
 # pylint:disable=unused-argument
 # pylint:disable=redefined-outer-name
-import asyncio
 import json
 import sys
-import time
 from pathlib import Path
 from pprint import pprint
+from typing import Dict
 
 import pytest
+import sqlalchemy as sa
 from aiohttp import web
+from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_fixed
+from yarl import URL
+
 from pytest_simcore.helpers.utils_assert import assert_status
+from pytest_simcore.helpers.utils_login import LoggedUser
+from pytest_simcore.helpers.utils_projects import NewProject
 from servicelib.application import create_safe_application
 from servicelib.application_keys import APP_CONFIG_KEY
-from simcore_sdk.models.pipeline_models import (
-    ComputationalPipeline,
-    ComputationalTask,
+from simcore_postgres_database.webserver_models import (
+    NodeClass,
     StateType,
+    comp_pipeline,
+    comp_tasks,
 )
 from simcore_service_webserver.computation import setup_computation
 from simcore_service_webserver.db import setup_db
@@ -26,21 +32,25 @@ from simcore_service_webserver.rest import setup_rest
 from simcore_service_webserver.security import setup_security
 from simcore_service_webserver.security_roles import UserRole
 from simcore_service_webserver.session import setup_session
-from yarl import URL
 
 current_dir = Path(sys.argv[0] if __name__ == "__main__" else __file__).resolve().parent
 
 API_VERSION = "v0"
 API_PREFIX = "/" + API_VERSION
 
-# TODO: create conftest at computation/ folder level
-
 # Selection of core and tool services started in this swarm fixture (integration)
-core_services = ["director", "rabbit", "postgres", "sidecar", "storage"]
+core_services = [
+    "redis",
+    "rabbit",
+    "director",
+    "postgres",
+    "sidecar",
+    "storage",
+]
 
 ops_services = [
     "minio",
-]  # + ["adminer", "portainer"]
+]
 
 
 @pytest.fixture
@@ -82,14 +92,14 @@ def client(
 
 
 @pytest.fixture(scope="session")
-def mock_workbench_adjacency_list():
+def mock_workbench_adjacency_list() -> Dict:
     file_path = current_dir / "workbench_sleeper_dag_adjacency_list.json"
     with file_path.open() as fp:
         return json.load(fp)
 
 
 # HELPERS ----------------------------------
-def assert_db_contents(
+def _assert_db_contents(
     project_id,
     postgres_session,
     mock_workbench_payload,
@@ -98,8 +108,8 @@ def assert_db_contents(
 ):
     # pylint: disable=no-member
     pipeline_db = (
-        postgres_session.query(ComputationalPipeline)
-        .filter(ComputationalPipeline.project_id == project_id)
+        postgres_session.query(comp_pipeline)
+        .filter(comp_pipeline.c.project_id == project_id)
         .one()
     )
     assert pipeline_db.project_id == project_id
@@ -107,8 +117,8 @@ def assert_db_contents(
 
     # check db comp_tasks
     tasks_db = (
-        postgres_session.query(ComputationalTask)
-        .filter(ComputationalTask.project_id == project_id)
+        postgres_session.query(comp_tasks)
+        .filter(comp_tasks.c.project_id == project_id)
         .all()
     )
     mock_pipeline = mock_workbench_payload
@@ -128,27 +138,59 @@ def assert_db_contents(
         assert task_db.image["tag"] == mock_pipeline[task_db.node_id]["version"]
 
 
-def assert_sleeper_services_completed(project_id, postgres_session):
+def _assert_sleeper_services_completed(
+    project_id: str, postgres_session: sa.orm.session.Session, expected_state: StateType
+):
     # pylint: disable=no-member
-    # we wait 15 secs before testing...
-    time.sleep(15)
-    pipeline_db = (
-        postgres_session.query(ComputationalPipeline)
-        .filter(ComputationalPipeline.project_id == project_id)
-        .one()
+    TIMEOUT_SECONDS = 60
+    WAIT_TIME = 2
+
+    @retry(
+        reraise=True,
+        stop=stop_after_attempt(TIMEOUT_SECONDS / WAIT_TIME),
+        wait=wait_fixed(WAIT_TIME),
+        retry=retry_if_exception_type(AssertionError),
     )
-    tasks_db = (
-        postgres_session.query(ComputationalTask)
-        .filter(ComputationalTask.project_id == project_id)
-        .all()
-    )
-    for task_db in tasks_db:
-        if "sleeper" in task_db.image["name"]:
-            assert task_db.state == StateType.SUCCESS
+    def check_pipeline_results():
+        pipeline_db = (
+            postgres_session.query(comp_pipeline)
+            .filter(comp_pipeline.c.project_id == project_id)
+            .one()
+        )
+        tasks_db = (
+            postgres_session.query(comp_tasks)
+            .filter(
+                (comp_tasks.c.project_id == project_id)
+                & (comp_tasks.c.node_class == NodeClass.COMPUTATIONAL)
+            )
+            .all()
+        )
+        # get the different states in a set of states
+        set_of_states = {task_db.state for task_db in tasks_db}
+        if expected_state in [StateType.ABORTED, StateType.FAILED]:
+            # only one is necessary
+            assert expected_state in set_of_states
+        else:
+            assert not any(
+                x in set_of_states
+                for x in [
+                    StateType.PUBLISHED,
+                    StateType.PENDING,
+                    StateType.NOT_STARTED,
+                ]
+            ), "pipeline did not start yet..."
+
+            assert len(set_of_states) == 1, "there are more than one state"
+
+            assert expected_state in set_of_states
+
+    check_pipeline_results()
 
 
 # TESTS ------------------------------------------
-async def test_check_health(loop, mock_orphaned_services, docker_stack, client):
+async def test_check_health(
+    rabbit_service: str, mock_orphaned_services, docker_stack, client
+):
     # TODO: check health of all core_services in list above!
     resp = await client.get(API_VERSION + "/")
     data, _ = await assert_status(resp, web.HTTPOk)
@@ -158,45 +200,71 @@ async def test_check_health(loop, mock_orphaned_services, docker_stack, client):
 
 
 @pytest.mark.parametrize(
-    "user_role,expected_response",
+    "user_role,expected_start_response, expected_stop_response",
     [
-        (UserRole.ANONYMOUS, web.HTTPUnauthorized),
-        (UserRole.GUEST, web.HTTPOk),
-        (UserRole.USER, web.HTTPOk),
-        (UserRole.TESTER, web.HTTPOk),
+        (UserRole.ANONYMOUS, web.HTTPUnauthorized, web.HTTPUnauthorized),
+        (UserRole.GUEST, web.HTTPOk, web.HTTPNoContent),
+        (UserRole.USER, web.HTTPOk, web.HTTPNoContent),
+        (UserRole.TESTER, web.HTTPOk, web.HTTPNoContent),
     ],
 )
 async def test_start_pipeline(
-    sleeper_service,
+    sleeper_service: Dict[str, str],
+    rabbit_service: str,
+    postgres_session: sa.orm.session.Session,
+    redis_service: URL,
+    simcore_services: Dict[str, URL],
     client,
-    postgres_session,
-    rabbit_service,
-    simcore_services,
-    logged_user,
-    user_project,
-    mock_workbench_adjacency_list,
-    expected_response,
+    logged_user: LoggedUser,
+    user_project: NewProject,
+    mock_workbench_adjacency_list: Dict,
+    expected_start_response: web.Response,
+    expected_stop_response: web.Response,
 ):
     project_id = user_project["uuid"]
     mock_workbench_payload = user_project["workbench"]
 
-    url = client.app.router["start_pipeline"].url_for(project_id=project_id)
-    assert url == URL(API_PREFIX + "/computation/pipeline/{}/start".format(project_id))
+    url_start = client.app.router["start_pipeline"].url_for(project_id=project_id)
+    assert url_start == URL(
+        API_PREFIX + "/computation/pipeline/{}:start".format(project_id)
+    )
 
-    # POST /v0/computation/pipeline/{project_id}/start
-    resp = await client.post(url)
-    data, error = await assert_status(resp, expected_response)
+    # POST /v0/computation/pipeline/{project_id}:start
+    resp = await client.post(url_start)
+    data, error = await assert_status(resp, expected_start_response)
 
     if not error:
+        # starting again should be disallowed
+        resp = await client.post(url_start)
+        await assert_status(resp, web.HTTPForbidden)
+
         assert "pipeline_name" in data
         assert "project_id" in data
         assert data["project_id"] == project_id
 
-        assert_db_contents(
+        _assert_db_contents(
             project_id,
             postgres_session,
             mock_workbench_payload,
             mock_workbench_adjacency_list,
             check_outputs=False,
         )
-        # assert_sleeper_services_completed(project_id, postgres_session)
+        _assert_sleeper_services_completed(
+            project_id, postgres_session, StateType.SUCCESS
+        )
+
+        # starting now should be ok
+        resp = await client.post(url_start)
+        data, error = await assert_status(resp, expected_start_response)
+        assert not error
+    # stop the pipeline
+    url_stop = client.app.router["stop_pipeline"].url_for(project_id=project_id)
+    assert url_stop == URL(
+        API_PREFIX + "/computation/pipeline/{}:stop".format(project_id)
+    )
+    resp = await client.post(url_stop)
+    data, error = await assert_status(resp, expected_stop_response)
+    if not error:
+        _assert_sleeper_services_completed(
+            project_id, postgres_session, StateType.ABORTED
+        )

@@ -1,7 +1,9 @@
+import asyncio
+import json
+
 # pylint:disable=unused-variable
 # pylint:disable=unused-argument
 # pylint:disable=redefined-outer-name
-
 import logging
 import os
 import socket
@@ -10,7 +12,8 @@ from typing import Any, Dict, Optional, Tuple
 import aio_pika
 import pytest
 import tenacity
-from simcore_sdk.config.rabbit import Config
+
+from models_library.rabbit import RabbitConfig
 
 from .helpers.utils_docker import get_service_published_port
 
@@ -18,9 +21,16 @@ log = logging.getLogger(__name__)
 
 
 @pytest.fixture(scope="module")
-def rabbit_config(docker_stack: Dict, devel_environ: Dict) -> Config:
+def loop(request) -> asyncio.AbstractEventLoop:
+    loop = asyncio.get_event_loop_policy().new_event_loop()
+    yield loop
+    loop.close()
+
+
+@pytest.fixture(scope="module")
+def rabbit_config(docker_stack: Dict, devel_environ: Dict) -> RabbitConfig:
     assert "simcore_rabbit" in docker_stack["services"]
-    rabbit_config = Config(
+    rabbit_config = RabbitConfig(
         user=devel_environ["RABBIT_USER"],
         password=devel_environ["RABBIT_PASSWORD"],
         host="127.0.0.1",
@@ -28,23 +38,24 @@ def rabbit_config(docker_stack: Dict, devel_environ: Dict) -> Config:
         channels={
             "log": "logs_channel",
             "instrumentation": "instrumentation_channel",
-            "celery": {"result_backend": ""},
         },
     )
 
-    # sidecar takes its configuration from env variables
+    # env variables
     os.environ["RABBIT_HOST"] = "127.0.0.1"
     os.environ["RABBIT_PORT"] = str(rabbit_config.port)
     os.environ["RABBIT_USER"] = devel_environ["RABBIT_USER"]
     os.environ["RABBIT_PASSWORD"] = devel_environ["RABBIT_PASSWORD"]
-    os.environ["RABBIT_CHANNELS"] = devel_environ["RABBIT_CHANNELS"]
+    os.environ["RABBIT_CHANNELS"] = json.dumps(rabbit_config.channels)
 
     yield rabbit_config
 
 
 @pytest.fixture(scope="function")
-async def rabbit_service(rabbit_config: Config, docker_stack: Dict) -> str:
-    url = rabbit_config.broker_url
+async def rabbit_service(
+    loop: asyncio.AbstractEventLoop, rabbit_config: RabbitConfig, docker_stack: Dict
+) -> str:
+    url = rabbit_config.dsn
     await wait_till_rabbit_responsive(url)
     yield url
 
@@ -82,7 +93,7 @@ async def rabbit_channel(
             print("sender was %s", sender)
 
     # create channel
-    channel = await rabbit_connection.channel()
+    channel = await rabbit_connection.channel(publisher_confirms=False)
     assert channel
     channel.add_close_callback(channel_close_callback)
     yield channel
@@ -92,7 +103,7 @@ async def rabbit_channel(
 
 @pytest.fixture(scope="function")
 async def rabbit_exchange(
-    rabbit_config: Config,
+    rabbit_config: RabbitConfig,
     rabbit_channel: aio_pika.Channel,
 ) -> Tuple[aio_pika.Exchange, aio_pika.Exchange]:
 
