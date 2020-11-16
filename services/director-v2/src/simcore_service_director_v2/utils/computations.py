@@ -14,8 +14,8 @@ log = logging.getLogger(__file__)
 def get_pipeline_state_from_task_states(
     tasks: List[CompTaskAtDB], publication_timeout: int
 ) -> RunningState:
+    """ Determines the state of the pipeline by checking the state of every task """
 
-    # compute pipeline state from task states
     now = datetime.utcnow()
     if tasks:
         # put in a set of unique values
