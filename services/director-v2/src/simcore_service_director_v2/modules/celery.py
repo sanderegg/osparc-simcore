@@ -1,13 +1,13 @@
 import logging
 from dataclasses import dataclass
-from typing import List
+from typing import List, Optional
 
 from celery import Celery, Task
 from celery.contrib.abortable import AbortableAsyncResult
 from fastapi import FastAPI
 from models_library.projects import ProjectID
 from models_library.settings.celery import CeleryConfig
-
+from models_library.projects_nodes_io import NodeID
 from ..models.schemas.constants import UserID
 from ..utils.client_decorators import handle_retry
 
@@ -55,11 +55,11 @@ class CeleryClient:
         # TODO: check what can happen when exceptions are thrown (see [https://docs.celeryproject.org/en/2.4-archived/reference/celery.exceptions.html?highlight=exceptions#module-celery.exceptions])
         return self.client.send_task(task_name, *args, **kwargs)
 
-    def send_computation_task(self, user_id: UserID, project_id: ProjectID) -> Task:
+    def send_computation_task(self, user_id: UserID, project_id: ProjectID, node_id: Optional[NodeID] = None) -> Task:
         return self.send_task(
             self.settings.task_name,
             expires=self.settings.publication_timeout,
-            kwargs={"user_id": user_id, "project_id": str(project_id)},
+            kwargs={"user_id": user_id, "project_id": str(project_id), "node_id": str(node_id)},
         )
 
     @classmethod

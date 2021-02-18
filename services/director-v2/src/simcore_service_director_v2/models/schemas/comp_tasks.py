@@ -16,6 +16,10 @@ class ComputationTaskOut(ComputationTask):
         None, description="the link where to stop the task"
     )
 
+class ComputationSingleTaskCreate(BaseModel):
+    user_id: UserID
+    project_id: ProjectID
+    node_id: NodeID
 
 class ComputationTaskCreate(BaseModel):
     user_id: UserID

@@ -1,5 +1,7 @@
 import logging
 from typing import Any, List
+from models_library.projects_nodes import NodeState
+from models_library.projects_pipeline import PipelineDetails
 
 import networkx as nx
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
@@ -19,6 +21,7 @@ from tenacity import (
 from ...models.domains.comp_tasks import CompTaskAtDB
 from ...models.schemas.comp_tasks import (
     ComputationTaskCreate,
+    ComputationSingleTaskCreate,
     ComputationTaskDelete,
     ComputationTaskOut,
     ComputationTaskStop,
@@ -73,6 +76,44 @@ async def _abort_pipeline_tasks(
         "Computational task stopped for project %s",
         project.uuid,
     )
+
+
+@router.post(
+    "task",
+    summary="Create and optionally start a new computation task",
+    response_model=ComputationTaskOut,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_computation_task(
+    job: ComputationSingleTaskCreate,
+    background_tasks: BackgroundTasks,
+    request: Request,
+    project_repo: ProjectsRepository = Depends(get_repository(ProjectsRepository)),
+    computation_pipelines: CompPipelinesRepository = Depends(
+        get_repository(CompPipelinesRepository)
+    ),
+    computation_tasks: CompTasksRepository = Depends(
+        get_repository(CompTasksRepository)
+    ),
+    celery_client: CeleryClient = Depends(get_celery_client),
+) -> ComputationTaskOut:
+    # trigger celery
+    task = celery_client.send_computation_task(job.user_id, job.project_id, job.node_id)
+    background_tasks.add_task(background_on_message, task)
+    log.debug(
+        "Started computational task %s for user %s based on project %s",
+        task.id,
+        job.user_id,
+        job.project_id,
+    )
+
+    return ComputationTaskOut(
+            id=task.id,
+            state=RunningState.PUBLISHED,
+            pipeline_details=PipelineDetails(adjacency_list={str(job.node_id):[]}, node_states={str(job.node_id):NodeState(modified=False)}),
+            url=f"{request.url}/{task.id}",
+            stop_url=f"{request.url}/{task.id}:stop"
+        )
 
 
 @router.post(
