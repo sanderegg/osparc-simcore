@@ -59,7 +59,7 @@ qx.Class.define("osparc.desktop.StudyEditor", {
   },
 
   events: {
-    "studyIsLocked": "qx.event.type.Event",
+    "forceBackToDashboard": "qx.event.type.Event",
     "startStudy": "qx.event.type.Data"
   },
 
@@ -154,7 +154,7 @@ qx.Class.define("osparc.desktop.StudyEditor", {
           if ("status" in err && err["status"] == 423) { // Locked
             const msg = study.getName() + this.tr(" is already opened");
             osparc.component.message.FlashMessenger.getInstance().logAs(msg, "ERROR");
-            this.fireEvent("studyIsLocked");
+            this.fireEvent("forceBackToDashboard");
           } else {
             console.error(err);
           }
@@ -401,6 +401,11 @@ qx.Class.define("osparc.desktop.StudyEditor", {
         })
         .catch(error => {
           console.error(error);
+          if ("status" in error && [403, 409].includes(error["status"])) { // Forbidden or Conflict
+            osparc.component.message.FlashMessenger.getInstance().logAs(error.message, "ERROR");
+            this.fireEvent("forceBackToDashboard");
+            throw error;
+          }
           osparc.component.message.FlashMessenger.getInstance().logAs(this.tr("Error saving the study"), "ERROR");
           this.__getStudyLogger().error(null, "Error updating pipeline");
           // Need to throw the error to be able to handle it later
