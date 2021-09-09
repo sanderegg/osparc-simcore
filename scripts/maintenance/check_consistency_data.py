@@ -2,8 +2,6 @@
 
 """Script to check consistency of the file storage backend in oSparc.
 
-
-
     1. From an osparc database, go over all projects, get the project IDs and Node IDs
     2. From the same database, now get all the files listed like projectID/nodeID from 1.
     3. We get a list of files that are needed for the current projects
@@ -18,7 +16,7 @@ import subprocess
 from collections import defaultdict
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any, Dict, List, Set
+from typing import Any, Dict, List, Set, Tuple
 
 import aiopg
 import typer
@@ -101,19 +99,20 @@ async def _get_projects_nodes(pool) -> Dict[str, Any]:
 
 async def _get_files_from_project_nodes(
     pool, project_uuid: str, node_ids: List[str]
-) -> Set[str]:
+) -> Set[Tuple[str, int, str]]:
     async with pool.acquire() as conn:
         async with conn.cursor() as cursor:
             array = str([f"{project_uuid}/{n}%" for n in node_ids])
             await cursor.execute(
-                "SELECT file_uuid"
+                "SELECT file_uuid, file_size, last_modified"
                 ' FROM "file_meta_data"'
                 f" WHERE file_meta_data.file_uuid LIKE any (array{array}) AND location_id = '0'"
             )
 
             # here we got all the files for that project uuid/node_ids combination
-            file_rows = await cursor.fetchall()
-            return {file[0] for file in file_rows}
+            # NOTE: using project_id, node_id columns instead is more reliable
+            file_rows: List[Tuple[str, int, str]] = await cursor.fetchall()
+            return set(file_rows)
 
 
 async def _get_files_from_s3_backend(
@@ -183,9 +182,16 @@ async def main_async(
                     for project_uuid, prj_data in project_nodes.items()
                 ]
             )
-    db_file_entries = set().union(*all_sets_of_file_entries)
-    db_file_entries_path = Path.cwd() / "project_file_entries.txt"
-    db_file_entries_path.write_text("\n".join(db_file_entries))
+
+    db_file_entries_extended: Set[Tuple[str, int, str]] = set().union(
+        *all_sets_of_file_entries
+    )
+    db_file_entries_path = Path.cwd() / "project_file_entries.csv"
+    with db_file_entries_path.open("wt") as fh:
+        fh.write("file_uuid, size, last_modified\n")
+        fh.write("\n".join(", ".join(map(str, e)) for e in db_file_entries_extended))
+
+    db_file_entries: Set[str] = {e[0] for e in db_file_entries_extended}
     typer.secho(
         f"processed {len(project_nodes)} projects, found {len(db_file_entries)} file entries, saved in {db_file_entries_path}",
         fg=typer.colors.YELLOW,
@@ -196,6 +202,9 @@ async def main_async(
     typer.echo(
         f"now connecting with S3 backend and getting files for {len(project_nodes)} projects..."
     )
+    # pull first: prevents _get_files_from_s3_backend from pulling it and poluting outputs
+    subprocess.run("docker pull minio/mc", shell=True, check=True)
+
     with typer.progressbar(length=len(project_nodes)) as progress:
         all_sets_in_s3 = await asyncio.gather(
             *[
@@ -214,7 +223,7 @@ async def main_async(
 
     common_files = db_file_entries.intersection(s3_file_entries)
     s3_missing_files = db_file_entries.difference(s3_file_entries)
-    s3_missing_files_path = Path.cwd() / "s3_missing_files.txt"
+    s3_missing_files_path = Path.cwd() / "s3_missing_files.csv"
 
     def order_by_owner(list_of_files):
         files_by_owner = defaultdict(list)
@@ -227,16 +236,21 @@ async def main_async(
             ].append(file)
         return files_by_owner
 
+    db_file_map: Dict[str, Tuple[int, str]] = {
+        e[0]: e[1:] for e in db_file_entries_extended
+    }
+
     def write_to_file(path, files_by_owner):
         with path.open("wt") as fp:
             for (owner, name, email), files in files_by_owner.items():
                 for file in files:
-                    fp.write(f"{owner},{name},{email},{file}\n")
+                    size, modified = db_file_map.get(file, ("?", "?"))
+                    fp.write(f"{owner}, {name}, {email}, {file}, {size}, {modified}\n")
 
     write_to_file(s3_missing_files_path, order_by_owner(s3_missing_files))
 
     db_missing_files = s3_file_entries.difference(db_file_entries)
-    db_missing_files_path = Path.cwd() / "db_missing_files.txt"
+    db_missing_files_path = Path.cwd() / "db_missing_files.csv"
     write_to_file(db_missing_files_path, order_by_owner(db_missing_files))
 
     typer.secho(
