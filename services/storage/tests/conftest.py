@@ -6,6 +6,7 @@
 # pylint: disable=unused-variable
 
 
+import asyncio
 import datetime
 import os
 import sys
@@ -19,12 +20,15 @@ import dotenv
 import pytest
 import simcore_service_storage
 from aiohttp import web
+from aiohttp.test_utils import TestClient
 from aiopg.sa import Engine
 from servicelib.aiohttp.application import create_safe_application
+from simcore_service_storage.application import create
 from simcore_service_storage.constants import SIMCORE_S3_STR
 from simcore_service_storage.dsm import DataStorageManager, DatCoreApiToken
 from simcore_service_storage.models import FileMetaData, file_meta_data, projects, users
 from simcore_service_storage.s3wrapper.s3_client import MinioClientWrapper
+from simcore_service_storage.settings import Settings
 from tests.utils import BUCKET_NAME, DATA_DIR, USER_ID
 
 import tests
@@ -361,3 +365,25 @@ async def datcore_structured_testbucket(
     # }
 
     # await dcw.delete_test_dataset(BUCKET_NAME)
+
+
+@pytest.fixture
+def app_settings(
+    aiopg_engine, postgres_host_config: dict[str, str], minio_config
+) -> Settings:
+    test_app_settings = Settings.create_from_envs()
+    print(f"{test_app_settings.json(indent=2)=}")
+    return test_app_settings
+
+
+@pytest.fixture
+def client(
+    event_loop: asyncio.AbstractEventLoop,
+    aiohttp_client: Callable,
+    unused_tcp_port_factory: Callable[..., int],
+    app_settings: Settings,
+) -> TestClient:
+    app = create(app_settings)
+    return event_loop.run_until_complete(
+        aiohttp_client(app, server_kwargs={"port": unused_tcp_port_factory()})
+    )

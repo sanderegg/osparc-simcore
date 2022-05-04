@@ -334,13 +334,41 @@ async def download_file(request: web.Request):
         return {"error": None, "data": {"link": link}}
 
 
+@routes.post(f"/{api_vtag}/locations/{{location_id}}/files/{{fileId}}")  # type: ignore
+async def create_upload_file_link(request: web.Request):
+    params, query, body = await extract_and_validate(request)
+    log.debug(
+        "received call to upload_file_link with %s", f"{params=}, {query=}, {body=}"
+    )
+    assert params, f"{params=}"  # nosec
+    assert query, f"{query=}"  # nosec
+    assert body, f"{body=}"  # nosec
+    link_type = query.get("link_type", "presigned")
+    with handle_storage_errors():
+        location_id = params["location_id"]
+        user_id = query["user_id"]
+        file_uuid = params["fileId"]
+
+        dsm = await _prepare_storage_manager(params, query, request)
+        link = await dsm.upload_link(
+            user_id=user_id,
+            file_uuid=file_uuid,
+            as_presigned_link=bool(link_type == "presigned"),
+        )
+
+    return {"error": None, "data": {"link": link}}
+
+
 @routes.put(f"/{api_vtag}/locations/{{location_id}}/files/{{fileId}}")  # type: ignore
 async def upload_file(request: web.Request):
     params, query, body = await extract_and_validate(request)
     log.debug("received call to upload_file with %s", f"{params=}, {query=}, {body=}")
-    assert params, "params %s" % params  # nosec
-    assert query, "query %s" % query  # nosec
-    assert not body, "body %s" % body  # nosec
+    assert params, f"{params}"  # nosec
+    assert "fileId" in params  # nosec
+    params["fileId"] = urllib.parse.unquote(params["fileId"])
+
+    assert query, f"{query}"  # nosec
+    assert not body, f"{body}"  # nosec
     link_type = query.get("link_type", "presigned")
 
     with handle_storage_errors():
