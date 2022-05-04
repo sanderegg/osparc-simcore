@@ -312,7 +312,7 @@ paths:
         default:
           $ref: "#/components/responses/DefaultErrorResponse"
     put:
-      summary: Returns upload link or performs copy operation to datcore
+      summary: Returns upload link
       operationId: upload_file
       parameters:
         - name: fileId
