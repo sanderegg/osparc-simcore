@@ -312,7 +312,7 @@ paths:
         default:
           $ref: "#/components/responses/DefaultErrorResponse"
     put:
-      summary: Returns upload object
+      summary: Returns upload link
       operationId: upload_file
       parameters:
         - name: file_id
