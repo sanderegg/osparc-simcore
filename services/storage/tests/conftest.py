@@ -22,6 +22,7 @@ import simcore_service_storage
 from aiohttp import web
 from aiohttp.test_utils import TestClient
 from aiopg.sa import Engine
+from aiopg.sa.engine import Engine
 from servicelib.aiohttp.application import create_safe_application
 from simcore_service_storage.application import create
 from simcore_service_storage.constants import SIMCORE_S3_STR
@@ -369,7 +370,9 @@ async def datcore_structured_testbucket(
 
 @pytest.fixture
 def app_settings(
-    aiopg_engine, postgres_host_config: dict[str, str], minio_config
+    aiopg_engine: Engine,
+    postgres_host_config: dict[str, str],
+    minio_config: dict[str, str],
 ) -> Settings:
     test_app_settings = Settings.create_from_envs()
     print(f"{test_app_settings.json(indent=2)=}")
