@@ -11,11 +11,17 @@ from aiohttp.test_utils import TestClient
 from faker import Faker
 from models_library.projects import ProjectID
 from models_library.projects_nodes import NodeID
+from models_library.users import UserID
 from pydantic import HttpUrl, parse_obj_as
 from pytest_simcore.helpers.utils_assert import assert_status
 
 pytest_simcore_core_services_selection = ["postgres"]
 pytest_simcore_ops_services_selection = ["minio", "adminer"]
+
+
+@pytest.fixture
+def user_id(faker: Faker) -> UserID:
+    return faker.pyint(min_value=1)
 
 
 @pytest.fixture
@@ -33,8 +39,18 @@ def location_id() -> int:
     return 0
 
 
-async def test_create_upload_file_default_returns_presigned_link(
-    client: TestClient, location_id: int, file_uuid: str
+@pytest.mark.parametrize(
+    "url_query, expected_link_scheme",
+    [({}, "http"), ({"link_type": "presigned"}, "http"), ({"link_type": "s3"}, "s3")],
+)
+async def test_create_upload_file_default_returns_single_presigned_link(
+    client: TestClient,
+    user_id: UserID,
+    location_id: int,
+    file_uuid: str,
+    url_query: dict[str, str],
+    expected_link_scheme: str,
+    cleanup_user_projects_file_metadata,
 ):
     assert client.app
     url = (
@@ -42,7 +58,7 @@ async def test_create_upload_file_default_returns_presigned_link(
         .url_for(
             location_id=f"{location_id}", fileId=urllib.parse.quote(file_uuid, safe="")
         )
-        .with_query(user_id=1)
+        .with_query(**url_query, user_id=user_id)
     )
     response = await client.put(f"{url}")
     data, error = await assert_status(response, web.HTTPOk)
