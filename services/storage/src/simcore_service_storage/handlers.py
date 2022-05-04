@@ -383,7 +383,7 @@ async def upload_file(request: web.Request):
             as_presigned_link=bool(link_type == "presigned"),
         )
 
-    return {"error": None, "data": {"link": link}}
+    return {"error": None, "data": {"links": [link]}}
 
 
 @routes.delete(f"/{api_vtag}/locations/{{location_id}}/files/{{file_id}}")  # type: ignore
