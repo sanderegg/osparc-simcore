@@ -94,13 +94,13 @@ async def test_create_upload_file_default_returns_single_link(
     data, error = await assert_status(response, web.HTTPOk)
     assert not error
     assert data
-    assert "links" in data
+    assert "urls" in data
     assert "chunk_size" in data
-    assert isinstance(data["links"], list)
+    assert isinstance(data["urls"], list)
     assert isinstance(data["chunk_size"], int)
     # check links, there should be only 1
-    assert len(data["links"]) == 1
-    link = parse_obj_as(AnyUrl, data["links"][0])
+    assert len(data["urls"]) == 1
+    link = parse_obj_as(AnyUrl, data["urls"][0])
     assert link.scheme == expected_link_scheme
     assert link.path
     assert link.path.endswith(f"{file_uuid}")
@@ -155,8 +155,8 @@ async def test_create_upload_file_with_file_size_can_return_multipart_links(
     data, error = await assert_status(response, expected_response)
     assert not error
     assert data
-    assert "links" in data
-    assert isinstance(data["links"], list)
-    assert len(data["links"]) == expected_num_links
+    assert "urls" in data
+    assert isinstance(data["urls"], list)
+    assert len(data["urls"]) == expected_num_links
     assert "chunk_size" in data
     assert isinstance(data["chunk_size"], int)

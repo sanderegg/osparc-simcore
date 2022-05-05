@@ -11,7 +11,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Union
 from uuid import UUID
 
-from pydantic import BaseModel, Field, constr
+from pydantic import BaseModel, ByteSize, Field, constr
 from pydantic.networks import AnyUrl
 
 from .basic_regex import UUID_RE
@@ -194,6 +194,11 @@ class FileMetaDataArray(BaseModel):
 
 class PresignedLink(BaseModel):
     link: AnyUrl
+
+
+class PresignedLinksArray(BaseModel):
+    urls: list[AnyUrl]
+    chunk_size: ByteSize
 
 
 # /simcore-s3/

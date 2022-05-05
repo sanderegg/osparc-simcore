@@ -8,7 +8,11 @@ from typing import Any, Awaitable, Callable
 import aiohttp
 import pytest
 from aioresponses import aioresponses as AioResponsesMock
-from models_library.api_schemas_storage import FileLocationArray, FileMetaData
+from models_library.api_schemas_storage import (
+    FileLocationArray,
+    FileMetaData,
+    PresignedLinksArray,
+)
 from models_library.users import UserID
 from pydantic.networks import AnyUrl
 from simcore_sdk.node_ports_common import config as node_config
@@ -18,7 +22,7 @@ from simcore_sdk.node_ports_common.storage_client import (
     get_download_file_link,
     get_file_metadata,
     get_storage_locations,
-    get_upload_file_link,
+    get_upload_file_links,
 )
 
 
@@ -79,7 +83,7 @@ async def test_get_download_file_link(
     "link_type, expected_scheme",
     [(LinkType.PRESIGNED, ("http", "https")), (LinkType.S3, ("s3", "s3a"))],
 )
-async def test_get_upload_file_link(
+async def test_get_upload_file_links(
     mock_environment: None,
     storage_v0_service_mock: AioResponsesMock,
     user_id: UserID,
@@ -89,11 +93,12 @@ async def test_get_upload_file_link(
     expected_scheme: tuple[str],
 ):
     async with aiohttp.ClientSession() as session:
-        link = await get_upload_file_link(
+        links = await get_upload_file_links(
             session, file_id, location_id, user_id, link_type
         )
-    assert isinstance(link, AnyUrl)
-    assert link.scheme in expected_scheme
+    assert isinstance(links, PresignedLinksArray)
+    assert len(links.urls) == 1
+    assert links.urls[0].scheme in expected_scheme
 
 
 async def test_get_file_metada(
@@ -116,7 +121,7 @@ async def test_get_file_metada(
     [
         (get_file_metadata, {}),
         (get_download_file_link, {"link_type": LinkType.PRESIGNED}),
-        (get_upload_file_link, {"link_type": LinkType.PRESIGNED}),
+        (get_upload_file_links, {"link_type": LinkType.PRESIGNED}),
     ],
 )
 async def test_invalid_calls(
