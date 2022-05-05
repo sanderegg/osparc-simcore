@@ -9,6 +9,7 @@ import attr
 from aiohttp import web
 from aiohttp.web import RouteTableDef
 from models_library.users import UserID
+from pydantic import ByteSize, parse_obj_as
 from servicelib.aiohttp.application_keys import APP_CONFIG_KEY
 from servicelib.aiohttp.rest_utils import extract_and_validate
 from settings_library.s3 import S3Settings
@@ -370,7 +371,9 @@ async def upload_file(request: web.Request):
     assert query, f"{query}"  # nosec
     assert not body, f"{body}"  # nosec
     link_type = query.get("link_type", "presigned")
-
+    chunk_size = int(parse_obj_as(ByteSize, "5GiB").to("b"))
+    if link_type == "s3":
+        chunk_size = int(parse_obj_as(ByteSize, "5TiB").to("b"))
     with handle_storage_errors():
         user_id = query["user_id"]
         file_uuid = params["file_id"]
@@ -383,7 +386,7 @@ async def upload_file(request: web.Request):
             as_presigned_link=bool(link_type == "presigned"),
         )
 
-    return {"error": None, "data": {"links": [link]}}
+    return {"error": None, "data": {"links": [link], "chunk_size": chunk_size}}
 
 
 @routes.delete(f"/{api_vtag}/locations/{{location_id}}/files/{{file_id}}")  # type: ignore

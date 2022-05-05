@@ -52,21 +52,21 @@ _HTTP_PRESIGNED_LINK_QUERY_KEYS = [
             {},
             "http",
             _HTTP_PRESIGNED_LINK_QUERY_KEYS,
-            parse_obj_as(ByteSize, "5GiB").to("byte"),
+            int(parse_obj_as(ByteSize, "5GiB").to("b")),
             id="default_returns_single_presigned",
         ),
         pytest.param(
             {"link_type": "presigned"},
             "http",
             _HTTP_PRESIGNED_LINK_QUERY_KEYS,
-            parse_obj_as(ByteSize, "5GiB").to("byte"),
+            int(parse_obj_as(ByteSize, "5GiB").to("b")),
             id="presigned_returns_single_presigned",
         ),
         pytest.param(
             {"link_type": "s3"},
             "s3",
             [],
-            parse_obj_as(ByteSize, "5TiB").to("byte"),
+            int(parse_obj_as(ByteSize, "5TiB").to("b")),
             id="s3_returns_single_s3_link",
         ),
     ],
@@ -80,7 +80,7 @@ async def test_create_upload_file_default_returns_single_link(
     expected_link_scheme: str,
     cleanup_user_projects_file_metadata,
     expected_link_query_keys: list[str],
-    expected_chunk_size: float,
+    expected_chunk_size: int,
 ):
     assert client.app
     url = (
@@ -120,7 +120,15 @@ async def test_create_upload_file_default_returns_single_link(
 
 @pytest.mark.parametrize(
     "link_type, file_size, expected_response, expected_num_links,expected_chunk_size",
-    [("presigned", 1024, web.HTTPOk, 1)],
+    [
+        (
+            "presigned",
+            int(parse_obj_as(ByteSize, "1MiB").to("b")),
+            web.HTTPOk,
+            1,
+            int(parse_obj_as(ByteSize, "1MiB").to("b")),
+        )
+    ],
 )
 async def test_create_upload_file_with_file_size_can_return_multipart_links(
     client: TestClient,
@@ -132,6 +140,7 @@ async def test_create_upload_file_with_file_size_can_return_multipart_links(
     file_size: int,
     expected_response: Type[web.HTTPException],
     expected_num_links: int,
+    expected_chunk_size: int,
 ):
     assert client.app
     url = (
