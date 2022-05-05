@@ -590,6 +590,7 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
                 object_name=object_name,
             )
         )
+
         if link_type == LinkType.PRESIGNED:
             return PresignedLinksArray(
                 urls=[
@@ -607,9 +608,7 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
                 urls=[
                     parse_obj_as(
                         AnyUrl,
-                        self.s3_client.create_presigned_put_url(
-                            bucket_name, object_name
-                        ),
+                        f"s3://{bucket_name}/{urllib.parse.quote( object_name)}",
                     )
                 ],
                 chunk_size=_MAX_LINK_CHUNK_BYTE_SIZE[link_type],
