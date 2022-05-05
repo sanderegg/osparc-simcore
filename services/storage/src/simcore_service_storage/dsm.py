@@ -567,7 +567,7 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
 
         NOTE: updates metadata once the upload is concluded"""
         await self._generate_metadata_for_link(user_id=user_id, file_uuid=file_uuid)
-
+        logger.debug("%s", file_size_bytes)
         bucket_name = self.simcore_bucket_name
         object_name = file_uuid
 
@@ -680,9 +680,13 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
         if filename_missing:
             dest_uuid = str(Path(dest_uuid) / filename)
 
-        s3_upload_link = await self.create_upload_links(
-            user_id, dest_uuid, as_presigned_link=True
+        s3_upload_links = await self.create_upload_links(
+            user_id, dest_uuid, link_type=LinkType.PRESIGNED, file_size_bytes=None
         )
+        assert s3_upload_links
+        assert s3_upload_links.urls
+        assert len(s3_upload_links.urls) == 1
+        s3_upload_link = s3_upload_links.urls[0]
 
         with tempfile.TemporaryDirectory() as tmpdir:
             # FIXME: connect download and upload streams
