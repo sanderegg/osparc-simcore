@@ -11,7 +11,6 @@ import datetime
 import os
 import sys
 import uuid
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from random import randrange
 from typing import Any, Callable, Iterable, Iterator
@@ -19,10 +18,8 @@ from typing import Any, Callable, Iterable, Iterator
 import dotenv
 import pytest
 import simcore_service_storage
-from aiohttp import web
 from aiohttp.test_utils import TestClient
 from aiopg.sa import Engine
-from servicelib.aiohttp.application import create_safe_application
 from simcore_service_storage.application import create
 from simcore_service_storage.constants import SIMCORE_S3_STR
 from simcore_service_storage.dsm import DataStorageManager, DatCoreApiToken
@@ -274,41 +271,26 @@ def dsm_mockup_db(
 
 
 @pytest.fixture(scope="function")
-def moduleless_app(event_loop, aiohttp_server) -> web.Application:
-    app: web.Application = create_safe_application()
-    # creates a dummy server
-    server = event_loop.run_until_complete(aiohttp_server(app))
-    # server is destroyed on exit https://docs.aiohttp.org/en/stable/testing.html#pytest_aiohttp.aiohttp_server
-    return app
+def dsm_fixture(aiopg_engine, client) -> Iterable[DataStorageManager]:
 
+    # FIXME: this should be changed by setting STORAGE_TESTING to True
+    dsm_fixture = DataStorageManager(
+        engine=aiopg_engine,
+        simcore_bucket_name=BUCKET_NAME,
+        has_project_db=False,
+        app=client.app,
+    )
 
-@pytest.fixture(scope="function")
-def dsm_fixture(
-    s3_client, aiopg_engine, event_loop, moduleless_app
-) -> Iterable[DataStorageManager]:
+    api_token = os.environ.get("BF_API_KEY", "none")
+    api_secret = os.environ.get("BF_API_SECRET", "none")
+    dsm_fixture.datcore_tokens[USER_ID] = DatCoreApiToken(api_token, api_secret)
 
-    with ThreadPoolExecutor(3) as pool:
-        dsm_fixture = DataStorageManager(
-            s3_client=s3_client,
-            engine=aiopg_engine,
-            loop=event_loop,
-            pool=pool,
-            simcore_bucket_name=BUCKET_NAME,
-            has_project_db=False,
-            app=moduleless_app,
-        )
-
-        api_token = os.environ.get("BF_API_KEY", "none")
-        api_secret = os.environ.get("BF_API_SECRET", "none")
-        dsm_fixture.datcore_tokens[USER_ID] = DatCoreApiToken(api_token, api_secret)
-
-        yield dsm_fixture
+    yield dsm_fixture
 
 
 @pytest.fixture(scope="function")
 async def datcore_structured_testbucket(
-    mock_files_factory: Callable[[int], list[Path]],
-    moduleless_app,
+    mock_files_factory: Callable[[int], list[Path]], client
 ):
     api_token = os.environ.get("BF_API_KEY")
     api_secret = os.environ.get("BF_API_SECRET")
@@ -324,7 +306,7 @@ async def datcore_structured_testbucket(
     # this shall be used when the time comes and this code should be enabled again
 
     # dataset: DatasetMetaData = await datcore_adapter.create_dataset(
-    #     moduleless_app, api_token, api_secret, BUCKET_NAME
+    #     client.app, api_token, api_secret, BUCKET_NAME
     # )
     # dataset_id = dataset.dataset_id
     # assert dataset_id, f"Could not create dataset {BUCKET_NAME}"
@@ -333,7 +315,7 @@ async def datcore_structured_testbucket(
 
     # # first file to the root
     # filename1 = os.path.normpath(tmp_files[0])
-    # await datcore_adapter.upload_file(moduleless_app, api_token, api_secret, filename1)
+    # await datcore_adapter.upload_file(client.app, api_token, api_secret, filename1)
     # file_id1 = await dcw.upload_file_to_id(dataset_id, filename1)
     # assert file_id1, f"Could not upload {filename1} to the root of {BUCKET_NAME}"
 
