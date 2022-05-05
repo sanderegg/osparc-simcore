@@ -12,6 +12,7 @@ import urllib.parse
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
+from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, Final, List, Optional, Tuple, Union
 
@@ -24,7 +25,8 @@ from aiobotocore.session import AioSession, ClientCreatorContext, get_session
 from aiohttp import web
 from aiopg.sa import Engine
 from aiopg.sa.result import ResultProxy, RowProxy
-from pydantic import AnyUrl, parse_obj_as
+from models_library.api_schemas_storage import PresignedLinksArray
+from pydantic import AnyUrl, ByteSize, parse_obj_as
 from servicelib.aiohttp.aiopg_utils import DBAPIError, PostgresRetryPolicyUponOperation
 from servicelib.aiohttp.client_session import get_client_session
 from servicelib.utils import fire_and_forget_task
@@ -74,6 +76,17 @@ _HOUR: Final[int] = 60 * _MINUTE
 logger = logging.getLogger(__name__)
 
 postgres_service_retry_policy_kwargs = PostgresRetryPolicyUponOperation(logger).kwargs
+
+
+class LinkType(str, Enum):
+    PRESIGNED = "PRESIGNED"
+    S3 = "S3"
+
+
+_MAX_LINK_CHUNK_BYTE_SIZE: Final[dict[LinkType, ByteSize]] = {
+    LinkType.PRESIGNED: parse_obj_as(ByteSize, "5GiB"),
+    LinkType.S3: parse_obj_as(ByteSize, "5TiB"),
+}
 
 
 def setup_dsm(app: web.Application):
@@ -550,9 +563,13 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
 
         await _init_metadata()
 
-    async def upload_link(
-        self, user_id: str, file_uuid: str, as_presigned_link: bool
-    ) -> AnyUrl:
+    async def create_upload_links(
+        self,
+        user_id: str,
+        file_uuid: str,
+        link_type: LinkType,
+        file_size_bytes: ByteSize,
+    ) -> PresignedLinksArray:
         """returns: a presigned upload link
 
         NOTE: updates metadata once the upload is concluded"""
@@ -570,10 +587,30 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
                 object_name=object_name,
             )
         )
-        link = f"s3://{bucket_name}/{urllib.parse.quote( object_name)}"
-        if as_presigned_link:
-            link = self.s3_client.create_presigned_put_url(bucket_name, object_name)
-        return parse_obj_as(AnyUrl, f"{link}")
+        if link_type == LinkType.PRESIGNED:
+            return PresignedLinksArray(
+                urls=[
+                    parse_obj_as(
+                        AnyUrl,
+                        self.s3_client.create_presigned_put_url(
+                            bucket_name, object_name
+                        ),
+                    )
+                ],
+                chunk_size=_MAX_LINK_CHUNK_BYTE_SIZE[link_type],
+            )
+        if link_type == LinkType.S3:
+            return PresignedLinksArray(
+                urls=[
+                    parse_obj_as(
+                        AnyUrl,
+                        self.s3_client.create_presigned_put_url(
+                            bucket_name, object_name
+                        ),
+                    )
+                ],
+                chunk_size=_MAX_LINK_CHUNK_BYTE_SIZE[link_type],
+            )
 
     async def download_link_s3(
         self, file_uuid: str, user_id: int, as_presigned_link: bool
@@ -640,7 +677,7 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
         if filename_missing:
             dest_uuid = str(Path(dest_uuid) / filename)
 
-        s3_upload_link = await self.upload_link(
+        s3_upload_link = await self.create_upload_links(
             user_id, dest_uuid, as_presigned_link=True
         )
 
