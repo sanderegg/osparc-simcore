@@ -335,29 +335,10 @@ async def download_file(request: web.Request):
         return {"error": None, "data": {"link": link}}
 
 
-@routes.post(f"/{api_vtag}/locations/{{location_id}}/files/{{fileId}}")  # type: ignore
-async def create_upload_file_link(request: web.Request):
-    params, query, body = await extract_and_validate(request)
-    log.debug(
-        "received call to upload_file_link with %s", f"{params=}, {query=}, {body=}"
-    )
-    assert params, f"{params=}"  # nosec
-    assert query, f"{query=}"  # nosec
-    assert body, f"{body=}"  # nosec
-    link_type = query.get("link_type", "presigned")
-    with handle_storage_errors():
-        location_id = params["location_id"]
-        user_id = query["user_id"]
-        file_uuid = params["fileId"]
-
-        dsm = await _prepare_storage_manager(params, query, request)
-        link = await dsm.upload_link(
-            user_id=user_id,
-            file_uuid=file_uuid,
-            as_presigned_link=bool(link_type == "presigned"),
-        )
-
-    return {"error": None, "data": {"link": link}}
+_MAX_LINK_CHUNK_BYTE_SIZE: Final[dict[str, int]] = {
+    "presigned": int(parse_obj_as(ByteSize, "5GiB").to("b")),
+    "s3": int(parse_obj_as(ByteSize, "5TiB").to("b")),
+}
 
 
 @routes.put(f"/{api_vtag}/locations/{{location_id}}/files/{{fileId}}")  # type: ignore
@@ -371,9 +352,8 @@ async def upload_file(request: web.Request):
     assert query, f"{query}"  # nosec
     assert not body, f"{body}"  # nosec
     link_type = query.get("link_type", "presigned")
-    chunk_size = int(parse_obj_as(ByteSize, "5GiB").to("b"))
-    if link_type == "s3":
-        chunk_size = int(parse_obj_as(ByteSize, "5TiB").to("b"))
+    chunk_size = _MAX_LINK_CHUNK_BYTE_SIZE[link_type]
+
     with handle_storage_errors():
         user_id = query["user_id"]
         file_uuid = params["file_id"]
