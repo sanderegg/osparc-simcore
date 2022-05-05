@@ -263,7 +263,7 @@ async def compute_output_data_schema(
         output_data_schema[port.key] = {"required": port.default_value is None}
 
         if port_utils.is_file_type(port.property_type):
-            value_link = await port_utils.get_upload_link_from_storage(
+            value_links = await port_utils.get_upload_links_from_storage(
                 user_id=user_id,
                 project_id=f"{project_id}",
                 node_id=f"{node_id}",
@@ -272,12 +272,14 @@ async def compute_output_data_schema(
                 else port.key,
                 link_type=file_link_type,
             )
+            assert value_links.urls  # nosec
+            assert len(value_links.urls) == 1  # nosec
             output_data_schema[port.key].update(
                 {
                     "mapping": next(iter(port.file_to_key_map))
                     if port.file_to_key_map
                     else None,
-                    "url": value_link,
+                    "url": f"{value_links.urls[0]}",
                 }
             )
 
@@ -294,14 +296,14 @@ async def compute_service_log_file_upload_link(
     file_link_type: FileLinkType,
 ) -> AnyUrl:
 
-    value_link = await port_utils.get_upload_link_from_storage(
+    value_links = await port_utils.get_upload_links_from_storage(
         user_id=user_id,
         project_id=f"{project_id}",
         node_id=f"{node_id}",
         file_name=_LOGS_FILE_NAME,
         link_type=file_link_type,
     )
-    return value_link
+    return value_links.urls[0]
 
 
 async def get_service_log_file_download_link(

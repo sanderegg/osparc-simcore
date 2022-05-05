@@ -176,8 +176,8 @@ def create_store_link(
                 params={"user_id": f"{user_id}"},
             ) as resp:
                 resp.raise_for_status()
-                presigned_link_enveloped = await resp.json()
-            link = presigned_link_enveloped.get("data", {}).get("link")
+                presigned_links_enveloped = await resp.json()
+            link = presigned_links_enveloped.get("data", {}).get("urls")[0]
             assert link is not None
 
             # Upload using the link
