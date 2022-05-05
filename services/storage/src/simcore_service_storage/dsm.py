@@ -568,7 +568,7 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
         user_id: str,
         file_uuid: str,
         link_type: LinkType,
-        file_size_bytes: ByteSize,
+        file_size_bytes: Optional[ByteSize],
     ) -> PresignedLinksArray:
         """returns: a presigned upload link
 
