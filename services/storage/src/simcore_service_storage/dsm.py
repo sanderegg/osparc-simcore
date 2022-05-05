@@ -25,6 +25,7 @@ from aiobotocore.session import AioSession, ClientCreatorContext, get_session
 from aiohttp import web
 from aiopg.sa import Engine
 from aiopg.sa.result import ResultProxy, RowProxy
+from botocore.client import Config
 from models_library.api_schemas_storage import PresignedLinksArray
 from pydantic import AnyUrl, ByteSize, parse_obj_as
 from servicelib.aiohttp.aiopg_utils import DBAPIError, PostgresRetryPolicyUponOperation
@@ -161,7 +162,6 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
     """
 
     # TODO: perhaps can be used a cache? add a lifetime?
-
     s3_client: MinioClientWrapper
     engine: Engine
     loop: object
@@ -183,6 +183,7 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
             endpoint_url=self.s3_client.endpoint_url,
             aws_access_key_id=self.s3_client.access_key,
             aws_secret_access_key=self.s3_client.secret_key,
+            config=Config(signature_version="s3v4"),
         )
 
     def _get_datcore_tokens(self, user_id: str) -> tuple[Optional[str], Optional[str]]:
@@ -592,13 +593,17 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
         )
 
         if link_type == LinkType.PRESIGNED:
+            async with self._create_aiobotocore_client_context() as aioboto_client:
+                put_presigned_link = await aioboto_client.generate_presigned_url(
+                    "put_object",
+                    Params={"Bucket": bucket_name, "Key": object_name},
+                    ExpiresIn=3600,
+                )
             return PresignedLinksArray(
                 urls=[
                     parse_obj_as(
                         AnyUrl,
-                        self.s3_client.create_presigned_put_url(
-                            bucket_name, object_name
-                        ),
+                        put_presigned_link,
                     )
                 ],
                 chunk_size=_MAX_LINK_CHUNK_BYTE_SIZE[link_type],
@@ -647,7 +652,14 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
             AnyUrl, f"s3://{bucket_name}/{urllib.parse.quote( object_name)}"
         )
         if as_presigned_link:
-            link = self.s3_client.create_presigned_get_url(bucket_name, object_name)
+            async with self._create_aiobotocore_client_context() as aioboto_client:
+                get_presigned_link = await aioboto_client.generate_presigned_url(
+                    "get_object",
+                    Params={"Bucket": bucket_name, "Key": object_name},
+                    ExpiresIn=259200,
+                )
+            link = parse_obj_as(AnyUrl, get_presigned_link)
+            # link = self.s3_client.create_presigned_get_url(bucket_name, object_name)
         return f"{link}"
 
     async def download_link_datcore(self, user_id: str, file_id: str) -> URL:
