@@ -345,7 +345,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/PresignedLinkEnveloped"
+                $ref: "#/components/schemas/PresignedLinksArrayEnveloped"
         default:
           $ref: "#/components/responses/DefaultErrorResponse"
     delete:
@@ -880,6 +880,18 @@ components:
           nullable: true
           default: null
 
+    PresignedLinksArrayEnveloped:
+      type: object
+      required:
+        - data
+        - error
+      properties:
+        data:
+          $ref: "#/components/schemas/PresignedLinksArray"
+        error:
+          nullable: true
+          default: null
+
     PresignedLink:
       type: object
       required:
@@ -889,6 +901,22 @@ components:
           type: string
       example:
         link: "example_link"
+
+    PresignedLinksArray:
+      type: object
+      required:
+        - links
+        - chunk_size
+      properties:
+        links:
+          type: array
+          items:
+            type: string
+        chunk_size:
+          type: integer
+      example:
+        links: ["example_link"]
+        chunk_size: 558796
 
     S3AccessCredentialsEnveloped:
       type: object
