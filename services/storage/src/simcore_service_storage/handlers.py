@@ -3,7 +3,7 @@ import json
 import logging
 import urllib.parse
 from contextlib import contextmanager
-from typing import Any, Final, Optional
+from typing import Any, Optional
 
 import attr
 from aiohttp import web
@@ -20,7 +20,7 @@ from ._meta import api_vtag
 from .access_layer import InvalidFileIdentifier
 from .constants import APP_DSM_KEY, DATCORE_STR, SIMCORE_S3_ID, SIMCORE_S3_STR
 from .db_tokens import get_api_token_and_secret
-from .dsm import DataStorageManager, DatCoreApiToken
+from .dsm import DataStorageManager, DatCoreApiToken, LinkType
 from .models import FileMetaDataEx
 from .settings import Settings
 
@@ -335,12 +335,6 @@ async def download_file(request: web.Request):
         return {"error": None, "data": {"link": link}}
 
 
-_MAX_LINK_CHUNK_BYTE_SIZE: Final[dict[str, int]] = {
-    "presigned": int(parse_obj_as(ByteSize, "5GiB").to("b")),
-    "s3": int(parse_obj_as(ByteSize, "5TiB").to("b")),
-}
-
-
 @routes.put(f"/{api_vtag}/locations/{{location_id}}/files/{{fileId}}")  # type: ignore
 async def upload_file(request: web.Request):
     params, query, body = await extract_and_validate(request)
@@ -351,8 +345,7 @@ async def upload_file(request: web.Request):
 
     assert query, f"{query}"  # nosec
     assert not body, f"{body}"  # nosec
-    link_type = query.get("link_type", "presigned")
-    chunk_size = _MAX_LINK_CHUNK_BYTE_SIZE[link_type]
+    link_type: str = query.get("link_type", "presigned")
 
     with handle_storage_errors():
         user_id = query["user_id"]
@@ -360,13 +353,13 @@ async def upload_file(request: web.Request):
 
         dsm = await _prepare_storage_manager(params, query, request)
 
-        link = await dsm.upload_link(
+        links = await dsm.create_upload_links(
             user_id=user_id,
             file_uuid=file_uuid,
-            as_presigned_link=bool(link_type == "presigned"),
+            link_type=LinkType(link_type.upper()),
+            file_size_bytes=parse_obj_as(ByteSize, query.get("file_size", 0)),
         )
-
-    return {"error": None, "data": {"urls": [link], "chunk_size": chunk_size}}
+    return {"data": json.loads(links.json(by_alias=True))}
 
 
 @routes.delete(f"/{api_vtag}/locations/{{location_id}}/files/{{file_id}}")  # type: ignore
