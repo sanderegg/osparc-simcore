@@ -5,7 +5,9 @@
 #    pip-compile --output-file=requirements/_base.txt --strip-extras requirements/_base.in
 #
 aiobotocore==2.2.0
-    # via -r requirements/_base.in
+    # via
+    #   -r requirements/_base.in
+    #   types-aiobotocore
 aiodebug==2.3.0
     # via
     #   -c requirements/../../../packages/service-library/requirements/./_base.in
@@ -56,6 +58,8 @@ attrs==20.3.0
     #   openapi-core
 botocore==1.24.21
     # via aiobotocore
+botocore-stubs==1.25.7
+    # via types-aiobotocore
 certifi==2021.10.8
     # via minio
 charset-normalizer==2.0.12
@@ -93,6 +97,7 @@ jsonschema==3.2.0
     # via
     #   -c requirements/../../../packages/service-library/requirements/././constraints.txt
     #   -c requirements/../../../packages/service-library/requirements/./constraints.txt
+    #   -r requirements/../../../packages/models-library/requirements/_base.in
     #   -r requirements/../../../packages/service-library/requirements/_aiohttp.in
     #   openapi-schema-validator
     #   openapi-spec-validator
@@ -195,11 +200,36 @@ typer==0.4.1
     # via
     #   -r requirements/../../../packages/settings-library/requirements/_base.in
     #   -r requirements/_base.in
+types-aiobotocore==2.2.0.post2
+    # via -r requirements/_base.in
+types-aiobotocore-cloudformation==2.2.0.post2
+    # via types-aiobotocore
+types-aiobotocore-dynamodb==2.2.0.post2
+    # via types-aiobotocore
+types-aiobotocore-ec2==2.2.0.post2
+    # via types-aiobotocore
+types-aiobotocore-lambda==2.2.0.post2
+    # via types-aiobotocore
+types-aiobotocore-rds==2.2.0.post2
+    # via types-aiobotocore
+types-aiobotocore-s3==2.2.0.post2
+    # via types-aiobotocore
+types-aiobotocore-sqs==2.2.0.post2
+    # via types-aiobotocore
 typing-extensions==4.1.1
     # via
     #   aiodebug
     #   aioitertools
+    #   botocore-stubs
     #   pydantic
+    #   types-aiobotocore
+    #   types-aiobotocore-cloudformation
+    #   types-aiobotocore-dynamodb
+    #   types-aiobotocore-ec2
+    #   types-aiobotocore-lambda
+    #   types-aiobotocore-rds
+    #   types-aiobotocore-s3
+    #   types-aiobotocore-sqs
 ujson==5.1.0
     # via aiohttp-swagger
 urllib3==1.26.9

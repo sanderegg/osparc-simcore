@@ -137,7 +137,6 @@ requests==2.27.1
     # via
     #   codecov
     #   coveralls
-    #   docker
 six==1.16.0
     # via
     #   -c requirements/_base.txt
