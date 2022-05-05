@@ -165,7 +165,7 @@ async def _upload_file(
     assert len(upload_links.urls) == 1
     with file_path.open("rb") as fp:
         d = fp.read()
-        req = urllib.request.Request(upload_links.urls[0], data=d, method="PUT")
+        req = urllib.request.Request(f"{upload_links.urls[0]}", data=d, method="PUT")
         with urllib.request.urlopen(req) as _f:
             entity_tag = _f.headers.get("ETag")
     assert entity_tag is not None
@@ -273,7 +273,6 @@ async def test_links_s3(
     down_url = await dsm.download_link_s3(
         fmd.file_uuid, user_id, as_presigned_link=True
     )
-
     urllib.request.urlretrieve(down_url, tmp_file2)
 
     assert filecmp.cmp(tmp_file2, tmp_file)
