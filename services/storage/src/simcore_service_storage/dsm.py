@@ -3,14 +3,12 @@
 # pylint: disable=protected-access
 # FIXME: Access to a protected member _result_proxy of a client class
 
-import asyncio
 import logging
 import os
 import re
 import tempfile
 import urllib.parse
 from collections import deque
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
@@ -94,24 +92,19 @@ def setup_dsm(app: web.Application):
     async def _cleanup_context(app: web.Application):
         cfg: Settings = app[APP_CONFIG_KEY]
 
-        with ThreadPoolExecutor(max_workers=cfg.STORAGE_MAX_WORKERS) as executor:
-            dsm = DataStorageManager(
-                s3_client=app.get(APP_S3_KEY),
-                engine=app.get(APP_DB_ENGINE_KEY),
-                loop=asyncio.get_event_loop(),
-                pool=executor,
-                simcore_bucket_name=cfg.STORAGE_S3.S3_BUCKET_NAME,
-                has_project_db=not cfg.STORAGE_TESTING,
-                app=app,
-            )  # type: ignore
+        dsm = DataStorageManager(
+            s3_client=app.get(APP_S3_KEY),
+            engine=app.get(APP_DB_ENGINE_KEY),
+            simcore_bucket_name=cfg.STORAGE_S3.S3_BUCKET_NAME,
+            has_project_db=not cfg.STORAGE_TESTING,
+            app=app,
+        )
 
-            app[APP_DSM_KEY] = dsm
+        app[APP_DSM_KEY] = dsm
 
-            yield
+        yield
 
-            assert app[APP_DSM_KEY].pool is executor  # nosec
-
-            logger.info("Shuting down %s", dsm.pool)
+        logger.info("Shuting down %s", dsm)
 
     # ------
 
@@ -164,8 +157,6 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
     # TODO: perhaps can be used a cache? add a lifetime?
     s3_client: MinioClientWrapper
     engine: Engine
-    loop: object
-    pool: ThreadPoolExecutor
     simcore_bucket_name: str
     has_project_db: bool
     session: AioSession = field(default_factory=get_session)
@@ -659,7 +650,7 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
                     ExpiresIn=259200,
                 )
             link = parse_obj_as(AnyUrl, get_presigned_link)
-            # link = self.s3_client.create_presigned_get_url(bucket_name, object_name)
+
         return f"{link}"
 
     async def download_link_datcore(self, user_id: str, file_id: str) -> URL:
@@ -927,10 +918,11 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
                     [file_meta_data.c.bucket_name, file_meta_data.c.object_name]
                 ).where(file_meta_data.c.file_uuid == file_uuid)
 
-                async for row in conn.execute(query):
-                    if self.s3_client.remove_objects(
-                        row.bucket_name, [row.object_name]
-                    ):
+                async with self._create_aiobotocore_client_context() as aioboto_client:
+                    async for row in conn.execute(query):
+                        await aioboto_client.delete_object(
+                            Bucket=row.bucket_name, Key=row.object_name
+                        )
                         to_delete.append(file_uuid)
 
                 await conn.execute(
