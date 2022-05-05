@@ -3,7 +3,7 @@ import json
 import logging
 import urllib.parse
 from contextlib import contextmanager
-from typing import Any, Dict, Final
+from typing import Any, Dict, Final, Optional
 
 import attr
 from aiohttp import web
