@@ -126,6 +126,9 @@ class DatCoreApiToken:
         return (self.api_token, self.api_secret)
 
 
+_MULTIPART_UPLOADS_MIN_SIZE: Final[ByteSize] = parse_obj_as(ByteSize, "100MiB")
+
+
 @dataclass
 class DataStorageManager:  # pylint: disable=too-many-public-methods
     """Data storage manager
