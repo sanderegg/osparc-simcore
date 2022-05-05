@@ -6,9 +6,11 @@ from datetime import timedelta
 from typing import Iterator, List, Optional
 
 from minio import Minio
+from minio.commonconfig import CopySource
 from minio.datatypes import Object
 from minio.deleteobjects import DeleteError, DeleteObject
 from minio.error import MinioException
+from minio.helpers import ObjectWriteResult
 
 log = logging.getLogger(__name__)
 
@@ -101,6 +103,14 @@ class MinioClientWrapper:
             return False
         return True
 
+    def download_file(self, bucket_name, object_name, filepath):
+        try:
+            self._minio.fget_object(bucket_name, object_name, filepath)
+        except MinioException:
+            logging.exception("Could not download file")
+            return False
+        return True
+
     def get_metadata(self, bucket_name, object_name):
         try:
             obj = self._minio.stat_object(bucket_name, object_name)
@@ -144,6 +154,17 @@ class MinioClientWrapper:
             return False
         return True
 
+    def exists_object(self, bucket_name, object_name, recursive=False):
+        """This seems to be pretty heavy, should be used with care"""
+        try:
+            for obj in self.list_objects(bucket_name, recursive=recursive):
+                if obj.object_name == object_name:
+                    return True
+        except MinioException:
+            logging.exception("Could check object for existence")
+            return False
+        return False
+
     def create_presigned_put_url(self, bucket_name, object_name, dt=timedelta(days=3)):
         try:
             return self._minio.presigned_put_object(
@@ -165,3 +186,23 @@ class MinioClientWrapper:
             logging.exception("Could create presigned get url")
 
         return ""
+
+    def copy_object(
+        self,
+        to_bucket_name: str,
+        to_object_name: str,
+        from_bucket: str,
+        from_object: str,
+    ):
+        try:
+            # ValueError for arguments
+            result: ObjectWriteResult = self._minio.copy_object(
+                bucket_name=to_bucket_name,
+                object_name=to_object_name,
+                source=CopySource(from_bucket, from_object),
+            )
+            return result.bucket_name == to_bucket_name
+        except MinioException:
+            logging.exception("Could not copy")
+
+        return False
