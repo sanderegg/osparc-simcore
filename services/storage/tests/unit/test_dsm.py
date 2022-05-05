@@ -20,7 +20,7 @@ import pytest
 import tests.utils
 from simcore_service_storage.access_layer import InvalidFileIdentifier
 from simcore_service_storage.constants import DATCORE_STR, SIMCORE_S3_ID, SIMCORE_S3_STR
-from simcore_service_storage.dsm import DataStorageManager
+from simcore_service_storage.dsm import DataStorageManager, LinkType
 from simcore_service_storage.models import FileMetaData, FileMetaDataEx
 from simcore_service_storage.s3wrapper.s3_client import MinioClientWrapper
 from tests.utils import BUCKET_NAME, USER_ID, has_datcore_tokens
@@ -153,13 +153,19 @@ def create_file_meta_for_s3(
 async def _upload_file(
     dsm: DataStorageManager, file_metadata: FileMetaData, file_path: Path
 ) -> FileMetaData:
-    up_url = await dsm.upload_link(
-        file_metadata.user_id, file_metadata.file_uuid, as_presigned_link=True
+    upload_links = await dsm.create_upload_links(
+        file_metadata.user_id,
+        file_metadata.file_uuid,
+        link_type=LinkType.PRESIGNED,
+        file_size_bytes=None,
     )
     assert file_path.exists()
+    assert upload_links
+    assert upload_links.urls
+    assert len(upload_links.urls) == 1
     with file_path.open("rb") as fp:
         d = fp.read()
-        req = urllib.request.Request(up_url, data=d, method="PUT")
+        req = urllib.request.Request(upload_links.urls[0], data=d, method="PUT")
         with urllib.request.urlopen(req) as _f:
             entity_tag = _f.headers.get("ETag")
     assert entity_tag is not None
@@ -322,10 +328,15 @@ async def test_dsm_s3_to_datcore(
 
     dsm = dsm_fixture
 
-    up_url = await dsm.upload_link(fmd.user_id, fmd.file_uuid, as_presigned_link=True)
+    upload_links = await dsm.create_upload_links(
+        fmd.user_id, fmd.file_uuid, link_type=LinkType.PRESIGNED, file_size_bytes=None
+    )
+    assert upload_links
+    assert upload_links.urls
+    assert len(upload_links.urls) == 1
     with tmp_file.open("rb") as fp:
         d = fp.read()
-        req = urllib.request.Request(up_url, data=d, method="PUT")
+        req = urllib.request.Request(upload_links.urls[0], data=d, method="PUT")
         with urllib.request.urlopen(req) as _f:
             pass
 
