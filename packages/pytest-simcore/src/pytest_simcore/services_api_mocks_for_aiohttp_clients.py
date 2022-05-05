@@ -15,6 +15,7 @@ from aioresponses.core import CallbackResult
 from models_library.api_schemas_storage import FileMetaData
 from models_library.clusters import Cluster
 from models_library.projects_state import RunningState
+from pydantic import ByteSize, parse_obj_as
 from yarl import URL
 
 pytest_plugins = [
@@ -326,22 +327,40 @@ async def director_v2_service_mock(
     return aioresponses_mocker
 
 
+def get_download_link_cb(url: URL, **kwargs) -> CallbackResult:
+    file_id = url.path.rsplit("/files/")[1]
+    assert "params" in kwargs
+    assert "link_type" in kwargs["params"]
+    link_type = kwargs["params"]["link_type"]
+    scheme = {"presigned": "http", "s3": "s3"}
+    return CallbackResult(
+        status=web.HTTPOk.status_code,
+        payload={"data": {"link": f"{scheme[link_type]}://{file_id}"}},
+    )
+
+
+def get_upload_link_cb(url: URL, **kwargs) -> CallbackResult:
+    file_id = url.path.rsplit("/files/")[1]
+    assert "params" in kwargs
+    assert "link_type" in kwargs["params"]
+    link_type = kwargs["params"]["link_type"]
+    scheme = {"presigned": "http", "s3": "s3"}
+    return CallbackResult(
+        status=web.HTTPOk.status_code,
+        payload={
+            "data": {
+                "urls": [f"{scheme[link_type]}://{file_id}"],
+                "chunk_size": int(parse_obj_as(ByteSize, "5GiB").to("b")),
+            }
+        },
+    )
+
+
 @pytest.fixture
 async def storage_v0_service_mock(
     aioresponses_mocker: AioResponsesMock,
 ) -> AioResponsesMock:
     """mocks responses of storage API"""
-
-    def get_download_link_cb(url: URL, **kwargs) -> CallbackResult:
-        file_id = url.path.rsplit("/files/")[1]
-        assert "params" in kwargs
-        assert "link_type" in kwargs["params"]
-        link_type = kwargs["params"]["link_type"]
-        scheme = {"presigned": "http", "s3": "s3"}
-        return CallbackResult(
-            status=web.HTTPOk.status_code,
-            payload={"data": {"link": f"{scheme[link_type]}://{file_id}"}},
-        )
 
     get_file_metadata_pattern = re.compile(
         r"^http://[a-z\-_]*storage:[0-9]+/v0/locations/[0-9]+/files/.+/metadata.+$"
@@ -364,7 +383,7 @@ async def storage_v0_service_mock(
         get_download_link_pattern, callback=get_download_link_cb, repeat=True
     )
     aioresponses_mocker.put(
-        get_upload_link_pattern, callback=get_download_link_cb, repeat=True
+        get_upload_link_pattern, callback=get_upload_link_cb, repeat=True
     )
     aioresponses_mocker.get(
         get_locations_link_pattern,

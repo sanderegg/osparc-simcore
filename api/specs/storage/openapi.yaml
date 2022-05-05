@@ -905,17 +905,17 @@ components:
     PresignedLinksArray:
       type: object
       required:
-        - links
+        - urls
         - chunk_size
       properties:
-        links:
+        urls:
           type: array
           items:
             type: string
         chunk_size:
           type: integer
       example:
-        links: ["example_link"]
+        urls: ["example_link"]
         chunk_size: 558796
 
     S3AccessCredentialsEnveloped:
