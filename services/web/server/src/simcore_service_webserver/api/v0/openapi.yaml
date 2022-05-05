@@ -1246,7 +1246,7 @@ paths:
                 example:
                   link: example_link
     put:
-      summary: Returns upload link or performs copy operation to datcore
+      summary: Returns upload link
       tags:
         - storage
       operationId: upload_file
@@ -1259,16 +1259,6 @@ paths:
         - name: location_id
           in: path
           required: true
-          schema:
-            type: string
-        - name: extra_location
-          in: query
-          required: false
-          schema:
-            type: string
-        - name: extra_source
-          in: query
-          required: false
           schema:
             type: string
       responses:
