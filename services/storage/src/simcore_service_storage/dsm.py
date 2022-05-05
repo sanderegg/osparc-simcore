@@ -49,7 +49,6 @@ from .constants import (
     APP_CONFIG_KEY,
     APP_DB_ENGINE_KEY,
     APP_DSM_KEY,
-    APP_S3_KEY,
     DATCORE_ID,
     DATCORE_STR,
     SIMCORE_S3_ID,
@@ -64,7 +63,6 @@ from .models import (
     get_location_from_id,
     projects,
 )
-from .s3wrapper.s3_client import MinioClientWrapper
 from .settings import Settings
 from .utils import download_to_file_or_raise, is_file_entry_valid, to_meta_data_extended
 
@@ -93,7 +91,6 @@ def setup_dsm(app: web.Application):
         cfg: Settings = app[APP_CONFIG_KEY]
 
         dsm = DataStorageManager(
-            s3_client=app.get(APP_S3_KEY),
             engine=app.get(APP_DB_ENGINE_KEY),
             simcore_bucket_name=cfg.STORAGE_S3.S3_BUCKET_NAME,
             has_project_db=not cfg.STORAGE_TESTING,
@@ -104,7 +101,7 @@ def setup_dsm(app: web.Application):
 
         yield
 
-        logger.info("Shuting down %s", dsm)
+        logger.info("Shuting down %s", f"{dsm=}")
 
     # ------
 
@@ -155,15 +152,16 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
     """
 
     # TODO: perhaps can be used a cache? add a lifetime?
-    s3_client: MinioClientWrapper
     engine: Engine
     simcore_bucket_name: str
     has_project_db: bool
+    app: web.Application
     session: AioSession = field(default_factory=get_session)
     datcore_tokens: dict[str, DatCoreApiToken] = field(default_factory=dict)
-    app: Optional[web.Application] = None
 
     def _create_aiobotocore_client_context(self) -> ClientCreatorContext:
+        cfg: Settings = self.app[APP_CONFIG_KEY]
+        storage_settings = cfg.STORAGE_S3
         assert hasattr(self.session, "create_client")  # nosec
         # pylint: disable=no-member
 
@@ -171,9 +169,9 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
         # SEE https://aiobotocore.readthedocs.io/en/latest/index.html
         return self.session.create_client(
             "s3",
-            endpoint_url=self.s3_client.endpoint_url,
-            aws_access_key_id=self.s3_client.access_key,
-            aws_secret_access_key=self.s3_client.secret_key,
+            endpoint_url=storage_settings.S3_ENDPOINT,
+            aws_access_key_id=storage_settings.S3_ACCESS_KEY,
+            aws_secret_access_key=storage_settings.S3_SECRET_KEY,
             config=Config(signature_version="s3v4"),
         )
 
