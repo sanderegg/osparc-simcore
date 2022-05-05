@@ -18,17 +18,14 @@ pytest_simcore_ops_services_selection = ["minio"]
 
 
 @pytest.fixture
-def storage(aiopg_engine: Engine) -> DataStorageManager:
+def storage(aiopg_engine: Engine, client) -> DataStorageManager:
 
     return DataStorageManager(
-        s3_client=None,
         engine=aiopg_engine,
-        loop=None,
-        pool=None,
         simcore_bucket_name="master-simcore",
         has_project_db=True,
-        app=None,
-    )  # type: ignore
+        app=client.app,
+    )
 
 
 @pytest.fixture()
