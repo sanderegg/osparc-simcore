@@ -7,7 +7,11 @@ from uuid import UUID
 
 from fastapi import FastAPI
 from models_library.api_schemas_storage import FileMetaData as StorageFileMetaData
-from models_library.api_schemas_storage import FileMetaDataArray, PresignedLink
+from models_library.api_schemas_storage import (
+    FileMetaDataArray,
+    PresignedLink,
+    PresignedLinksArray,
+)
 
 from ..core.settings import StorageSettings
 from ..models.schemas.files import File
@@ -97,7 +101,9 @@ class StorageApi(BaseServiceClientApi):
         presigned_link = PresignedLink.parse_obj(resp.json()["data"])
         return presigned_link.link
 
-    async def get_upload_link(self, user_id: int, file_id: UUID, file_name: str) -> str:
+    async def get_upload_links(
+        self, user_id: int, file_id: UUID, file_name: str
+    ) -> PresignedLinksArray:
         object_path = urllib.parse.quote_plus(f"api/{file_id}/{file_name}")
 
         resp = await self.client.put(
@@ -107,8 +113,8 @@ class StorageApi(BaseServiceClientApi):
             },
         )
 
-        presigned_link = PresignedLink.parse_obj(resp.json()["data"])
-        return f"{presigned_link.link}"
+        presigned_link = PresignedLinksArray.parse_obj(resp.json()["data"])
+        return presigned_link
 
     async def create_soft_link(
         self, user_id: int, target_s3_path: str, as_file_id: UUID
