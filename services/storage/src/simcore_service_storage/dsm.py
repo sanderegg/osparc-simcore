@@ -622,62 +622,6 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
 
     # COPY -----------------------------
 
-    async def copy_file_s3_s3(
-        self, user_id: str, dest_uuid: str, source_uuid: str
-    ) -> None:
-        # FIXME: operation MUST be atomic
-
-        # source is s3, location is s3
-        to_bucket_name = self.simcore_bucket_name
-        to_object_name = dest_uuid
-        from_bucket = self.simcore_bucket_name
-        from_object_name = source_uuid
-        await asyncio.get_event_loop().run_in_executor(
-            None,
-            self.s3_client.copy_object,
-            to_bucket_name,
-            to_object_name,
-            from_bucket,
-            from_object_name,
-        )
-
-        # update db
-        async with self.engine.acquire() as conn:
-            fmd = FileMetaData()
-            fmd.simcore_from_uuid(dest_uuid, self.simcore_bucket_name)
-            fmd.user_id = user_id
-            ins = file_meta_data.insert().values(**vars(fmd))
-            await conn.execute(ins)
-
-    async def copy_file_s3_datcore(
-        self, user_id: str, dest_uuid: str, source_uuid: str
-    ):
-        assert self.app  # nosec
-        session = get_client_session(self.app)
-
-        # source is s3, get link and copy to datcore
-        bucket_name = self.simcore_bucket_name
-        object_name = source_uuid
-        filename = source_uuid.split("/")[-1]
-
-        s3_dowload_link = self.s3_client.create_presigned_get_url(
-            bucket_name, object_name
-        )
-
-        with tempfile.TemporaryDirectory() as tmpdir:
-            # FIXME: connect download and upload streams
-            local_file_path = os.path.join(tmpdir, filename)
-
-            # Downloads S3 -> local
-            await download_to_file_or_raise(session, s3_dowload_link, local_file_path)
-
-            # Uploads local -> DATCore
-            await self.upload_file_to_datcore(
-                _user_id=user_id,
-                _local_file_path=local_file_path,
-                _destination_id=dest_uuid,
-            )
-
     async def copy_file_datcore_s3(
         self,
         user_id: str,
@@ -722,25 +666,6 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
                 )
 
         return dest_uuid
-
-    async def copy_file(
-        self,
-        user_id: str,
-        dest_location: str,
-        dest_uuid: str,
-        source_location: str,
-        source_uuid: str,
-    ) -> None:
-        if source_location == SIMCORE_S3_STR:
-            if dest_location == DATCORE_STR:
-                await self.copy_file_s3_datcore(user_id, dest_uuid, source_uuid)
-            elif dest_location == SIMCORE_S3_STR:
-                await self.copy_file_s3_s3(user_id, dest_uuid, source_uuid)
-        elif source_location == DATCORE_STR:
-            if dest_location == DATCORE_STR:
-                raise NotImplementedError("copy files from datcore 2 datcore not impl")
-            if dest_location == SIMCORE_S3_STR:
-                await self.copy_file_datcore_s3(user_id, dest_uuid, source_uuid)
 
     async def deep_copy_project_simcore_s3(
         self,
