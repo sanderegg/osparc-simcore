@@ -4,7 +4,7 @@ PresignedLinkEnveloped:
     - data
   properties:
     data:
-      $ref: '#/PresignedLink'
+      $ref: "#/PresignedLink"
     error:
       nullable: true
       default: null
@@ -15,4 +15,20 @@ PresignedLink:
     link:
       type: string
   example:
-    link: 'example_link'
+    link: "example_link"
+
+PresignedLinksArray:
+  type: object
+  required:
+    - urls
+    - chunk_size
+  properties:
+    urls:
+      type: array
+      items:
+        type: string
+    chunk_size:
+      type: integer
+  example:
+    urls: ["example_link"]
+    chunk_size: 558796
