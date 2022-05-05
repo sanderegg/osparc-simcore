@@ -75,9 +75,7 @@ async def mocked_node_ports_filemanager_fcts(
                     urls=[
                         parse_obj_as(
                             AnyUrl,
-                            URL(faker.uri()).with_scheme(
-                                choice(tasks_file_link_scheme)
-                            ),
+                            f"{URL(faker.uri()).with_scheme(choice(tasks_file_link_scheme))}",
                         )
                     ],
                     chunk_size=parse_obj_as(ByteSize, "5GiB"),
