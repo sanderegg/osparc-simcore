@@ -3,6 +3,7 @@ import shutil
 from pathlib import Path
 from typing import Any, Callable, Coroutine, Dict, Optional
 
+from models_library.api_schemas_storage import PresignedLinksArray
 from pydantic import AnyUrl
 from pydantic.tools import parse_obj_as
 from settings_library.r_clone import RCloneSettings
@@ -80,19 +81,19 @@ async def get_download_link_from_storage(
     return parse_obj_as(AnyUrl, f"{link}") if link else None
 
 
-async def get_upload_link_from_storage(
+async def get_upload_links_from_storage(
     user_id: int, project_id: str, node_id: str, file_name: str, link_type: LinkType
-) -> AnyUrl:
+) -> PresignedLinksArray:
     log.debug("getting link to file from storage for %s", file_name)
     s3_object = data_items_utils.encode_file_id(Path(file_name), project_id, node_id)
-    _, link = await filemanager.get_upload_link_from_s3(
+    _, links = await filemanager.get_upload_links_from_s3(
         user_id=user_id,
         store_id=None,
         store_name=config.STORE,
         s3_object=s3_object,
         link_type=link_type,
     )
-    return parse_obj_as(AnyUrl, f"{link}")
+    return links
 
 
 async def target_link_exists(

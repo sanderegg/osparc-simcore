@@ -366,7 +366,7 @@ async def upload_file(request: web.Request):
             as_presigned_link=bool(link_type == "presigned"),
         )
 
-    return {"error": None, "data": {"links": [link], "chunk_size": chunk_size}}
+    return {"error": None, "data": {"urls": [link], "chunk_size": chunk_size}}
 
 
 @routes.delete(f"/{api_vtag}/locations/{{location_id}}/files/{{fileId}}")  # type: ignore
@@ -393,7 +393,7 @@ async def delete_file(request: web.Request):
         return {"error": None, "data": None}
 
 
-@routes.post(f"/{api_vtag}/simcore-s3:access")
+@routes.post(f"/{api_vtag}/simcore-s3:access")  # type: ignore
 async def get_or_create_temporary_s3_access(request: web.Request):
     user_id = UserID(request.query["user_id"])
     with handle_storage_errors():

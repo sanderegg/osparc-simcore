@@ -10,6 +10,7 @@ from models_library.api_schemas_storage import (
     FileLocationArray,
     FileMetaData,
     PresignedLink,
+    PresignedLinksArray,
 )
 from models_library.generics import Envelope
 from models_library.users import UserID
@@ -104,13 +105,13 @@ async def get_download_file_link(
 
 
 @handle_client_exception
-async def get_upload_file_link(
+async def get_upload_file_links(
     session: ClientSession,
     file_id: str,
     location_id: str,
     user_id: UserID,
     link_type: LinkType,
-) -> AnyUrl:
+) -> PresignedLinksArray:
     if (
         not isinstance(file_id, str)
         or not isinstance(location_id, str)
@@ -129,12 +130,12 @@ async def get_upload_file_link(
     ) as response:
         response.raise_for_status()
 
-        presigned_link_enveloped = Envelope[PresignedLink].parse_obj(
+        presigned_links_enveloped = Envelope[PresignedLinksArray].parse_obj(
             await response.json()
         )
-        if presigned_link_enveloped.data is None:
-            raise exceptions.StorageServerIssue("Storage server is not reponding")
-        return presigned_link_enveloped.data.link
+    if presigned_links_enveloped.data is None:
+        raise exceptions.StorageServerIssue("Storage server is not reponding")
+    return presigned_links_enveloped.data
 
 
 @handle_client_exception

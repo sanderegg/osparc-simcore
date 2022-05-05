@@ -7,6 +7,7 @@ from typing import Optional, Tuple
 
 import aiofiles
 from aiohttp import ClientPayloadError, ClientSession
+from models_library.api_schemas_storage import PresignedLinksArray
 from pydantic.networks import AnyUrl
 from settings_library.r_clone import RCloneSettings
 from tqdm import tqdm
@@ -52,20 +53,20 @@ async def _get_download_link(
     return URL(link)
 
 
-async def _get_upload_link(
+async def _get_upload_links(
     user_id: int,
     store_id: str,
     file_id: str,
     session: ClientSession,
     link_type: storage_client.LinkType,
-) -> URL:
-    link: AnyUrl = await storage_client.get_upload_file_link(
+) -> PresignedLinksArray:
+    links: PresignedLinksArray = await storage_client.get_upload_file_links(
         session, file_id, store_id, user_id, link_type
     )
-    if not link:
+    if not links:
         raise exceptions.S3InvalidPathError(file_id)
 
-    return URL(link)
+    return links
 
 
 async def _download_link_to_file(session: ClientSession, url: URL, file_path: Path):
@@ -97,9 +98,9 @@ async def _download_link_to_file(session: ClientSession, url: URL, file_path: Pa
 
 
 async def _upload_file_to_link(
-    session: ClientSession, url: URL, file_path: Path
+    session: ClientSession, upload_links: PresignedLinksArray, file_path: Path
 ) -> ETag:
-    log.debug("Uploading from %s to %s", file_path, url)
+    log.debug("Uploading from %s to %s", file_path, upload_links)
     file_size = file_path.stat().st_size
 
     async def file_sender(file_name: Path):
@@ -119,7 +120,12 @@ async def _upload_file_to_link(
     data_provider = file_sender(file_path)
     headers = {"Content-Length": f"{file_size}"}
 
-    async with session.put(url, data=data_provider, headers=headers) as resp:
+    assert upload_links.urls  # nosec
+    assert len(upload_links.urls) == 1  # nosec
+
+    async with session.put(
+        upload_links.urls[0], data=data_provider, headers=headers
+    ) as resp:
         if resp.status > 299:
             response_text = await resp.text()
             raise exceptions.S3TransferError(
@@ -133,7 +139,12 @@ async def _upload_file_to_link(
 
         # get the S3 etag from the headers
         e_tag = json.loads(resp.headers.get("Etag", ""))
-        log.debug("Uploaded %s to %s, received Etag %s", file_path, url, e_tag)
+        log.debug(
+            "Uploaded %s to %s, received Etag %s",
+            file_path,
+            upload_links.urls[0],
+            e_tag,
+        )
         return e_tag
 
 
@@ -160,7 +171,7 @@ async def get_download_link_from_s3(
         )
 
 
-async def get_upload_link_from_s3(
+async def get_upload_links_from_s3(
     *,
     user_id: int,
     store_name: Optional[str],
@@ -168,7 +179,7 @@ async def get_upload_link_from_s3(
     s3_object: str,
     link_type: storage_client.LinkType,
     client_session: Optional[ClientSession] = None,
-) -> Tuple[str, URL]:
+) -> Tuple[str, PresignedLinksArray]:
     if store_name is None and store_id is None:
         raise exceptions.NodeportsException(msg="both store name and store id are None")
 
@@ -180,7 +191,7 @@ async def get_upload_link_from_s3(
         assert store_id is not None  # nosec
         return (
             store_id,
-            await _get_upload_link(user_id, store_id, s3_object, session, link_type),
+            await _get_upload_links(user_id, store_id, s3_object, session, link_type),
         )
 
 
@@ -277,7 +288,7 @@ async def upload_file(
         local_file_path,
     )
     async with ClientSessionContextManager(client_session) as session:
-        store_id, upload_link = await get_upload_link_from_s3(
+        store_id, upload_links = await get_upload_links_from_s3(
             user_id=user_id,
             store_name=store_name,
             store_id=store_id,
@@ -286,7 +297,7 @@ async def upload_file(
             link_type=storage_client.LinkType.PRESIGNED,
         )
 
-        if not upload_link:
+        if not upload_links:
             raise exceptions.S3InvalidPathError(s3_object)
 
         if (
@@ -303,7 +314,7 @@ async def upload_file(
             )
         else:
             try:
-                await _upload_file_to_link(session, upload_link, local_file_path)
+                await _upload_file_to_link(session, upload_links, local_file_path)
             except exceptions.S3TransferError as err:
                 await delete_file(
                     user_id=user_id,
