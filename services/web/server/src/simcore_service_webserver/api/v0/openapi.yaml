@@ -1263,7 +1263,25 @@ paths:
             type: string
       responses:
         '200':
-          $ref: '#/paths/~1storage~1locations~1%7Blocation_id%7D~1files~1%7BfileId%7D/get/responses/200'
+          description: Returns presigned links array
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - urls
+                  - chunk_size
+                properties:
+                  urls:
+                    type: array
+                    items:
+                      type: string
+                  chunk_size:
+                    type: integer
+                example:
+                  urls:
+                    - example_link
+                  chunk_size: 558796
     delete:
       summary: Deletes File
       tags:

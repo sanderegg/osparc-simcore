@@ -158,7 +158,7 @@ paths:
             type: string
       responses:
         "200":
-          $ref: "#/components/responses/PresignedLink_200"
+          $ref: "#/components/responses/PresignedLinksArray_200"
     delete:
       summary: Deletes File
       tags:
@@ -243,6 +243,13 @@ components:
         application/json:
           schema:
             $ref: "./components/schemas/presigned_link.yaml#/PresignedLink"
+
+    PresignedLinksArray_200:
+      description: "Returns presigned links array"
+      content:
+        application/json:
+          schema:
+            $ref: "./components/schemas/presigned_link.yaml#/PresignedLinksArray"
 
     DefaultErrorResponse:
       $ref: "./openapi.yaml#/components/responses/DefaultErrorResponse"
