@@ -2,6 +2,8 @@
 # pylint: disable=unused-argument
 # pylint: disable=unused-variable
 
+import uuid
+from functools import lru_cache
 from typing import AsyncIterator
 
 import attr
@@ -10,7 +12,6 @@ from aiopg.sa.engine import Engine
 from simcore_service_storage.constants import SIMCORE_S3_STR
 from simcore_service_storage.dsm import DataStorageManager
 from simcore_service_storage.models import FileMetaData, FileMetaDataEx, file_meta_data
-from simcore_service_storage.utils import create_resource_uuid
 from sqlalchemy.sql.expression import literal_column
 
 pytest_simcore_core_services_selection = ["postgres"]
@@ -68,6 +69,20 @@ async def output_file(
         result = await conn.execute(
             file_meta_data.delete().where(file_meta_data.c.file_uuid == row.file_uuid)
         )
+
+
+def create_reverse_dns(*resource_name_parts) -> str:
+    """
+    Returns a name for the resource following the reverse domain name notation
+    """
+    # See https://en.wikipedia.org/wiki/Reverse_domain_name_notation
+    return "io.simcore.storage" + ".".join(map(str, resource_name_parts))
+
+
+@lru_cache()
+def create_resource_uuid(*resource_name_parts) -> uuid.UUID:
+    revers_dns = create_reverse_dns(*resource_name_parts)
+    return uuid.uuid5(uuid.NAMESPACE_DNS, revers_dns)
 
 
 async def test_create_soft_link(
