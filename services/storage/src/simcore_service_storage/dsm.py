@@ -18,12 +18,10 @@ import attr
 import botocore
 import botocore.exceptions
 import sqlalchemy as sa
-from aiobotocore.client import AioBaseClient
-from aiobotocore.session import AioSession, ClientCreatorContext, get_session
+from aiobotocore.session import AioSession, get_session
 from aiohttp import web
 from aiopg.sa import Engine
 from aiopg.sa.result import ResultProxy, RowProxy
-from botocore.client import Config
 from models_library.api_schemas_storage import PresignedLinksArray
 from pydantic import AnyUrl, ByteSize, parse_obj_as
 from servicelib.aiohttp.aiopg_utils import DBAPIError, PostgresRetryPolicyUponOperation
@@ -63,6 +61,7 @@ from .models import (
     get_location_from_id,
     projects,
 )
+from .s3 import get_s3_client
 from .settings import Settings
 from .utils import download_to_file_or_raise, is_file_entry_valid, to_meta_data_extended
 
@@ -158,22 +157,6 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
     app: web.Application
     session: AioSession = field(default_factory=get_session)
     datcore_tokens: Dict[str, DatCoreApiToken] = field(default_factory=dict)
-
-    def _create_aiobotocore_client_context(self) -> ClientCreatorContext:
-        cfg: Settings = self.app[APP_CONFIG_KEY]
-        storage_settings = cfg.STORAGE_S3
-        assert hasattr(self.session, "create_client")  # nosec
-        # pylint: disable=no-member
-
-        # SEE API in https://botocore.amazonaws.com/v1/documentation/api/latest/reference/services/s3.html
-        # SEE https://aiobotocore.readthedocs.io/en/latest/index.html
-        return self.session.create_client(
-            "s3",
-            endpoint_url=storage_settings.S3_ENDPOINT,
-            aws_access_key_id=storage_settings.S3_ACCESS_KEY,
-            aws_secret_access_key=storage_settings.S3_SECRET_KEY,
-            config=Config(signature_version="s3v4"),
-        )
 
     def _get_datcore_tokens(self, user_id: str) -> Tuple[Optional[str], Optional[str]]:
         # pylint: disable=no-member
@@ -454,33 +437,32 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
         reraise_exceptions: bool,
     ) -> Optional[FileMetaDataEx]:
         try:
-            async with self._create_aiobotocore_client_context() as aioboto_client:
-                result = await aioboto_client.head_object(
-                    Bucket=bucket_name, Key=object_name
-                )  # type: ignore
+            result = await get_s3_client(self.app).head_object(
+                Bucket=bucket_name, Key=object_name
+            )  # type: ignore
 
-                file_size = result["ContentLength"]  # type: ignore
-                last_modified = result["LastModified"]  # type: ignore
-                entity_tag = result["ETag"].strip('"')  # type: ignore
+            file_size = result["ContentLength"]  # type: ignore
+            last_modified = result["LastModified"]  # type: ignore
+            entity_tag = result["ETag"].strip('"')  # type: ignore
 
-                async with self.engine.acquire() as conn:
-                    result: ResultProxy = await conn.execute(
-                        file_meta_data.update()
-                        .where(file_meta_data.c.file_uuid == file_uuid)
-                        .values(
-                            file_size=file_size,
-                            last_modified=last_modified,
-                            entity_tag=entity_tag,
-                        )
-                        .returning(literal_column("*"))
+            async with self.engine.acquire() as conn:
+                result: ResultProxy = await conn.execute(
+                    file_meta_data.update()
+                    .where(file_meta_data.c.file_uuid == file_uuid)
+                    .values(
+                        file_size=file_size,
+                        last_modified=last_modified,
+                        entity_tag=entity_tag,
                     )
-                    if not result:
-                        return None
-                    row: Optional[RowProxy] = await result.first()
-                    if not row:
-                        return None
+                    .returning(literal_column("*"))
+                )
+                if not result:
+                    return None
+                row: Optional[RowProxy] = await result.first()
+                if not row:
+                    return None
 
-                    return to_meta_data_extended(row)
+                return to_meta_data_extended(row)
         except botocore.exceptions.ClientError:
             logger.warning("Error happened while trying to access %s", file_uuid)
             if reraise_exceptions:
@@ -582,12 +564,12 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
         )
 
         if link_type == LinkType.PRESIGNED:
-            async with self._create_aiobotocore_client_context() as aioboto_client:
-                put_presigned_link = await aioboto_client.generate_presigned_url(
-                    "put_object",
-                    Params={"Bucket": bucket_name, "Key": object_name},
-                    ExpiresIn=3600,
-                )
+
+            put_presigned_link = await get_s3_client(self.app).generate_presigned_url(
+                "put_object",
+                Params={"Bucket": bucket_name, "Key": object_name},
+                ExpiresIn=3600,
+            )
             return PresignedLinksArray(
                 urls=[
                     parse_obj_as(
@@ -641,12 +623,12 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
             AnyUrl, f"s3://{bucket_name}/{urllib.parse.quote( object_name)}"
         )
         if as_presigned_link:
-            async with self._create_aiobotocore_client_context() as aioboto_client:
-                get_presigned_link = await aioboto_client.generate_presigned_url(
-                    "get_object",
-                    Params={"Bucket": bucket_name, "Key": object_name},
-                    ExpiresIn=259200,
-                )
+
+            get_presigned_link = await get_s3_client(self.app).generate_presigned_url(
+                "get_object",
+                Params={"Bucket": bucket_name, "Key": object_name},
+                ExpiresIn=259200,
+            )
             link = parse_obj_as(AnyUrl, get_presigned_link)
 
         return f"{link}"
@@ -764,63 +746,59 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
             if new_node_id is not None:
                 uuid_name_dict[new_node_id] = src_node["label"]
 
-        async with self._create_aiobotocore_client_context() as aioboto_client:
+        logger.debug(
+            "Listing all items under  %s:%s/",
+            self.simcore_bucket_name,
+            source_folder,
+        )
 
-            logger.debug(
-                "Listing all items under  %s:%s/",
-                self.simcore_bucket_name,
-                source_folder,
-            )
+        # Step 1: List all objects for this project replace them with the destination object name
+        # and do a copy at the same time collect some names
+        # Note: the / at the end of the Prefix is VERY important, makes the listing several order of magnitudes faster
+        response = await get_s3_client(self.app).list_objects_v2(
+            Bucket=self.simcore_bucket_name, Prefix=f"{source_folder}/"
+        )
 
-            # Step 1: List all objects for this project replace them with the destination object name
-            # and do a copy at the same time collect some names
-            # Note: the / at the end of the Prefix is VERY important, makes the listing several order of magnitudes faster
-            response = await aioboto_client.list_objects_v2(
-                Bucket=self.simcore_bucket_name, Prefix=f"{source_folder}/"
-            )
+        contents: List = response.get("Contents", [])
+        logger.debug(
+            "Listed  %s items under %s:%s/",
+            len(contents),
+            self.simcore_bucket_name,
+            source_folder,
+        )
 
-            contents: List = response.get("Contents", [])
-            logger.debug(
-                "Listed  %s items under %s:%s/",
-                len(contents),
-                self.simcore_bucket_name,
-                source_folder,
-            )
+        for item in contents:
+            source_object_name = item["Key"]
+            source_object_parts = Path(source_object_name).parts
 
-            for item in contents:
-                source_object_name = item["Key"]
-                source_object_parts = Path(source_object_name).parts
+            if len(source_object_parts) != 3:
+                # This may happen once we have shared/home folders
+                # FIXME: this might cause problems
+                logger.info(
+                    "Skipping copy of '%s'. Expected three parts path!",
+                    source_object_name,
+                )
+                continue
 
-                if len(source_object_parts) != 3:
-                    # This may happen once we have shared/home folders
-                    # FIXME: this might cause problems
-                    logger.info(
-                        "Skipping copy of '%s'. Expected three parts path!",
-                        source_object_name,
-                    )
-                    continue
+            old_node_id = source_object_parts[1]
+            new_node_id = node_mapping.get(old_node_id)
+            if new_node_id is not None:
+                old_filename = source_object_parts[2]
+                dest_object_name = str(Path(dest_folder) / new_node_id / old_filename)
 
-                old_node_id = source_object_parts[1]
-                new_node_id = node_mapping.get(old_node_id)
-                if new_node_id is not None:
-                    old_filename = source_object_parts[2]
-                    dest_object_name = str(
-                        Path(dest_folder) / new_node_id / old_filename
-                    )
+                copy_kwargs = dict(
+                    CopySource={
+                        "Bucket": self.simcore_bucket_name,
+                        "Key": source_object_name,
+                    },
+                    Bucket=self.simcore_bucket_name,
+                    Key=dest_object_name,
+                )
+                logger.debug("Copying %s ...", copy_kwargs)
 
-                    copy_kwargs = dict(
-                        CopySource={
-                            "Bucket": self.simcore_bucket_name,
-                            "Key": source_object_name,
-                        },
-                        Bucket=self.simcore_bucket_name,
-                        Key=dest_object_name,
-                    )
-                    logger.debug("Copying %s ...", copy_kwargs)
-
-                    # FIXME: if 5GB, it must use multipart upload Upload Part - Copy API
-                    # SEE https://botocore.amazonaws.com/v1/documentation/api/latest/reference/services/s3.html#S3.Client.copy_object
-                    await aioboto_client.copy_object(**copy_kwargs)
+                # FIXME: if 5GB, it must use multipart upload Upload Part - Copy API
+                # SEE https://botocore.amazonaws.com/v1/documentation/api/latest/reference/services/s3.html#S3.Client.copy_object
+                await get_s3_client(self.app).copy_object(**copy_kwargs)
 
         # Step 2: List all references in outputs that point to datcore and copy over
         for node_id, node in destination_project["workbench"].items():
@@ -849,28 +827,27 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
                     output["path"] = destination
 
         fmds = []
-        async with self._create_aiobotocore_client_context() as aioboto_client:
 
-            # step 3: list files first to create fmds
-            # Note: the / at the end of the Prefix is VERY important, makes the listing several order of magnitudes faster
-            response = await aioboto_client.list_objects_v2(
-                Bucket=self.simcore_bucket_name, Prefix=f"{dest_folder}/"
-            )
+        # step 3: list files first to create fmds
+        # Note: the / at the end of the Prefix is VERY important, makes the listing several order of magnitudes faster
+        response = await get_s3_client(self.app).list_objects_v2(
+            Bucket=self.simcore_bucket_name, Prefix=f"{dest_folder}/"
+        )
 
-            if "Contents" in response:
-                for item in response["Contents"]:
-                    fmd = FileMetaData()
-                    fmd.simcore_from_uuid(item["Key"], self.simcore_bucket_name)
-                    fmd.project_name = uuid_name_dict.get(dest_folder, "Untitled")
-                    fmd.node_name = uuid_name_dict.get(fmd.node_id, "Untitled")
-                    fmd.raw_file_path = fmd.file_uuid
-                    fmd.display_file_path = str(
-                        Path(fmd.project_name) / fmd.node_name / fmd.file_name
-                    )
-                    fmd.user_id = user_id
-                    fmd.file_size = item["Size"]
-                    fmd.last_modified = str(item["LastModified"])
-                    fmds.append(fmd)
+        if "Contents" in response:
+            for item in response["Contents"]:
+                fmd = FileMetaData()
+                fmd.simcore_from_uuid(item["Key"], self.simcore_bucket_name)
+                fmd.project_name = uuid_name_dict.get(dest_folder, "Untitled")
+                fmd.node_name = uuid_name_dict.get(fmd.node_id, "Untitled")
+                fmd.raw_file_path = fmd.file_uuid
+                fmd.display_file_path = str(
+                    Path(fmd.project_name) / fmd.node_name / fmd.file_name
+                )
+                fmd.user_id = user_id
+                fmd.file_size = item["Size"]
+                fmd.last_modified = str(item["LastModified"])
+                fmds.append(fmd)
 
         # step 4 sync db
         async with self.engine.acquire() as conn, conn.begin():
@@ -920,12 +897,11 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
                     [file_meta_data.c.bucket_name, file_meta_data.c.object_name]
                 ).where(file_meta_data.c.file_uuid == file_uuid)
 
-                async with self._create_aiobotocore_client_context() as aioboto_client:
-                    async for row in conn.execute(query):
-                        await aioboto_client.delete_object(
-                            Bucket=row.bucket_name, Key=row.object_name
-                        )
-                        to_delete.append(file_uuid)
+                async for row in conn.execute(query):
+                    await get_s3_client(self.app).delete_object(
+                        Bucket=row.bucket_name, Key=row.object_name
+                    )
+                    to_delete.append(file_uuid)
 
                 await conn.execute(
                     file_meta_data.delete().where(
@@ -970,23 +946,22 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
                 delete_me = delete_me.where(file_meta_data.c.node_id == node_id)
             await conn.execute(delete_me)
 
-        async with self._create_aiobotocore_client_context() as aioboto_client:
-            # Note: the / at the end of the Prefix is VERY important, makes the listing several order of magnitudes faster
-            response = await aioboto_client.list_objects_v2(
+        # Note: the / at the end of the Prefix is VERY important, makes the listing several order of magnitudes faster
+        response = await get_s3_client(self.app).list_objects_v2(
+            Bucket=self.simcore_bucket_name,
+            Prefix=f"{project_id}/{node_id}/" if node_id else f"{project_id}/",
+        )
+
+        objects_to_delete = []
+        for f in response.get("Contents", []):
+            objects_to_delete.append({"Key": f["Key"]})
+
+        if objects_to_delete:
+            response = await get_s3_client(self.app).delete_objects(
                 Bucket=self.simcore_bucket_name,
-                Prefix=f"{project_id}/{node_id}/" if node_id else f"{project_id}/",
+                Delete={"Objects": objects_to_delete},
             )
-
-            objects_to_delete = []
-            for f in response.get("Contents", []):
-                objects_to_delete.append({"Key": f["Key"]})
-
-            if objects_to_delete:
-                response = await aioboto_client.delete_objects(
-                    Bucket=self.simcore_bucket_name,
-                    Delete={"Objects": objects_to_delete},
-                )
-                return response
+            return response
 
     # SEARCH -------------------------------------
 
@@ -1090,7 +1065,7 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
                 "synchronisation of database/s3 storage started, this will take some time..."
             )
 
-            async with self.engine.acquire() as conn, self._create_aiobotocore_client_context() as aioboto_client:
+            async with self.engine.acquire() as conn:
 
                 number_of_rows_in_db = (
                     await conn.scalar(
@@ -1103,8 +1078,6 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
                     number_of_rows_in_db,
                 )
 
-                assert isinstance(aioboto_client, AioBaseClient)  # nosec
-
                 async for row in conn.execute(
                     sa.select([file_meta_data.c.object_name])
                 ):
@@ -1112,7 +1085,7 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
 
                     # now check if the file exists in S3
                     # SEE https://www.peterbe.com/plog/fastest-way-to-find-out-if-a-file-exists-in-s3
-                    response = await aioboto_client.list_objects_v2(
+                    response = await get_s3_client(self.app).list_objects_v2(
                         Bucket=self.simcore_bucket_name, Prefix=s3_key
                     )
                     if response.get("KeyCount", 0) == 0:
