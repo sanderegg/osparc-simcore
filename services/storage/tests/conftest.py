@@ -24,8 +24,8 @@ from simcore_service_storage.application import create
 from simcore_service_storage.constants import SIMCORE_S3_STR
 from simcore_service_storage.dsm import DataStorageManager, DatCoreApiToken
 from simcore_service_storage.models import FileMetaData, file_meta_data, projects, users
-from simcore_service_storage.s3wrapper.s3_client import MinioClientWrapper
 from simcore_service_storage.settings import Settings
+from tests.helpers.s3_client import MinioClientWrapper
 from tests.utils import BUCKET_NAME, DATA_DIR, USER_ID
 
 import tests
