@@ -80,9 +80,15 @@ class LinkType(str, Enum):
     S3 = "S3"
 
 
+_MULTIPART_UPLOADS_MIN_TOTAL_SIZE: Final[ByteSize] = parse_obj_as(ByteSize, "100MiB")
+_MULTIPART_UPLOADS_MIN_PART_SIZE: Final[ByteSize] = parse_obj_as(ByteSize, "10MiB")
+_MULTIPART_MAX_NUMBER_OF_PARTS: Final[int] = 1000
+_PRESIGNED_LINK_MAX_SIZE: Final[ByteSize] = parse_obj_as(ByteSize, "5GiB")
+_S3_MAX_FILE_SIZE: Final[ByteSize] = parse_obj_as(ByteSize, "5TiB")
+
 _MAX_LINK_CHUNK_BYTE_SIZE: Final[dict[LinkType, ByteSize]] = {
-    LinkType.PRESIGNED: parse_obj_as(ByteSize, "5GiB"),
-    LinkType.S3: parse_obj_as(ByteSize, "5TiB"),
+    LinkType.PRESIGNED: _PRESIGNED_LINK_MAX_SIZE,
+    LinkType.S3: _S3_MAX_FILE_SIZE,
 }
 
 
@@ -112,9 +118,6 @@ def setup_dsm(app: web.Application):
 class DatCoreApiToken:
     api_token: Optional[str] = None
     api_secret: Optional[str] = None
-
-
-_MULTIPART_UPLOADS_MIN_SIZE: Final[ByteSize] = parse_obj_as(ByteSize, "100MiB")
 
 
 @dataclass
@@ -561,7 +564,43 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
             )
         )
 
+        chunk_size = _MAX_LINK_CHUNK_BYTE_SIZE[link_type]
+        if file_size_bytes:
+            chunk_size = file_size_bytes
+
         if link_type == LinkType.PRESIGNED:
+
+            if file_size_bytes and file_size_bytes >= _MULTIPART_UPLOADS_MIN_TOTAL_SIZE:
+                # here we start a multipart upload
+                response = await get_s3_client(self.app).create_multipart_upload(
+                    Bucket=bucket_name, Key=object_name
+                )
+                upload_id = response["UploadId"]
+
+                # and we create the upload links
+                num_upload_links = int(
+                    file_size_bytes / _MULTIPART_UPLOADS_MIN_PART_SIZE + 0.5
+                )
+                chunk_size = _MULTIPART_UPLOADS_MIN_PART_SIZE
+                return PresignedLinksArray(
+                    urls=[
+                        parse_obj_as(
+                            AnyUrl,
+                            await get_s3_client(self.app).generate_presigned_url(
+                                "upload_part",
+                                Params={
+                                    "Bucket": bucket_name,
+                                    "Key": object_name,
+                                    "PartNumber": 1,
+                                    "UploadId": upload_id,
+                                },
+                                ExpiresIn=3600,
+                            ),
+                        )
+                        for i in range(num_upload_links)
+                    ],
+                    chunk_size=chunk_size,
+                )
 
             put_presigned_link = await get_s3_client(self.app).generate_presigned_url(
                 "put_object",
@@ -575,7 +614,7 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
                         put_presigned_link,
                     )
                 ],
-                chunk_size=_MAX_LINK_CHUNK_BYTE_SIZE[link_type],
+                chunk_size=chunk_size,
             )
         if link_type == LinkType.S3:
             return PresignedLinksArray(
