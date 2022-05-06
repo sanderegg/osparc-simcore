@@ -7,8 +7,7 @@ import pytest
 from aiohttp.test_utils import TestClient
 from simcore_service_storage.s3 import get_s3_client
 from simcore_service_storage.settings import Settings
-
-from services.storage.tests.helpers.s3_client import MinioClientWrapper
+from tests.helpers.s3_client import MinioClientWrapper
 
 pytest_simcore_core_services_selection = ["postgres"]
 pytest_simcore_ops_services_selection = ["minio", "adminer"]
