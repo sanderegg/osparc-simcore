@@ -11,6 +11,7 @@ from tenacity._asyncio import AsyncRetrying
 from tenacity.before_sleep import before_sleep_log
 from tenacity.stop import stop_after_delay
 from tenacity.wait import wait_fixed
+from types_aiobotocore_s3 import S3Client
 
 from .constants import APP_CONFIG_KEY, APP_S3_KEY
 from .utils import MINUTE, RETRY_WAIT_SECS
@@ -87,6 +88,6 @@ def setup_s3(app: web.Application):
     app.cleanup_ctx.append(setup_s3_bucket)
 
 
-def get_s3_client(app: web.Application):
+def get_s3_client(app: web.Application) -> S3Client:
     assert app[APP_S3_KEY]  # nosec
     return app[APP_S3_KEY]
