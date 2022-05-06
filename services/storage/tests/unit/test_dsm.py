@@ -22,7 +22,7 @@ from simcore_service_storage.access_layer import InvalidFileIdentifier
 from simcore_service_storage.constants import DATCORE_STR, SIMCORE_S3_ID, SIMCORE_S3_STR
 from simcore_service_storage.dsm import DataStorageManager, LinkType
 from simcore_service_storage.models import FileMetaData, FileMetaDataEx
-from simcore_service_storage.s3wrapper.s3_client import MinioClientWrapper
+from tests.helpers.s3_client import MinioClientWrapper
 from tests.utils import BUCKET_NAME, USER_ID, has_datcore_tokens
 
 pytest_simcore_core_services_selection = ["postgres"]

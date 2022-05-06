@@ -60,8 +60,6 @@ botocore==1.24.21
     # via aiobotocore
 botocore-stubs==1.25.7
     # via types-aiobotocore
-certifi==2021.10.8
-    # via minio
 charset-normalizer==2.0.12
     # via aiohttp
 click==8.0.4
@@ -111,15 +109,6 @@ markupsafe==2.1.1
     # via
     #   jinja2
     #   mako
-minio==7.0.4
-    # via
-    #   -c requirements/../../../packages/models-library/requirements/../../../requirements/constraints.txt
-    #   -c requirements/../../../packages/postgres-database/requirements/../../../requirements/constraints.txt
-    #   -c requirements/../../../packages/service-library/requirements/../../../requirements/constraints.txt
-    #   -c requirements/../../../packages/service-library/requirements/./../../../requirements/constraints.txt
-    #   -c requirements/../../../packages/settings-library/requirements/../../../requirements/constraints.txt
-    #   -c requirements/../../../requirements/constraints.txt
-    #   -r requirements/_base.in
 multidict==6.0.2
     # via
     #   aiohttp
@@ -241,7 +230,6 @@ urllib3==1.26.9
     #   -c requirements/../../../packages/settings-library/requirements/../../../requirements/constraints.txt
     #   -c requirements/../../../requirements/constraints.txt
     #   botocore
-    #   minio
 werkzeug==2.0.3
     # via -r requirements/../../../packages/service-library/requirements/_aiohttp.in
 wrapt==1.14.0

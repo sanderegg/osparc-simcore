@@ -10,6 +10,7 @@ coverage
 coveralls
 docker
 faker
+minio
 pandas
 pylint
 pytest
