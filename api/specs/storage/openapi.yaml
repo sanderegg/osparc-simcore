@@ -339,6 +339,13 @@ paths:
             enum:
               - presigned
               - s3
+        - name: file_size
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int64
+            minimum: 0
       responses:
         "200":
           description: "Returns presigned link"
