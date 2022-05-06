@@ -3,6 +3,7 @@
 # pylint: disable=protected-access
 # FIXME: Access to a protected member _result_proxy of a client class
 
+import dataclasses
 import logging
 import os
 import re
@@ -112,9 +113,6 @@ class DatCoreApiToken:
     api_token: Optional[str] = None
     api_secret: Optional[str] = None
 
-    def to_tuple(self):
-        return (self.api_token, self.api_secret)
-
 
 _MULTIPART_UPLOADS_MIN_SIZE: Final[ByteSize] = parse_obj_as(ByteSize, "100MiB")
 
@@ -161,7 +159,7 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
     def _get_datcore_tokens(self, user_id: str) -> Tuple[Optional[str], Optional[str]]:
         # pylint: disable=no-member
         token = self.datcore_tokens.get(user_id, DatCoreApiToken())
-        return token.to_tuple()
+        return dataclasses.astuple(token)
 
     async def locations(self, user_id: str):
         locs = []
