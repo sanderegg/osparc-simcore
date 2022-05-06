@@ -26,7 +26,7 @@ attrs==20.3.0
     #   pytest
 certifi==2021.10.8
     # via
-    #   -c requirements/_base.txt
+    #   minio
     #   requests
 charset-normalizer==2.0.12
     # via
@@ -73,6 +73,10 @@ lazy-object-proxy==1.4.3
     #   astroid
 mccabe==0.7.0
     # via pylint
+minio==7.0.4
+    # via
+    #   -c requirements/../../../requirements/constraints.txt
+    #   -r requirements/_test.in
 multidict==6.0.2
     # via
     #   -c requirements/_base.txt
@@ -158,6 +162,7 @@ urllib3==1.26.9
     # via
     #   -c requirements/../../../requirements/constraints.txt
     #   -c requirements/_base.txt
+    #   minio
     #   requests
 websocket-client==1.3.2
     # via docker

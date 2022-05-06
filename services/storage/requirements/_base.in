@@ -19,7 +19,6 @@ aiohttp-swagger[performance]
 
 # s3 storage
 aiobotocore
-minio
 types-aiobotocore[essential]
 
 # i/o + db
