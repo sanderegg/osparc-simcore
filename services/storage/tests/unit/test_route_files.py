@@ -118,26 +118,25 @@ async def test_create_upload_file_default_returns_single_link(
         assert not link.query
 
 
-@pytest.mark.skip()
 @pytest.mark.parametrize(
     "link_type, file_size, expected_response, expected_num_links,expected_chunk_size",
     [
-        # pytest.param(
-        #     "presigned",
-        #     int(parse_obj_as(ByteSize, "1MiB").to("b")),
-        #     web.HTTPOk,
-        #     1,
-        #     int(parse_obj_as(ByteSize, "1MiB").to("b")),
-        #     id="1MiB file",
-        # ),
-        # pytest.param(
-        #     "presigned",
-        #     int(parse_obj_as(ByteSize, "10MiB").to("b")),
-        #     web.HTTPOk,
-        #     1,
-        #     int(parse_obj_as(ByteSize, "10MiB").to("b")),
-        #     id="10MiB file",
-        # ),
+        pytest.param(
+            "presigned",
+            int(parse_obj_as(ByteSize, "1MiB").to("b")),
+            web.HTTPOk,
+            1,
+            int(parse_obj_as(ByteSize, "1MiB").to("b")),
+            id="1MiB file",
+        ),
+        pytest.param(
+            "presigned",
+            int(parse_obj_as(ByteSize, "10MiB").to("b")),
+            web.HTTPOk,
+            1,
+            int(parse_obj_as(ByteSize, "10MiB").to("b")),
+            id="10MiB file",
+        ),
         pytest.param(
             "presigned",
             int(parse_obj_as(ByteSize, "100MiB").to("b")),
