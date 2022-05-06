@@ -624,7 +624,7 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
                         f"s3://{bucket_name}/{urllib.parse.quote( object_name)}",
                     )
                 ],
-                chunk_size=_MAX_LINK_CHUNK_BYTE_SIZE[link_type],
+                chunk_size=chunk_size,
             )
 
     async def download_link_s3(
