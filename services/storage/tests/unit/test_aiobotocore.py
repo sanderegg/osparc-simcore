@@ -29,13 +29,19 @@ def mocked_s3_server(aiohttp_unused_port, monkeypatch) -> Iterator[ThreadedMotoS
 async def test_s3_client_fails_if_no_s3():
     """this tests shows that initializing the client actually checks if the S3 server is connected"""
     session = get_session()
-    with pytest.raises(boto_exceptions.ConnectTimeoutError):
-        async with session.create_client("s3") as client:
+    with pytest.raises(boto_exceptions.ClientError):
+        async with session.create_client(
+            "s3",
+            aws_secret_access_key="xxx",
+            aws_access_key_id="xxx",
+        ) as client:
             assert client
-    with pytest.raises(boto_exceptions.ConnectTimeoutError):
+            await client.list_buckets()
+    with pytest.raises(boto_exceptions.ClientError):
         async with AsyncExitStack() as exit_stack:
             client = await exit_stack.enter_async_context(session.create_client("s3"))
             assert client
+            await client.list_buckets()
 
 
 async def test_s3_client_reconnects_if_s3_server_restarts(
