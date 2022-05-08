@@ -4,6 +4,7 @@
 # pylint: disable=unused-variable
 
 import urllib.parse
+from dataclasses import dataclass
 from typing import Type
 
 import pytest
@@ -118,32 +119,57 @@ async def test_create_upload_file_default_returns_single_link(
         assert not link.query
 
 
+@dataclass
+class MultiPartParam:
+    link_type: str
+    file_size: ByteSize
+    expected_response: Type[web.HTTPException]
+    expected_num_links: int
+    expected_chunk_size: ByteSize
+
+
 @pytest.mark.parametrize(
-    "link_type, file_size, expected_response, expected_num_links,expected_chunk_size",
+    "test_param",
     [
         pytest.param(
-            "presigned",
-            int(parse_obj_as(ByteSize, "1MiB").to("b")),
-            web.HTTPOk,
-            1,
-            int(parse_obj_as(ByteSize, "1MiB").to("b")),
+            MultiPartParam(
+                link_type="presigned",
+                file_size=parse_obj_as(ByteSize, "1MiB"),
+                expected_response=web.HTTPOk,
+                expected_num_links=1,
+                expected_chunk_size=parse_obj_as(ByteSize, "1MiB"),
+            ),
             id="1MiB file",
         ),
         pytest.param(
-            "presigned",
-            int(parse_obj_as(ByteSize, "10MiB").to("b")),
-            web.HTTPOk,
-            1,
-            int(parse_obj_as(ByteSize, "10MiB").to("b")),
+            MultiPartParam(
+                link_type="presigned",
+                file_size=parse_obj_as(ByteSize, "10MiB"),
+                expected_response=web.HTTPOk,
+                expected_num_links=1,
+                expected_chunk_size=parse_obj_as(ByteSize, "10MiB"),
+            ),
             id="10MiB file",
         ),
         pytest.param(
-            "presigned",
-            int(parse_obj_as(ByteSize, "100MiB").to("b")),
-            web.HTTPOk,
-            10,
-            int(parse_obj_as(ByteSize, "10MiB").to("b")),
+            MultiPartParam(
+                link_type="presigned",
+                file_size=parse_obj_as(ByteSize, "100MiB"),
+                expected_response=web.HTTPOk,
+                expected_num_links=10,
+                expected_chunk_size=parse_obj_as(ByteSize, "10MiB"),
+            ),
             id="100MiB file",
+        ),
+        pytest.param(
+            MultiPartParam(
+                link_type="presigned",
+                file_size=parse_obj_as(ByteSize, "5TiB"),
+                expected_response=web.HTTPOk,
+                expected_num_links=1000,
+                expected_chunk_size=parse_obj_as(ByteSize, "5GiB"),
+            ),
+            id="5TiB file",
         ),
     ],
 )
@@ -153,11 +179,7 @@ async def test_create_upload_file_with_file_size_can_return_multipart_links(
     location_id: int,
     file_uuid: str,
     cleanup_user_projects_file_metadata,
-    link_type: str,
-    file_size: int,
-    expected_response: Type[web.HTTPException],
-    expected_num_links: int,
-    expected_chunk_size: int,
+    test_param: MultiPartParam,
 ):
     assert client.app
     url = (
@@ -165,16 +187,22 @@ async def test_create_upload_file_with_file_size_can_return_multipart_links(
         .url_for(
             location_id=f"{location_id}", fileId=urllib.parse.quote(file_uuid, safe="")
         )
-        .with_query(link_type=link_type, user_id=user_id, file_size=file_size)
+        .with_query(
+            link_type=test_param.link_type,
+            user_id=user_id,
+            file_size=int(test_param.file_size.to("b")),
+        )
     )
     response = await client.put(f"{url}")
 
-    data, error = await assert_status(response, expected_response)
+    data, error = await assert_status(response, test_param.expected_response)
     assert not error
     assert data
     assert "urls" in data
     assert isinstance(data["urls"], list)
-    assert len(data["urls"]) == expected_num_links
+    assert len(data["urls"]) == test_param.expected_num_links
+    # all elements are unique
+    assert len(set(data["urls"])) == len(data["urls"])
     assert "chunk_size" in data
     assert isinstance(data["chunk_size"], int)
-    assert data["chunk_size"] == expected_chunk_size
+    assert data["chunk_size"] == int(test_param.expected_chunk_size.to("b"))
