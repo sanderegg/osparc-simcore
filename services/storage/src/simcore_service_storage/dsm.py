@@ -3,6 +3,7 @@
 # pylint: disable=protected-access
 # FIXME: Access to a protected member _result_proxy of a client class
 
+import asyncio
 import dataclasses
 import logging
 import os
@@ -80,9 +81,10 @@ class LinkType(str, Enum):
     S3 = "S3"
 
 
+# AWS S3 upload limits https://docs.aws.amazon.com/AmazonS3/latest/userguide/qfacts.html
 _MULTIPART_UPLOADS_MIN_TOTAL_SIZE: Final[ByteSize] = parse_obj_as(ByteSize, "100MiB")
 _MULTIPART_UPLOADS_MIN_PART_SIZE: Final[ByteSize] = parse_obj_as(ByteSize, "10MiB")
-_MULTIPART_MAX_NUMBER_OF_PARTS: Final[int] = 1000
+_MULTIPART_MAX_NUMBER_OF_PARTS: Final[int] = 10000
 _PRESIGNED_LINK_MAX_SIZE: Final[ByteSize] = parse_obj_as(ByteSize, "5GiB")
 _S3_MAX_FILE_SIZE: Final[ByteSize] = parse_obj_as(ByteSize, "5TiB")
 
@@ -90,6 +92,23 @@ _MAX_LINK_CHUNK_BYTE_SIZE: Final[dict[LinkType, ByteSize]] = {
     LinkType.PRESIGNED: _PRESIGNED_LINK_MAX_SIZE,
     LinkType.S3: _S3_MAX_FILE_SIZE,
 }
+
+# this is artifically defined, if possible we keep a maximum number of requests for parallel
+# uploading. If that is not possible then we create as many upload part as the max part size allows
+_MULTIPART_UPLOADS_TARGET_MAX_PART_SIZE: Final[Tuple[str, ...]] = (
+    "10Mib",
+    "50Mib",
+    "100Mib",
+    "200Mib",
+    "400Mib",
+    "600Mib",
+    "800Mib",
+    "1Gib",
+    "2Gib",
+    "3Gib",
+    "4Gib",
+    "5Gib",
+)
 
 
 def setup_dsm(app: web.Application):
@@ -577,28 +596,43 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
                 )
                 upload_id = response["UploadId"]
 
+                # TODO: create a fct with tenacity to generate the number of links
+                # def _compute_number_links(file_size: ByteSize) -> int:
+
                 # and we create the upload links
-                num_upload_links = int(
-                    file_size_bytes / _MULTIPART_UPLOADS_MIN_PART_SIZE + 0.5
+                num_upload_links = _MULTIPART_UPLOADS_TARGET_MAX_REQUEST_NUMBER
+                chunk_size = int(
+                    file_size_bytes / _MULTIPART_UPLOADS_TARGET_MAX_REQUEST_NUMBER + 0.5
                 )
+                if (
+                    file_size_bytes / num_upload_links
+                    < _MULTIPART_UPLOADS_MIN_PART_SIZE
+                ):
+                    num_upload_links = int(
+                        file_size_bytes / _MULTIPART_UPLOADS_MIN_PART_SIZE + 0.5
+                    )
+
+                if num_upload_links > _MULTIPART_MAX_NUMBER_OF_PARTS:
+                    num_upload_links = _MULTIPART_MAX_NUMBER_OF_PARTS
+                    chunk_size = file_size_bytes / _MULTIPART_MAX_NUMBER_OF_PARTS
                 chunk_size = _MULTIPART_UPLOADS_MIN_PART_SIZE
-                return PresignedLinksArray(
-                    urls=[
-                        parse_obj_as(
-                            AnyUrl,
-                            await get_s3_client(self.app).generate_presigned_url(
-                                "upload_part",
-                                Params={
-                                    "Bucket": bucket_name,
-                                    "Key": object_name,
-                                    "PartNumber": 1,
-                                    "UploadId": upload_id,
-                                },
-                                ExpiresIn=3600,
-                            ),
+                upload_links = await asyncio.gather(
+                    *[
+                        get_s3_client(self.app).generate_presigned_url(
+                            "upload_part",
+                            Params={
+                                "Bucket": bucket_name,
+                                "Key": object_name,
+                                "PartNumber": i + 1,
+                                "UploadId": upload_id,
+                            },
+                            ExpiresIn=3600,
                         )
                         for i in range(num_upload_links)
-                    ],
+                    ]
+                )
+                return PresignedLinksArray(
+                    urls=parse_obj_as(list[AnyUrl], upload_links),
                     chunk_size=chunk_size,
                 )
 
