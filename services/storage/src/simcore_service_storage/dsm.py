@@ -95,20 +95,23 @@ _MAX_LINK_CHUNK_BYTE_SIZE: Final[dict[LinkType, ByteSize]] = {
 
 # this is artifically defined, if possible we keep a maximum number of requests for parallel
 # uploading. If that is not possible then we create as many upload part as the max part size allows
-_MULTIPART_UPLOADS_TARGET_MAX_PART_SIZE: Final[Tuple[str, ...]] = (
-    "10Mib",
-    "50Mib",
-    "100Mib",
-    "200Mib",
-    "400Mib",
-    "600Mib",
-    "800Mib",
-    "1Gib",
-    "2Gib",
-    "3Gib",
-    "4Gib",
-    "5Gib",
-)
+_MULTIPART_UPLOADS_TARGET_MAX_PART_SIZE: Final[List[ByteSize]] = [
+    parse_obj_as(ByteSize, x)
+    for x in [
+        "10Mib",
+        "50Mib",
+        "100Mib",
+        "200Mib",
+        "400Mib",
+        "600Mib",
+        "800Mib",
+        "1Gib",
+        "2Gib",
+        "3Gib",
+        "4Gib",
+        "5Gib",
+    ]
+]
 
 
 def setup_dsm(app: web.Application):
@@ -590,32 +593,26 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
         if link_type == LinkType.PRESIGNED:
 
             if file_size_bytes and file_size_bytes >= _MULTIPART_UPLOADS_MIN_TOTAL_SIZE:
+                # TODO: create a fct with tenacity to generate the number of links
+                def _compute_number_links(file_size: ByteSize) -> tuple[int, ByteSize]:
+                    for chunk in _MULTIPART_UPLOADS_TARGET_MAX_PART_SIZE:
+                        num_upload_links = int(file_size / chunk) + (
+                            1 if file_size % chunk > 0 else 0
+                        )
+                        if num_upload_links < _MULTIPART_MAX_NUMBER_OF_PARTS:
+                            return (num_upload_links, chunk)
+                    raise ValueError(
+                        f"Could not determine number of upload links for {file_size=}",
+                    )
+
                 # here we start a multipart upload
                 response = await get_s3_client(self.app).create_multipart_upload(
                     Bucket=bucket_name, Key=object_name
                 )
                 upload_id = response["UploadId"]
 
-                # TODO: create a fct with tenacity to generate the number of links
-                # def _compute_number_links(file_size: ByteSize) -> int:
-
                 # and we create the upload links
-                num_upload_links = _MULTIPART_UPLOADS_TARGET_MAX_REQUEST_NUMBER
-                chunk_size = int(
-                    file_size_bytes / _MULTIPART_UPLOADS_TARGET_MAX_REQUEST_NUMBER + 0.5
-                )
-                if (
-                    file_size_bytes / num_upload_links
-                    < _MULTIPART_UPLOADS_MIN_PART_SIZE
-                ):
-                    num_upload_links = int(
-                        file_size_bytes / _MULTIPART_UPLOADS_MIN_PART_SIZE + 0.5
-                    )
-
-                if num_upload_links > _MULTIPART_MAX_NUMBER_OF_PARTS:
-                    num_upload_links = _MULTIPART_MAX_NUMBER_OF_PARTS
-                    chunk_size = file_size_bytes / _MULTIPART_MAX_NUMBER_OF_PARTS
-                chunk_size = _MULTIPART_UPLOADS_MIN_PART_SIZE
+                num_upload_links, chunk_size = _compute_number_links(file_size_bytes)
                 upload_links = await asyncio.gather(
                     *[
                         get_s3_client(self.app).generate_presigned_url(
