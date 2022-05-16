@@ -207,7 +207,6 @@ class PresignedLinksArray(BaseModel):
 
 
 class FileUploadSchema(BaseModel):
-    url_type: LinkType
     chunk_size: ByteSize
     upload_urls: list[AnyUrl]
     abort_url: AnyUrl
