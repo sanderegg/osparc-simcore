@@ -12,9 +12,8 @@ import tempfile
 import urllib.parse
 from collections import deque
 from dataclasses import dataclass, field
-from enum import Enum
 from pathlib import Path
-from typing import Any, Final, Optional, Union
+from typing import Any, Final, List, Optional, TypedDict, Union
 
 import attr
 import botocore
@@ -24,7 +23,7 @@ from aiobotocore.session import AioSession, get_session
 from aiohttp import web
 from aiopg.sa import Engine
 from aiopg.sa.result import ResultProxy, RowProxy
-from models_library.api_schemas_storage import PresignedLinksArray
+from models_library.api_schemas_storage import LinkType, PresignedLinksArray
 from pydantic import AnyUrl, ByteSize, parse_obj_as
 from servicelib.aiohttp.aiopg_utils import DBAPIError, PostgresRetryPolicyUponOperation
 from servicelib.aiohttp.client_session import get_client_session
@@ -75,11 +74,6 @@ logger = logging.getLogger(__name__)
 postgres_service_retry_policy_kwargs = PostgresRetryPolicyUponOperation(logger).kwargs
 
 
-class LinkType(str, Enum):
-    PRESIGNED = "PRESIGNED"
-    S3 = "S3"
-
-
 # AWS S3 upload limits https://docs.aws.amazon.com/AmazonS3/latest/userguide/qfacts.html
 _MULTIPART_UPLOADS_MIN_TOTAL_SIZE: Final[ByteSize] = parse_obj_as(ByteSize, "100MiB")
 _MULTIPART_UPLOADS_MIN_PART_SIZE: Final[ByteSize] = parse_obj_as(ByteSize, "10MiB")
@@ -111,6 +105,11 @@ _MULTIPART_UPLOADS_TARGET_MAX_PART_SIZE: Final[List[ByteSize]] = [
         "5Gib",
     ]
 ]
+
+
+class UploadLinks(TypedDict):
+    urls: list[AnyUrl]
+    chunk_size: int
 
 
 def setup_dsm(app: web.Application):
@@ -566,7 +565,7 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
         file_uuid: str,
         link_type: LinkType,
         file_size_bytes: Optional[ByteSize],
-    ) -> PresignedLinksArray:
+    ) -> UploadLinks:
         """returns: a presigned upload link
 
         NOTE: updates metadata once the upload is concluded"""
@@ -583,6 +582,23 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
                 object_name=object_name,
             )
         )
+
+        def _create_single_presigned_upload() -> UploadLinks:
+            ...
+
+        def _create_multipart_presigned_upload() -> UploadLinks:
+            ...
+
+        def _create_single_s3_upload(bucket_name: str, s3_key: str) -> UploadLinks:
+            return UploadLinks(
+                urls=[
+                    parse_obj_as(
+                        AnyUrl,
+                        f"s3://{bucket_name}/{urllib.parse.quote(s3_key)}",
+                    )
+                ],
+                chunk_size=chunk_size,
+            )
 
         chunk_size = _MAX_LINK_CHUNK_BYTE_SIZE[link_type]
         if file_size_bytes:
