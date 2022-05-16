@@ -362,6 +362,58 @@ async def upload_file(request: web.Request):
     return {"data": json.loads(links.json(by_alias=True))}
 
 
+@routes.post(f"/{api_vtag}/locations/{{location_id}}/files/{{fileId}}:abort")  # type: ignore
+async def abort_upload_file(request: web.Request):
+    params, query, body = await extract_and_validate(request)
+    log.debug(
+        "received call to abort upload_file with %s", f"{params=}, {query=}, {body=}"
+    )
+    assert params, f"{params}"  # nosec
+    assert "fileId" in params  # nosec
+    params["fileId"] = urllib.parse.unquote(params["fileId"])
+    assert query, f"{query}"  # nosec
+    assert body, f"{body}"  # nosec
+
+    with handle_storage_errors():
+        user_id = query["user_id"]
+        file_uuid = params["fileId"]
+        upload_id = body["uploadId"]
+
+        dsm = await _prepare_storage_manager(params, query, request)
+
+        await dsm.abort_multi_part_upload(
+            file_uuid=file_uuid, user_id=user_id, upload_id=upload_id
+        )
+
+
+@routes.post(f"/{api_vtag}/locations/{{location_id}}/files/{{fileId}}:completed")  # type: ignore
+async def complete_upload_file(request: web.Request):
+    params, query, body = await extract_and_validate(request)
+    log.debug(
+        "received call to complete upload_file with %s", f"{params=}, {query=}, {body=}"
+    )
+    assert params, f"{params}"  # nosec
+    assert "fileId" in params  # nosec
+    params["fileId"] = urllib.parse.unquote(params["fileId"])
+    assert query, f"{query}"  # nosec
+    assert body, f"{body}"  # nosec
+
+    with handle_storage_errors():
+        user_id = query["user_id"]
+        file_uuid = params["fileId"]
+        upload_id = body["uploadId"]
+        multipart_upload_parts = body["uploaded_parts"]
+
+        dsm = await _prepare_storage_manager(params, query, request)
+
+        await dsm.complete_multi_part_upload(
+            file_uuid=file_uuid,
+            user_id=user_id,
+            upload_id=upload_id,
+            uploaded_parts=multipart_upload_parts,
+        )
+
+
 @routes.delete(f"/{api_vtag}/locations/{{location_id}}/files/{{fileId}}")  # type: ignore
 async def delete_file(request: web.Request):
     params, query, body = await extract_and_validate(request)
