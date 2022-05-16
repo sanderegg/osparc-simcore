@@ -37,7 +37,9 @@ async def test_s3_client_fails_if_no_s3():
         ) as client:
             assert client
             await client.list_buckets()
-    with pytest.raises(boto_exceptions.ClientError):
+    with pytest.raises(
+        (boto_exceptions.ClientError, boto_exceptions.ConnectTimeoutError)
+    ):
         async with AsyncExitStack() as exit_stack:
             client = await exit_stack.enter_async_context(session.create_client("s3"))
             assert client
