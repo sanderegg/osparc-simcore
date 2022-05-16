@@ -192,6 +192,11 @@ class FileMetaDataArray(BaseModel):
 # /locations/{location_id}/files/{file_id}
 
 
+class LinkType(str, Enum):
+    PRESIGNED = "PRESIGNED"
+    S3 = "S3"
+
+
 class PresignedLink(BaseModel):
     link: AnyUrl
 
@@ -199,6 +204,14 @@ class PresignedLink(BaseModel):
 class PresignedLinksArray(BaseModel):
     urls: list[AnyUrl]
     chunk_size: ByteSize
+
+
+class FileUploadSchema(BaseModel):
+    url_type: LinkType
+    chunk_size: ByteSize
+    upload_urls: list[AnyUrl]
+    abort_url: AnyUrl
+    completed_url: AnyUrl
 
 
 # /simcore-s3/
