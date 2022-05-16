@@ -942,18 +942,11 @@ components:
     FileUploadSchema:
       type: object
       required:
-        - url_type
         - chunk_size
         - upload_urls
         - abort_url
         - completed_url
       properties:
-        url_type:
-          type: string
-          default: "presigned"
-          enum:
-            - presigned
-            - s3
         chunk_size:
           type: integer
           format: int64
