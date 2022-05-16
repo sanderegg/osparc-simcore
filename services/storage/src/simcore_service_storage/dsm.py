@@ -70,7 +70,6 @@ from .utils import download_to_file_or_raise, is_file_entry_valid, to_meta_data_
 _MINUTE: Final[int] = 60
 _HOUR: Final[int] = 60 * _MINUTE
 
-
 logger = logging.getLogger(__name__)
 
 postgres_service_retry_policy_kwargs = PostgresRetryPolicyUponOperation(logger).kwargs
@@ -572,7 +571,6 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
 
         NOTE: updates metadata once the upload is concluded"""
         await self._generate_metadata_for_link(user_id=user_id, file_uuid=file_uuid)
-        logger.debug("%s", file_size_bytes)
         bucket_name = self.simcore_bucket_name
         object_name = file_uuid
 
@@ -657,6 +655,54 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
                 ],
                 chunk_size=chunk_size,
             )
+
+    async def abort_multi_part_upload(
+        self, file_uuid: str, user_id: int, upload_id: str
+    ) -> None:
+        async with self.engine.acquire() as conn:
+            can: Optional[AccessRights] = await get_file_access_rights(
+                conn, int(user_id), file_uuid
+            )
+            if not can.write:
+                raise web.HTTPForbidden(
+                    reason=f"User {user_id} does not have enough access rights to upload file {file_uuid}"
+                )
+
+        bucket_name = self.simcore_bucket_name
+        object_name = file_uuid
+        await get_s3_client(self.app).abort_multipart_upload(
+            Bucket=bucket_name, Key=object_name, UploadId=upload_id
+        )
+
+    async def complete_multi_part_upload(
+        self,
+        file_uuid: str,
+        user_id: int,
+        upload_id: str,
+        uploaded_parts: list[tuple[int, str]],
+    ) -> None:
+        async with self.engine.acquire() as conn:
+            can: Optional[AccessRights] = await get_file_access_rights(
+                conn, int(user_id), file_uuid
+            )
+            if not can.write:
+                raise web.HTTPForbidden(
+                    reason=f"User {user_id} does not have enough access rights to upload file {file_uuid}"
+                )
+
+        bucket_name = self.simcore_bucket_name
+        object_name = file_uuid
+        await get_s3_client(self.app).complete_multipart_upload(
+            Bucket=bucket_name,
+            Key=object_name,
+            UploadId=upload_id,
+            MultipartUpload={
+                "Parts": [
+                    {"ETag": e_tag, "PartNumber": part_number}
+                    for part_number, e_tag in uploaded_parts
+                ]
+            },
+        )
 
     async def download_link_s3(
         self, file_uuid: str, user_id: int, as_presigned_link: bool
