@@ -10,6 +10,7 @@ from typing import Type
 import pytest
 from aiohttp import web
 from aiohttp.test_utils import TestClient
+from aiopg.sa import Engine
 from faker import Faker
 from models_library.api_schemas_storage import FileUploadSchema
 from models_library.projects import ProjectID
@@ -17,6 +18,7 @@ from models_library.projects_nodes import NodeID
 from models_library.users import UserID
 from pydantic import ByteSize, parse_obj_as
 from pytest_simcore.helpers.utils_assert import assert_status
+from simcore_postgres_database.models.file_meta_data import file_meta_data
 
 pytest_simcore_core_services_selection = ["postgres"]
 pytest_simcore_ops_services_selection = ["minio", "adminer"]
@@ -80,9 +82,10 @@ async def test_create_upload_file_default_returns_single_link(
     file_uuid: str,
     url_query: dict[str, str],
     expected_link_scheme: str,
-    cleanup_user_projects_file_metadata,
     expected_link_query_keys: list[str],
     expected_chunk_size: int,
+    aiopg_engine: Engine,
+    cleanup_user_projects_file_metadata: None,
 ):
     assert client.app
     url = (
@@ -115,6 +118,18 @@ async def test_create_upload_file_default_returns_single_link(
             assert key in query
     else:
         assert not received_file_upload.urls[0].query
+
+    # now check the entry in the database is correct, there should be only one
+    async with aiopg_engine.acquire() as conn:
+        result = await conn.execute(
+            file_meta_data.select().where(file_meta_data.c.object_name == file_uuid)
+        )
+        db_data = await result.fetchall()
+        assert db_data
+        assert len(db_data) == 1
+        assert (
+            db_data[0][file_meta_data.c.file_size] == -1
+        ), "entry in file_meta_data was not initialized correctly, size should be set to -1"
 
 
 @dataclass
@@ -171,13 +186,14 @@ class MultiPartParam:
         ),
     ],
 )
-async def test_create_upload_file_with_file_size_can_return_multipart_links(
+async def test_create_upload_file_presigned_with_file_size_returns_multipart_links_if_bigger_than_99MiB(
     client: TestClient,
     user_id: UserID,
     location_id: int,
     file_uuid: str,
-    cleanup_user_projects_file_metadata,
     test_param: MultiPartParam,
+    aiopg_engine: Engine,
+    cleanup_user_projects_file_metadata: None,
 ):
     assert client.app
     url = (
@@ -202,3 +218,36 @@ async def test_create_upload_file_with_file_size_can_return_multipart_links(
     # all links are unique
     assert len(set(received_file_upload.urls)) == len(received_file_upload.urls)
     assert received_file_upload.chunk_size == test_param.expected_chunk_size
+
+    # now check the entry in the database is correct, there should be only one
+    async with aiopg_engine.acquire() as conn:
+        result = await conn.execute(
+            file_meta_data.select().where(file_meta_data.c.object_name == file_uuid)
+        )
+        db_data = await result.fetchall()
+        assert db_data
+        assert len(db_data) == 1
+        assert (
+            db_data[0][file_meta_data.c.file_size] == -1
+        ), "entry in file_meta_data was not initialized correctly, size should be set to -1"
+
+
+@pytest.mark.skip(reason="DEV")
+async def test_delete_unuploaded_file_correctly_cleans_up(
+    client: TestClient,
+    user_id: UserID,
+    location_id: int,
+    file_uuid: str,
+):
+    # delete/abort file upload
+    delete_url = (
+        client.app.router["delete_file"]
+        .url_for(
+            location_id=f"{location_id}", file_id=urllib.parse.quote(file_uuid, safe="")
+        )
+        .with_query(user_id=user_id)
+    )
+    response = await client.delete(f"{delete_url}")
+    data, error = await assert_status(response, web.HTTPNoContent)
+    assert not error
+    assert not data
