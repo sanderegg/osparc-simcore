@@ -23,12 +23,11 @@ from aiohttp import web
 from aiopg.sa import Engine
 from aiopg.sa.result import ResultProxy, RowProxy
 from models_library.api_schemas_storage import LinkType
+from models_library.users import UserID
 from pydantic import AnyUrl, ByteSize, parse_obj_as
 from servicelib.aiohttp.aiopg_utils import DBAPIError, PostgresRetryPolicyUponOperation
 from servicelib.aiohttp.client_session import get_client_session
-from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.sql.expression import literal_column
-from tenacity import retry
 from tenacity._asyncio import AsyncRetrying
 from tenacity.before_sleep import before_sleep_log
 from tenacity.retry import retry_if_exception_type
@@ -52,6 +51,7 @@ from .constants import (
     SIMCORE_S3_STR,
 )
 from .datcore_adapter import datcore_adapter
+from .db_file_meta_data import upsert_file_metadata_for_upload
 from .models import (
     DatasetMetaData,
     FileMetaData,
@@ -502,45 +502,9 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
             object_name=object_name,
         )
 
-    async def _generate_metadata_for_link(self, user_id: str, file_uuid: str):
-        """
-        Updates metadata table when link is used and upload is successfuly completed
-
-        SEE _metadata_file_updater
-        """
-
-        async with self.engine.acquire() as conn:
-            can: Optional[AccessRights] = await get_file_access_rights(
-                conn, int(user_id), file_uuid
-            )
-            if not can.write:
-                raise web.HTTPForbidden(
-                    reason=f"User {user_id} does not have enough access rights to upload file {file_uuid}"
-                )
-
-        @retry(**postgres_service_retry_policy_kwargs)
-        async def _init_metadata() -> tuple[int, str]:
-            async with self.engine.acquire() as conn:
-                fmd = FileMetaData()
-                fmd.simcore_from_uuid(file_uuid, self.simcore_bucket_name)
-                fmd.user_id = user_id  # NOTE: takes ownership of uploaded data
-
-                # if file already exists, we might want to update a time-stamp
-
-                # upsert file_meta_data
-                insert_stmt = pg_insert(file_meta_data).values(**vars(fmd))
-                do_nothing_stmt = insert_stmt.on_conflict_do_nothing(
-                    index_elements=["file_uuid"]
-                )
-                await conn.execute(do_nothing_stmt)
-
-                return fmd.file_size, fmd.last_modified
-
-        await _init_metadata()
-
     async def create_upload_links(
         self,
-        user_id: str,
+        user_id: UserID,
         file_uuid: str,
         link_type: LinkType,
         file_size_bytes: ByteSize,
@@ -550,32 +514,56 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
         NOTE: for multipart upload, the upload shall be aborted/concluded to spare
         unnecessary costs and dangling updates
         """
-        await self._generate_metadata_for_link(user_id=user_id, file_uuid=file_uuid)
-        bucket_name = self.simcore_bucket_name
-
-        if (
-            link_type == LinkType.PRESIGNED
-            and file_size_bytes < _MULTIPART_UPLOADS_MIN_TOTAL_SIZE
-        ):
-            single_presigned_link = await get_s3_client(
-                self.app
-            ).create_single_presigned_upload_link(bucket_name, file_uuid)
-            return UploadLinks(
-                [single_presigned_link],
-                file_size_bytes or _MAX_LINK_CHUNK_BYTE_SIZE[link_type],
+        async with self.engine.acquire() as conn:
+            can: Optional[AccessRights] = await get_file_access_rights(
+                conn, int(user_id), file_uuid
             )
+            if not can.write:
+                raise web.HTTPForbidden(
+                    reason=f"User {user_id} does not have enough access rights to upload file {file_uuid}"
+                )
+            # in case something bad happen this needs to be rolled back
+            async with conn.begin():
+                await upsert_file_metadata_for_upload(
+                    conn, user_id, self.simcore_bucket_name, file_uuid, upload_id=None
+                )
+                if (
+                    link_type == LinkType.PRESIGNED
+                    and file_size_bytes < _MULTIPART_UPLOADS_MIN_TOTAL_SIZE
+                ):
+                    single_presigned_link = await get_s3_client(
+                        self.app
+                    ).create_single_presigned_upload_link(
+                        self.simcore_bucket_name, file_uuid
+                    )
+                    return UploadLinks(
+                        [single_presigned_link],
+                        file_size_bytes or _MAX_LINK_CHUNK_BYTE_SIZE[link_type],
+                    )
 
-        if link_type == LinkType.PRESIGNED:
-            assert file_size_bytes  # nosec
-            multipart_presigned_links = await get_s3_client(
-                self.app
-            ).create_multipart_upload_links(bucket_name, file_uuid, file_size_bytes)
-            return UploadLinks(
-                multipart_presigned_links.urls, multipart_presigned_links.chunk_size
-            )
-        # user wants just the s3 link
-        s3_link = get_s3_client(self.app).compute_s3_url(bucket_name, file_uuid)
-        return UploadLinks([s3_link], _MAX_LINK_CHUNK_BYTE_SIZE[link_type])
+                if link_type == LinkType.PRESIGNED:
+                    assert file_size_bytes  # nosec
+                    multipart_presigned_links = await get_s3_client(
+                        self.app
+                    ).create_multipart_upload_links(
+                        self.simcore_bucket_name, file_uuid, file_size_bytes
+                    )
+                    await upsert_file_metadata_for_upload(
+                        conn,
+                        user_id,
+                        self.simcore_bucket_name,
+                        file_uuid,
+                        upload_id=multipart_presigned_links.upload_id,
+                    )
+                    return UploadLinks(
+                        multipart_presigned_links.urls,
+                        multipart_presigned_links.chunk_size,
+                    )
+                # user wants just the s3 link
+                s3_link = get_s3_client(self.app).compute_s3_url(
+                    self.simcore_bucket_name, file_uuid
+                )
+                return UploadLinks([s3_link], _MAX_LINK_CHUNK_BYTE_SIZE[link_type])
 
     async def abort_multi_part_upload(
         self, file_uuid: str, user_id: int, upload_id: str
