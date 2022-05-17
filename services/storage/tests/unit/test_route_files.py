@@ -122,14 +122,16 @@ async def test_create_upload_file_default_returns_single_link(
     # now check the entry in the database is correct, there should be only one
     async with aiopg_engine.acquire() as conn:
         result = await conn.execute(
-            file_meta_data.select().where(file_meta_data.c.object_name == file_uuid)
+            file_meta_data.select().where(file_meta_data.c.file_uuid == file_uuid)
         )
         db_data = await result.fetchall()
         assert db_data
         assert len(db_data) == 1
+        row = db_data[0]
         assert (
-            db_data[0][file_meta_data.c.file_size] == -1
+            row[file_meta_data.c.file_size] == -1
         ), "entry in file_meta_data was not initialized correctly, size should be set to -1"
+        assert row[file_meta_data.c.upload_id] == None
 
 
 @dataclass
@@ -222,14 +224,19 @@ async def test_create_upload_file_presigned_with_file_size_returns_multipart_lin
     # now check the entry in the database is correct, there should be only one
     async with aiopg_engine.acquire() as conn:
         result = await conn.execute(
-            file_meta_data.select().where(file_meta_data.c.object_name == file_uuid)
+            file_meta_data.select().where(file_meta_data.c.file_uuid == file_uuid)
         )
         db_data = await result.fetchall()
         assert db_data
         assert len(db_data) == 1
+        row = db_data[0]
         assert (
-            db_data[0][file_meta_data.c.file_size] == -1
+            row[file_meta_data.c.file_size] == -1
         ), "entry in file_meta_data was not initialized correctly, size should be set to -1"
+        if test_param.expected_num_links == 1:
+            assert row[file_meta_data.c.upload_id] == None
+        else:
+            assert row[file_meta_data.c.upload_id] is not None
 
 
 @pytest.mark.skip(reason="DEV")

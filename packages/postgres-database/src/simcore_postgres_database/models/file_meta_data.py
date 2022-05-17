@@ -38,4 +38,10 @@ file_meta_data = sa.Table(
         doc="If true, this file is a soft link."
         "i.e. is another entry with the same object_name",
     ),
+    sa.Column(
+        "upload_id",
+        sa.String(),
+        nullable=True,
+        doc="if filled, contains the uploadId for S3 multipart file upload",
+    ),
 )
