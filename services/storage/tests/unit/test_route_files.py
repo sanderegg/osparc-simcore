@@ -11,10 +11,11 @@ import pytest
 from aiohttp import web
 from aiohttp.test_utils import TestClient
 from faker import Faker
+from models_library.api_schemas_storage import FileUploadSchema
 from models_library.projects import ProjectID
 from models_library.projects_nodes import NodeID
 from models_library.users import UserID
-from pydantic import AnyUrl, ByteSize, parse_obj_as
+from pydantic import ByteSize, parse_obj_as
 from pytest_simcore.helpers.utils_assert import assert_status
 
 pytest_simcore_core_services_selection = ["postgres"]
@@ -95,28 +96,25 @@ async def test_create_upload_file_default_returns_single_link(
     data, error = await assert_status(response, web.HTTPOk)
     assert not error
     assert data
-    assert "urls" in data
-    assert "chunk_size" in data
-    assert isinstance(data["urls"], list)
-    assert isinstance(data["chunk_size"], int)
+    received_file_upload = FileUploadSchema.parse_obj(data)
+    assert received_file_upload
     # check links, there should be only 1
-    assert len(data["urls"]) == 1
-    link = parse_obj_as(AnyUrl, data["urls"][0])
-    assert link.scheme == expected_link_scheme
-    assert link.path
-    assert link.path.endswith(f"{file_uuid}")
+    assert len(received_file_upload.urls) == 1
+    assert received_file_upload.urls[0].scheme == expected_link_scheme
+    assert received_file_upload.urls[0].path
+    assert received_file_upload.urls[0].path.endswith(f"{file_uuid}")
     # the chunk_size
-    assert data["chunk_size"] == expected_chunk_size
+    assert received_file_upload.chunk_size == expected_chunk_size
     if expected_link_query_keys:
-        assert link.query
+        assert received_file_upload.urls[0].query
         query = {
             query_str.split("=")[0]: query_str.split("=")[1]
-            for query_str in link.query.split("&")
+            for query_str in received_file_upload.urls[0].query.split("&")
         }
         for key in expected_link_query_keys:
             assert key in query
     else:
-        assert not link.query
+        assert not received_file_upload.urls[0].query
 
 
 @dataclass
@@ -198,11 +196,9 @@ async def test_create_upload_file_with_file_size_can_return_multipart_links(
     data, error = await assert_status(response, test_param.expected_response)
     assert not error
     assert data
-    assert "urls" in data
-    assert isinstance(data["urls"], list)
-    assert len(data["urls"]) == test_param.expected_num_links
-    # all elements are unique
-    assert len(set(data["urls"])) == len(data["urls"])
-    assert "chunk_size" in data
-    assert isinstance(data["chunk_size"], int)
-    assert data["chunk_size"] == int(test_param.expected_chunk_size.to("b"))
+    received_file_upload = FileUploadSchema.parse_obj(data)
+    assert received_file_upload
+    assert len(received_file_upload.urls) == test_param.expected_num_links
+    # all links are unique
+    assert len(set(received_file_upload.urls)) == len(received_file_upload.urls)
+    assert received_file_upload.chunk_size == test_param.expected_chunk_size
