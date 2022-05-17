@@ -206,11 +206,15 @@ class PresignedLinksArray(BaseModel):
     chunk_size: ByteSize
 
 
+class FileUploadLinks(BaseModel):
+    abort_upload: AnyUrl
+    complete_upload: AnyUrl
+
+
 class FileUploadSchema(BaseModel):
     chunk_size: ByteSize
-    upload_urls: list[AnyUrl]
-    abort_url: AnyUrl
-    completed_url: AnyUrl
+    urls: list[AnyUrl]
+    links: FileUploadLinks
 
 
 # /simcore-s3/
