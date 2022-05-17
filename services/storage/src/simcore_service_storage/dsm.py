@@ -26,7 +26,6 @@ from models_library.api_schemas_storage import LinkType
 from pydantic import AnyUrl, ByteSize, parse_obj_as
 from servicelib.aiohttp.aiopg_utils import DBAPIError, PostgresRetryPolicyUponOperation
 from servicelib.aiohttp.client_session import get_client_session
-from servicelib.utils import fire_and_forget_task
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.sql.expression import literal_column
 from tenacity import retry
@@ -546,22 +545,13 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
         link_type: LinkType,
         file_size_bytes: ByteSize,
     ) -> UploadLinks:
-        """returns: a presigned upload link
-
-        NOTE: updates metadata once the upload is concluded"""
+        """returns: returns the link to the file as presigned link (for sharing),
+        or s3 link (for internal use)
+        NOTE: for multipart upload, the upload shall be aborted/concluded to spare
+        unnecessary costs and dangling updates
+        """
         await self._generate_metadata_for_link(user_id=user_id, file_uuid=file_uuid)
         bucket_name = self.simcore_bucket_name
-        object_name = file_uuid
-
-        # a parallel task is tarted which will update the metadata of the updated file
-        # once the update has finished.
-        fire_and_forget_task(
-            self.auto_update_database_from_storage_task(
-                file_uuid=file_uuid,
-                bucket_name=bucket_name,
-                object_name=object_name,
-            )
-        )
 
         if (
             link_type == LinkType.PRESIGNED
@@ -569,23 +559,23 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
         ):
             single_presigned_link = await get_s3_client(
                 self.app
-            ).create_single_presigned_upload_link(bucket_name, object_name)
+            ).create_single_presigned_upload_link(bucket_name, file_uuid)
             return UploadLinks(
                 [single_presigned_link],
                 file_size_bytes or _MAX_LINK_CHUNK_BYTE_SIZE[link_type],
             )
 
-        elif link_type == LinkType.PRESIGNED:
+        if link_type == LinkType.PRESIGNED:
             assert file_size_bytes  # nosec
             multipart_presigned_links = await get_s3_client(
                 self.app
-            ).create_multipart_upload_links(bucket_name, object_name, file_size_bytes)
+            ).create_multipart_upload_links(bucket_name, file_uuid, file_size_bytes)
             return UploadLinks(
                 multipart_presigned_links.urls, multipart_presigned_links.chunk_size
             )
-        else:
-            s3_link = get_s3_client(self.app).compute_s3_url(bucket_name, object_name)
-            return UploadLinks([s3_link], _MAX_LINK_CHUNK_BYTE_SIZE[link_type])
+        # user wants just the s3 link
+        s3_link = get_s3_client(self.app).compute_s3_url(bucket_name, file_uuid)
+        return UploadLinks([s3_link], _MAX_LINK_CHUNK_BYTE_SIZE[link_type])
 
     async def abort_multi_part_upload(
         self, file_uuid: str, user_id: int, upload_id: str
