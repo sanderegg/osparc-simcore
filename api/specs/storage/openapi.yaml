@@ -315,7 +315,7 @@ paths:
       summary: Returns upload object
       operationId: upload_file
       parameters:
-        - name: fileId
+        - name: file_id
           in: path
           required: true
           schema:

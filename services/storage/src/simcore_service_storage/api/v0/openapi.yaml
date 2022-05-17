@@ -304,10 +304,10 @@ paths:
         default:
           $ref: '#/components/responses/DefaultErrorResponse'
     put:
-      summary: Returns upload link
+      summary: Returns upload object
       operationId: upload_file
       parameters:
-        - name: fileId
+        - name: file_id
           in: path
           required: true
           schema:
@@ -340,11 +340,11 @@ paths:
             minimum: 0
       responses:
         '200':
-          description: Returns presigned link
+          description: Creates and returns file upload object
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/PresignedLinksArrayEnveloped'
+                $ref: '#/components/schemas/FileUploadEnveloped'
         default:
           $ref: '#/components/responses/DefaultErrorResponse'
     delete:
@@ -870,10 +870,43 @@ components:
             type: string
         chunk_size:
           type: integer
+          format: int64
+          minimum: 0
       example:
         urls:
           - example_link
         chunk_size: 558796
+    FileUploadEnveloped:
+      type: object
+      required:
+        - data
+        - error
+      properties:
+        data:
+          $ref: '#/components/schemas/FileUploadSchema'
+        error:
+          nullable: true
+          default: null
+    FileUploadSchema:
+      type: object
+      required:
+        - chunk_size
+        - upload_urls
+        - abort_url
+        - completed_url
+      properties:
+        chunk_size:
+          type: integer
+          format: int64
+          minimum: 0
+        upload_urls:
+          type: array
+          items:
+            type: string
+        abort_url:
+          type: string
+        completed_url:
+          type: string
     S3AccessCredentialsEnveloped:
       type: object
       required:
