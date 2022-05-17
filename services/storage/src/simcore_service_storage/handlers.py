@@ -361,7 +361,7 @@ async def upload_file(request: web.Request):
             file_size_bytes=parse_obj_as(ByteSize, query.get("file_size", 0)),
         )
 
-        abort_url = request.url.with_path(f"{request.url.path}:abort").with_query(
+        abort_url = request.url.with_path(f"{request.url.path}").with_query(
             user_id=user_id
         )
         complete_url = request.url.with_path(
@@ -406,7 +406,7 @@ async def abort_upload_file(request: web.Request):
         )
 
 
-@routes.post(f"/{api_vtag}/locations/{{location_id}}/files/{{file_id}}:completed")  # type: ignore
+@routes.post(f"/{api_vtag}/locations/{{location_id}}/files/{{file_id}}:complete")  # type: ignore
 async def complete_upload_file(request: web.Request):
     params, query, body = await extract_and_validate(request)
     log.debug(
@@ -444,6 +444,7 @@ async def delete_file(request: web.Request):
 
     assert params["location_id"]  # nosec
     assert params["file_id"]  # nosec
+    params["file_id"] = urllib.parse.unquote(params["file_id"])
     assert query["user_id"]  # nosec
 
     with handle_storage_errors():
@@ -455,7 +456,7 @@ async def delete_file(request: web.Request):
         location = dsm.location_from_id(location_id)
         await dsm.delete_file(user_id=user_id, location=location, file_uuid=file_uuid)
 
-        return {"error": None, "data": None}
+        return web.HTTPNoContent(content_type="application/json")
 
 
 @routes.post(f"/{api_vtag}/simcore-s3:access")  # type: ignore
