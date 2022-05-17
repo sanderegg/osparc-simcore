@@ -361,21 +361,20 @@ async def upload_file(request: web.Request):
             file_size_bytes=parse_obj_as(ByteSize, query.get("file_size", 0)),
         )
 
+        abort_url = request.url.with_path(f"{request.url.path}:abort").with_query(
+            user_id=user_id
+        )
+        complete_url = request.url.with_path(
+            f"{request.url.path}:completed"
+        ).with_query(user_id=user_id)
         response = FileUploadSchema(
             chunk_size=links.chunk_size,
             urls=links.urls,
             links=FileUploadLinks(
-                abort_upload=parse_obj_as(
-                    AnyUrl,
-                    request.url.with_path(f"{request.url.path}:abort").with_query(
-                        user_id=user_id
-                    ),
-                ),
+                abort_upload=parse_obj_as(AnyUrl, f"{abort_url}"),
                 complete_upload=parse_obj_as(
                     AnyUrl,
-                    request.url.with_path(f"{request.url.path}:completed").with_query(
-                        user_id=user_id
-                    ),
+                    f"{complete_url}",
                 ),
             ),
         )
