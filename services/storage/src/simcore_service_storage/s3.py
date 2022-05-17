@@ -1,13 +1,17 @@
 """ Module to access s3 service
 
 """
+import asyncio
 import logging
+import urllib.parse
 from contextlib import AsyncExitStack
 from dataclasses import dataclass
+from typing import Final
 
 from aiobotocore.session import AioSession, get_session
 from aiohttp import web
 from botocore.client import Config
+from pydantic import AnyUrl, ByteSize, parse_obj_as
 from settings_library.s3 import S3Settings
 from tenacity._asyncio import AsyncRetrying
 from tenacity.before_sleep import before_sleep_log
@@ -19,6 +23,44 @@ from .constants import APP_CONFIG_KEY, APP_S3_KEY
 from .utils import MINUTE, RETRY_WAIT_SECS
 
 log = logging.getLogger(__name__)
+
+# this is artifically defined, if possible we keep a maximum number of requests for parallel
+# uploading. If that is not possible then we create as many upload part as the max part size allows
+_MULTIPART_UPLOADS_TARGET_MAX_PART_SIZE: Final[list[ByteSize]] = [
+    parse_obj_as(ByteSize, x)
+    for x in [
+        "10Mib",
+        "50Mib",
+        "100Mib",
+        "200Mib",
+        "400Mib",
+        "600Mib",
+        "800Mib",
+        "1Gib",
+        "2Gib",
+        "3Gib",
+        "4Gib",
+        "5Gib",
+    ]
+]
+_MULTIPART_MAX_NUMBER_OF_PARTS: Final[int] = 10000
+
+# TODO: create a fct with tenacity to generate the number of links
+def _compute_number_links(file_size: ByteSize) -> tuple[int, ByteSize]:
+    for chunk in _MULTIPART_UPLOADS_TARGET_MAX_PART_SIZE:
+        num_upload_links = int(file_size / chunk) + (1 if file_size % chunk > 0 else 0)
+        if num_upload_links < _MULTIPART_MAX_NUMBER_OF_PARTS:
+            return (num_upload_links, chunk)
+    raise ValueError(
+        f"Could not determine number of upload links for {file_size=}",
+    )
+
+
+@dataclass(frozen=True)
+class MultiPartUploadLinks:
+    upload_id: str
+    chunk_size: ByteSize
+    urls: list[AnyUrl]
 
 
 @dataclass
@@ -44,17 +86,60 @@ class StorageS3Client:
         )
         return cls(session, client)
 
-    async def create_bucket(self, bucket_name: str) -> None:
-        log.debug("Creating bucket: %s", bucket_name)
+    async def create_bucket(self, bucket: str) -> None:
+        log.debug("Creating bucket: %s", bucket)
 
         try:
-            await self.client.create_bucket(Bucket=bucket_name)
-            log.info("Bucket %s successfully created", bucket_name)
+            await self.client.create_bucket(Bucket=bucket)
+            log.info("Bucket %s successfully created", bucket)
         except self.client.exceptions.BucketAlreadyOwnedByYou:
             log.info(
                 "Bucket %s already exists and is owned by us",
-                bucket_name,
+                bucket,
             )
+
+    async def create_single_presigned_upload_link(
+        self, bucket: str, file_id: str
+    ) -> AnyUrl:
+        generated_link = await self.client.generate_presigned_url(
+            "put_object",
+            Params={"Bucket": bucket, "Key": file_id},
+            ExpiresIn=3600,
+        )
+        return parse_obj_as(AnyUrl, generated_link)
+
+    async def create_multipart_upload_links(
+        self, bucket: str, file_id: str, file_size: ByteSize
+    ) -> MultiPartUploadLinks:
+        # first initiate the multipart upload
+        response = await self.client.create_multipart_upload(Bucket=bucket, Key=file_id)
+        upload_id = response["UploadId"]
+        # compute the number of links, based on the announced file size
+        num_upload_links, chunk_size = _compute_number_links(file_size)
+        # now create the links
+        upload_links = parse_obj_as(
+            list[AnyUrl],
+            await asyncio.gather(
+                *[
+                    self.client.generate_presigned_url(
+                        "upload_part",
+                        Params={
+                            "Bucket": bucket,
+                            "Key": file_id,
+                            "PartNumber": i + 1,
+                            "UploadId": upload_id,
+                        },
+                        ExpiresIn=3600,
+                    )
+                    for i in range(num_upload_links)
+                ]
+            ),
+        )
+        return MultiPartUploadLinks(upload_id, chunk_size, upload_links)
+
+    @staticmethod
+    def compute_s3_url(bucket: str, file_id: str) -> AnyUrl:
+        return parse_obj_as(AnyUrl, f"s3://{bucket}/{urllib.parse.quote(file_id)}")
 
 
 async def setup_s3_client(app):
