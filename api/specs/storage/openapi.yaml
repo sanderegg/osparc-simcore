@@ -272,6 +272,54 @@ paths:
         default:
           $ref: "#/components/responses/DefaultErrorResponse"
 
+  /locations/{location_id}/files/{file_id}:complete:
+    post:
+      summary: Signify that upload was completed
+      operationId: complete_upload_file
+      parameters:
+        - name: file_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: location_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: user_id
+          in: query
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - parts
+              properties:
+                parts:
+                  type: array
+                  items:
+                    type: object
+                    required:
+                      - number
+                      - eTag
+                    properties:
+                      number:
+                        type: integer
+                        minimum: 1
+                      eTag:
+                        type: string
+
+      responses:
+        "204":
+          description: Success
+        default:
+          $ref: "#/components/responses/DefaultErrorResponse"
+
   /locations/{location_id}/files/{file_id}:
     get:
       summary: Gets download link for file at location
@@ -376,7 +424,7 @@ paths:
             type: string
       responses:
         "204":
-          description: everything is OK, but there is no content to return
+          description: everything is OK
         default:
           $ref: "#/components/responses/DefaultErrorResponse"
 
