@@ -458,7 +458,7 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
         reraise_exceptions: bool,
     ) -> Optional[FileMetaDataEx]:
         try:
-            result = await get_s3_client(self.app).head_object(
+            result = await get_s3_client(self.app).client.head_object(
                 Bucket=bucket_name, Key=object_name
             )  # type: ignore
 
@@ -620,7 +620,7 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
                     )
 
                 # here we start a multipart upload
-                response = await get_s3_client(self.app).create_multipart_upload(
+                response = await get_s3_client(self.app).client.create_multipart_upload(
                     Bucket=bucket_name, Key=object_name
                 )
                 upload_id = response["UploadId"]
@@ -629,7 +629,7 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
                 num_upload_links, chunk_size = _compute_number_links(file_size_bytes)
                 upload_links = await asyncio.gather(
                     *[
-                        get_s3_client(self.app).generate_presigned_url(
+                        get_s3_client(self.app).client.generate_presigned_url(
                             "upload_part",
                             Params={
                                 "Bucket": bucket_name,
@@ -647,7 +647,9 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
                     chunk_size=chunk_size,
                 )
 
-            put_presigned_link = await get_s3_client(self.app).generate_presigned_url(
+            put_presigned_link = await get_s3_client(
+                self.app
+            ).client.generate_presigned_url(
                 "put_object",
                 Params={"Bucket": bucket_name, "Key": object_name},
                 ExpiresIn=3600,
@@ -686,7 +688,7 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
 
         bucket_name = self.simcore_bucket_name
         object_name = file_uuid
-        await get_s3_client(self.app).abort_multipart_upload(
+        await get_s3_client(self.app).client.abort_multipart_upload(
             Bucket=bucket_name, Key=object_name, UploadId=upload_id
         )
 
@@ -708,7 +710,7 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
 
         bucket_name = self.simcore_bucket_name
         object_name = file_uuid
-        await get_s3_client(self.app).complete_multipart_upload(
+        await get_s3_client(self.app).client.complete_multipart_upload(
             Bucket=bucket_name,
             Key=object_name,
             UploadId=upload_id,
@@ -754,7 +756,9 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
         )
         if as_presigned_link:
 
-            get_presigned_link = await get_s3_client(self.app).generate_presigned_url(
+            get_presigned_link = await get_s3_client(
+                self.app
+            ).client.generate_presigned_url(
                 "get_object",
                 Params={"Bucket": bucket_name, "Key": object_name},
                 ExpiresIn=259200,
@@ -885,7 +889,7 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
         # Step 1: List all objects for this project replace them with the destination object name
         # and do a copy at the same time collect some names
         # Note: the / at the end of the Prefix is VERY important, makes the listing several order of magnitudes faster
-        response = await get_s3_client(self.app).list_objects_v2(
+        response = await get_s3_client(self.app).client.list_objects_v2(
             Bucket=self.simcore_bucket_name, Prefix=f"{source_folder}/"
         )
 
@@ -928,7 +932,7 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
 
                 # FIXME: if 5GB, it must use multipart upload Upload Part - Copy API
                 # SEE https://botocore.amazonaws.com/v1/documentation/api/latest/reference/services/s3.html#S3.Client.copy_object
-                await get_s3_client(self.app).copy_object(**copy_kwargs)
+                await get_s3_client(self.app).client.copy_object(**copy_kwargs)
 
         # Step 2: list all references in outputs that point to datcore and copy over
         for node_id, node in destination_project["workbench"].items():
@@ -960,7 +964,7 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
 
         # step 3: list files first to create fmds
         # Note: the / at the end of the Prefix is VERY important, makes the listing several order of magnitudes faster
-        response = await get_s3_client(self.app).list_objects_v2(
+        response = await get_s3_client(self.app).client.list_objects_v2(
             Bucket=self.simcore_bucket_name, Prefix=f"{dest_folder}/"
         )
 
@@ -1028,7 +1032,7 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
                 ).where(file_meta_data.c.file_uuid == file_uuid)
 
                 async for row in conn.execute(query):
-                    await get_s3_client(self.app).delete_object(
+                    await get_s3_client(self.app).client.delete_object(
                         Bucket=row.bucket_name, Key=row.object_name
                     )
                     to_delete.append(file_uuid)
@@ -1077,7 +1081,7 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
             await conn.execute(delete_me)
 
         # Note: the / at the end of the Prefix is VERY important, makes the listing several order of magnitudes faster
-        response = await get_s3_client(self.app).list_objects_v2(
+        response = await get_s3_client(self.app).client.list_objects_v2(
             Bucket=self.simcore_bucket_name,
             Prefix=f"{project_id}/{node_id}/" if node_id else f"{project_id}/",
         )
@@ -1087,7 +1091,7 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
             objects_to_delete.append({"Key": f["Key"]})
 
         if objects_to_delete:
-            response = await get_s3_client(self.app).delete_objects(
+            response = await get_s3_client(self.app).client.delete_objects(
                 Bucket=self.simcore_bucket_name,
                 Delete={"Objects": objects_to_delete},
             )
@@ -1215,7 +1219,7 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
 
                     # now check if the file exists in S3
                     # SEE https://www.peterbe.com/plog/fastest-way-to-find-out-if-a-file-exists-in-s3
-                    response = await get_s3_client(self.app).list_objects_v2(
+                    response = await get_s3_client(self.app).client.list_objects_v2(
                         Bucket=self.simcore_bucket_name, Prefix=s3_key
                     )
                     if response.get("KeyCount", 0) == 0:
