@@ -563,12 +563,16 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
             )
         )
 
-        if link_type == LinkType.PRESIGNED and not file_size_bytes:
+        if (
+            link_type == LinkType.PRESIGNED
+            and file_size_bytes < _MULTIPART_UPLOADS_MIN_TOTAL_SIZE
+        ):
             single_presigned_link = await get_s3_client(
                 self.app
             ).create_single_presigned_upload_link(bucket_name, object_name)
             return UploadLinks(
-                [single_presigned_link], _MAX_LINK_CHUNK_BYTE_SIZE[link_type]
+                [single_presigned_link],
+                file_size_bytes or _MAX_LINK_CHUNK_BYTE_SIZE[link_type],
             )
 
         elif link_type == LinkType.PRESIGNED:
