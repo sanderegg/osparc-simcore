@@ -87,7 +87,7 @@ async def test_create_upload_file_default_returns_single_link(
     url = (
         client.app.router["upload_file"]
         .url_for(
-            location_id=f"{location_id}", fileId=urllib.parse.quote(file_uuid, safe="")
+            location_id=f"{location_id}", file_id=urllib.parse.quote(file_uuid, safe="")
         )
         .with_query(**url_query, user_id=user_id)
     )
@@ -185,7 +185,7 @@ async def test_create_upload_file_with_file_size_can_return_multipart_links(
     url = (
         client.app.router["upload_file"]
         .url_for(
-            location_id=f"{location_id}", fileId=urllib.parse.quote(file_uuid, safe="")
+            location_id=f"{location_id}", file_id=urllib.parse.quote(file_uuid, safe="")
         )
         .with_query(
             link_type=test_param.link_type,

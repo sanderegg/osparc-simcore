@@ -196,7 +196,7 @@ async def get_files_metadata_dataset(request: web.Request):
         return {"error": None, "data": data_as_dict}
 
 
-@routes.get(f"/{api_vtag}/locations/{{location_id}}/files/{{fileId}}/metadata")  # type: ignore
+@routes.get(f"/{api_vtag}/locations/{{location_id}}/files/{{file_id}}/metadata")  # type: ignore
 async def get_file_metadata(request: web.Request):
     params, query, body = await extract_and_validate(request)
 
@@ -205,13 +205,13 @@ async def get_file_metadata(request: web.Request):
     assert not body, "body %s" % body  # nosec
 
     assert params["location_id"]  # nosec
-    assert params["fileId"]  # nosec
+    assert params["file_id"]  # nosec
     assert query["user_id"]  # nosec
 
     with handle_storage_errors():
         location_id = params["location_id"]
         user_id = query["user_id"]
-        file_uuid = params["fileId"]
+        file_uuid = params["file_id"]
 
         dsm = await _prepare_storage_manager(params, query, request)
         location = dsm.location_from_id(location_id)
@@ -274,7 +274,7 @@ async def synchronise_meta_data_table(request: web.Request):
         return {"error": None, "data": sync_results}
 
 
-@routes.patch(f"/{api_vtag}/locations/{{location_id}}/files/{{fileId}}/metadata")  # type: ignore
+@routes.patch(f"/{api_vtag}/locations/{{location_id}}/files/{{file_id}}/metadata")  # type: ignore
 async def update_file_meta_data(request: web.Request):
     params, query, body = await extract_and_validate(request)
 
@@ -283,7 +283,7 @@ async def update_file_meta_data(request: web.Request):
     assert not body, "body %s" % body  # nosec
 
     with handle_storage_errors():
-        file_uuid = urllib.parse.unquote_plus(params["fileId"])
+        file_uuid = urllib.parse.unquote_plus(params["file_id"])
         user_id = query["user_id"]
 
         dsm = await _prepare_storage_manager(params, query, request)
@@ -300,7 +300,7 @@ async def update_file_meta_data(request: web.Request):
         }
 
 
-@routes.get(f"/{api_vtag}/locations/{{location_id}}/files/{{fileId}}")  # type: ignore
+@routes.get(f"/{api_vtag}/locations/{{location_id}}/files/{{file_id}}")  # type: ignore
 async def download_file(request: web.Request):
     params, query, body = await extract_and_validate(request)
 
@@ -309,14 +309,14 @@ async def download_file(request: web.Request):
     assert not body, "body %s" % body  # nosec
 
     assert params["location_id"]  # nosec
-    assert params["fileId"]  # nosec
+    assert params["file_id"]  # nosec
     assert query["user_id"]  # nosec
     link_type = query.get("link_type", "presigned")
 
     with handle_storage_errors():
         location_id = params["location_id"]
         user_id = query["user_id"]
-        file_uuid = params["fileId"]
+        file_uuid = params["file_id"]
 
         if int(location_id) != SIMCORE_S3_ID:
             raise web.HTTPPreconditionFailed(
@@ -335,13 +335,13 @@ async def download_file(request: web.Request):
         return {"error": None, "data": {"link": link}}
 
 
-@routes.put(f"/{api_vtag}/locations/{{location_id}}/files/{{fileId}}")  # type: ignore
+@routes.put(f"/{api_vtag}/locations/{{location_id}}/files/{{file_id}}")  # type: ignore
 async def upload_file(request: web.Request):
     params, query, body = await extract_and_validate(request)
     log.debug("received call to upload_file with %s", f"{params=}, {query=}, {body=}")
     assert params, f"{params}"  # nosec
-    assert "fileId" in params  # nosec
-    params["fileId"] = urllib.parse.unquote(params["fileId"])
+    assert "file_id" in params  # nosec
+    params["file_id"] = urllib.parse.unquote(params["file_id"])
 
     assert query, f"{query}"  # nosec
     assert not body, f"{body}"  # nosec
@@ -349,7 +349,7 @@ async def upload_file(request: web.Request):
 
     with handle_storage_errors():
         user_id = query["user_id"]
-        file_uuid = params["fileId"]
+        file_uuid = params["file_id"]
 
         dsm = await _prepare_storage_manager(params, query, request)
 
@@ -362,21 +362,21 @@ async def upload_file(request: web.Request):
     return {"data": json.loads(links.json(by_alias=True))}
 
 
-@routes.post(f"/{api_vtag}/locations/{{location_id}}/files/{{fileId}}:abort")  # type: ignore
+@routes.post(f"/{api_vtag}/locations/{{location_id}}/files/{{file_id}}:abort")  # type: ignore
 async def abort_upload_file(request: web.Request):
     params, query, body = await extract_and_validate(request)
     log.debug(
         "received call to abort upload_file with %s", f"{params=}, {query=}, {body=}"
     )
     assert params, f"{params}"  # nosec
-    assert "fileId" in params  # nosec
-    params["fileId"] = urllib.parse.unquote(params["fileId"])
+    assert "file_id" in params  # nosec
+    params["file_id"] = urllib.parse.unquote(params["file_id"])
     assert query, f"{query}"  # nosec
     assert body, f"{body}"  # nosec
 
     with handle_storage_errors():
         user_id = query["user_id"]
-        file_uuid = params["fileId"]
+        file_uuid = params["file_id"]
         upload_id = body["uploadId"]
 
         dsm = await _prepare_storage_manager(params, query, request)
@@ -386,21 +386,21 @@ async def abort_upload_file(request: web.Request):
         )
 
 
-@routes.post(f"/{api_vtag}/locations/{{location_id}}/files/{{fileId}}:completed")  # type: ignore
+@routes.post(f"/{api_vtag}/locations/{{location_id}}/files/{{file_id}}:completed")  # type: ignore
 async def complete_upload_file(request: web.Request):
     params, query, body = await extract_and_validate(request)
     log.debug(
         "received call to complete upload_file with %s", f"{params=}, {query=}, {body=}"
     )
     assert params, f"{params}"  # nosec
-    assert "fileId" in params  # nosec
-    params["fileId"] = urllib.parse.unquote(params["fileId"])
+    assert "file_id" in params  # nosec
+    params["file_id"] = urllib.parse.unquote(params["file_id"])
     assert query, f"{query}"  # nosec
     assert body, f"{body}"  # nosec
 
     with handle_storage_errors():
         user_id = query["user_id"]
-        file_uuid = params["fileId"]
+        file_uuid = params["file_id"]
         upload_id = body["uploadId"]
         multipart_upload_parts = body["uploaded_parts"]
 
@@ -414,7 +414,7 @@ async def complete_upload_file(request: web.Request):
         )
 
 
-@routes.delete(f"/{api_vtag}/locations/{{location_id}}/files/{{fileId}}")  # type: ignore
+@routes.delete(f"/{api_vtag}/locations/{{location_id}}/files/{{file_id}}")  # type: ignore
 async def delete_file(request: web.Request):
     params, query, body = await extract_and_validate(request)
 
@@ -423,13 +423,13 @@ async def delete_file(request: web.Request):
     assert not body, "body %s" % body  # nosec
 
     assert params["location_id"]  # nosec
-    assert params["fileId"]  # nosec
+    assert params["file_id"]  # nosec
     assert query["user_id"]  # nosec
 
     with handle_storage_errors():
         location_id = params["location_id"]
         user_id = query["user_id"]
-        file_uuid = params["fileId"]
+        file_uuid = params["file_id"]
 
         dsm = await _prepare_storage_manager(params, query, request)
         location = dsm.location_from_id(location_id)
