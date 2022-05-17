@@ -891,22 +891,27 @@ components:
       type: object
       required:
         - chunk_size
-        - upload_urls
-        - abort_url
-        - completed_url
+        - urls
+        - links
       properties:
         chunk_size:
           type: integer
           format: int64
           minimum: 0
-        upload_urls:
+        urls:
           type: array
           items:
             type: string
-        abort_url:
-          type: string
-        completed_url:
-          type: string
+        links:
+          type: object
+          required:
+            - abort_upload
+            - complete_upload
+          properties:
+            abort_upload:
+              type: string
+            complete_upload:
+              type: string
     S3AccessCredentialsEnveloped:
       type: object
       required:

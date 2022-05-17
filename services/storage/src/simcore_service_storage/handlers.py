@@ -8,8 +8,9 @@ from typing import Any, Dict, Optional
 import attr
 from aiohttp import web
 from aiohttp.web import RouteTableDef
+from models_library.api_schemas_storage import FileUploadLinks, FileUploadSchema
 from models_library.users import UserID
-from pydantic import ByteSize, parse_obj_as
+from pydantic import AnyUrl, ByteSize, parse_obj_as
 from servicelib.aiohttp.application_keys import APP_CONFIG_KEY
 from servicelib.aiohttp.rest_utils import extract_and_validate
 from settings_library.s3 import S3Settings
@@ -20,7 +21,7 @@ from ._meta import api_vtag
 from .access_layer import InvalidFileIdentifier
 from .constants import APP_DSM_KEY, DATCORE_STR, SIMCORE_S3_ID, SIMCORE_S3_STR
 from .db_tokens import get_api_token_and_secret
-from .dsm import DataStorageManager, DatCoreApiToken, LinkType
+from .dsm import DataStorageManager, DatCoreApiToken, LinkType, UploadLinks
 from .models import FileMetaDataEx
 from .settings import Settings
 
@@ -353,13 +354,33 @@ async def upload_file(request: web.Request):
 
         dsm = await _prepare_storage_manager(params, query, request)
 
-        links = await dsm.create_upload_links(
+        links: UploadLinks = await dsm.create_upload_links(
             user_id=user_id,
             file_uuid=file_uuid,
             link_type=LinkType(link_type.upper()),
             file_size_bytes=parse_obj_as(ByteSize, query.get("file_size", 0)),
         )
-    return {"data": json.loads(links.json(by_alias=True))}
+
+        response = FileUploadSchema(
+            chunk_size=links.chunk_size,
+            urls=links.urls,
+            links=FileUploadLinks(
+                abort_upload=parse_obj_as(
+                    AnyUrl,
+                    request.url.with_path(f"{request.url.path}:abort").with_query(
+                        user_id=user_id
+                    ),
+                ),
+                complete_upload=parse_obj_as(
+                    AnyUrl,
+                    request.url.with_path(f"{request.url.path}:completed").with_query(
+                        user_id=user_id
+                    ),
+                ),
+            ),
+        )
+
+    return {"data": json.loads(response.json(by_alias=True))}
 
 
 @routes.post(f"/{api_vtag}/locations/{{location_id}}/files/{{file_id}}:abort")  # type: ignore
