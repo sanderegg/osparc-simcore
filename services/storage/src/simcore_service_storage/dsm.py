@@ -548,6 +548,7 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
                     ).create_multipart_upload_links(
                         self.simcore_bucket_name, file_uuid, file_size_bytes
                     )
+                    # update the database so we keep the upload id
                     await upsert_file_metadata_for_upload(
                         conn,
                         user_id,
@@ -563,7 +564,9 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
                 s3_link = get_s3_client(self.app).compute_s3_url(
                     self.simcore_bucket_name, file_uuid
                 )
-                return UploadLinks([s3_link], _MAX_LINK_CHUNK_BYTE_SIZE[link_type])
+                return UploadLinks(
+                    [s3_link], file_size_bytes or _MAX_LINK_CHUNK_BYTE_SIZE[link_type]
+                )
 
     async def abort_multi_part_upload(
         self, file_uuid: str, user_id: int, upload_id: str
