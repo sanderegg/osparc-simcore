@@ -10,6 +10,7 @@ import re
 import tempfile
 import urllib.parse
 from collections import deque
+from contextlib import suppress
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, Final, List, Optional, Tuple, Union
@@ -27,6 +28,7 @@ from models_library.users import UserID
 from pydantic import AnyUrl, ByteSize, parse_obj_as
 from servicelib.aiohttp.aiopg_utils import DBAPIError, PostgresRetryPolicyUponOperation
 from servicelib.aiohttp.client_session import get_client_session
+from simcore_service_storage.exceptions import FileMetaDataNotFoundError
 from sqlalchemy.sql.expression import literal_column
 from tenacity._asyncio import AsyncRetrying
 from tenacity.before_sleep import before_sleep_log
@@ -35,6 +37,7 @@ from tenacity.stop import stop_after_delay
 from tenacity.wait import wait_exponential
 from yarl import URL
 
+from . import db_file_meta_data
 from .access_layer import (
     AccessRights,
     get_file_access_rights,
@@ -51,7 +54,6 @@ from .constants import (
     SIMCORE_S3_STR,
 )
 from .datcore_adapter import datcore_adapter
-from .db_file_meta_data import upsert_file_metadata_for_upload
 from .models import (
     DatasetMetaData,
     FileMetaData,
@@ -60,7 +62,7 @@ from .models import (
     get_location_from_id,
     projects,
 )
-from .s3 import get_s3_client
+from .s3 import UploadedPart, get_s3_client
 from .settings import Settings
 from .utils import download_to_file_or_raise, is_file_entry_valid, to_meta_data_extended
 
@@ -524,7 +526,7 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
                 )
             # in case something bad happen this needs to be rolled back
             async with conn.begin():
-                await upsert_file_metadata_for_upload(
+                await db_file_meta_data.upsert_file_metadata_for_upload(
                     conn, user_id, self.simcore_bucket_name, file_uuid, upload_id=None
                 )
                 if (
@@ -549,7 +551,7 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
                         self.simcore_bucket_name, file_uuid, file_size_bytes
                     )
                     # update the database so we keep the upload id
-                    await upsert_file_metadata_for_upload(
+                    await db_file_meta_data.upsert_file_metadata_for_upload(
                         conn,
                         user_id,
                         self.simcore_bucket_name,
@@ -568,9 +570,7 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
                     [s3_link], file_size_bytes or _MAX_LINK_CHUNK_BYTE_SIZE[link_type]
                 )
 
-    async def abort_multi_part_upload(
-        self, file_uuid: str, user_id: int, upload_id: str
-    ) -> None:
+    async def abort_multi_part_upload(self, file_uuid: str, user_id: int) -> None:
         async with self.engine.acquire() as conn:
             can: Optional[AccessRights] = await get_file_access_rights(
                 conn, int(user_id), file_uuid
@@ -579,19 +579,20 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
                 raise web.HTTPForbidden(
                     reason=f"User {user_id} does not have enough access rights to upload file {file_uuid}"
                 )
+            upload_id: Optional[str] = await db_file_meta_data.get_upload_id(
+                conn, file_uuid
+            )
 
-        bucket_name = self.simcore_bucket_name
-        object_name = file_uuid
-        await get_s3_client(self.app).client.abort_multipart_upload(
-            Bucket=bucket_name, Key=object_name, UploadId=upload_id
-        )
+        if upload_id:
+            await get_s3_client(self.app).abort_multipart_upload(
+                bucket=self.simcore_bucket_name, file_id=file_uuid, upload_id=upload_id
+            )
 
     async def complete_multi_part_upload(
         self,
         file_uuid: str,
         user_id: int,
-        upload_id: str,
-        uploaded_parts: list[tuple[int, str]],
+        uploaded_parts: list[UploadedPart],
     ) -> None:
         async with self.engine.acquire() as conn:
             can: Optional[AccessRights] = await get_file_access_rights(
@@ -601,20 +602,17 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
                 raise web.HTTPForbidden(
                     reason=f"User {user_id} does not have enough access rights to upload file {file_uuid}"
                 )
+            upload_id: Optional[str] = await db_file_meta_data.get_upload_id(
+                conn, file_uuid
+            )
 
-        bucket_name = self.simcore_bucket_name
-        object_name = file_uuid
-        await get_s3_client(self.app).client.complete_multipart_upload(
-            Bucket=bucket_name,
-            Key=object_name,
-            UploadId=upload_id,
-            MultipartUpload={
-                "Parts": [
-                    {"ETag": e_tag, "PartNumber": part_number}
-                    for part_number, e_tag in uploaded_parts
-                ]
-            },
-        )
+        if upload_id:
+            await get_s3_client(self.app).complete_multipart_upload(
+                bucket=self.simcore_bucket_name,
+                file_id=file_uuid,
+                upload_id=upload_id,
+                uploaded_parts=uploaded_parts,
+            )
 
     async def download_link_s3(
         self, file_uuid: str, user_id: int, as_presigned_link: bool
@@ -909,9 +907,6 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
         For datcore we need the full path
         """
         if location == SIMCORE_S3_STR:
-            # FIXME: operation MUST be atomic, transaction??
-
-            to_delete = []
             async with self.engine.acquire() as conn, conn.begin():
                 can: Optional[AccessRights] = await get_file_access_rights(
                     conn, int(user_id), file_uuid
@@ -920,22 +915,20 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
                     raise web.HTTPForbidden(
                         reason=f"User {user_id} does not have enough access rights to delete file {file_uuid}"
                     )
-
-                query = sa.select(
-                    [file_meta_data.c.bucket_name, file_meta_data.c.object_name]
-                ).where(file_meta_data.c.file_uuid == file_uuid)
-
-                async for row in conn.execute(query):
-                    await get_s3_client(self.app).client.delete_object(
-                        Bucket=row.bucket_name, Key=row.object_name
+                with suppress(FileMetaDataNotFoundError):
+                    file: FileMetaData = await db_file_meta_data.get(conn, file_uuid)
+                    # deleting a non existing file simply works
+                    await get_s3_client(self.app).delete_file(
+                        file.bucket_name, file.file_uuid
                     )
-                    to_delete.append(file_uuid)
-
-                await conn.execute(
-                    file_meta_data.delete().where(
-                        file_meta_data.c.file_uuid.in_(to_delete)
-                    )
-                )
+                    if file.upload_id:
+                        await get_s3_client(self.app).abort_multipart_upload(
+                            bucket=file.bucket_name,
+                            file_id=file.file_uuid,
+                            upload_id=file.upload_id,
+                        )
+                # now that we are done, remove it from the db
+                await db_file_meta_data.delete(conn, file_uuid)
 
         elif location == DATCORE_STR:
             # FIXME: review return inconsistencies
