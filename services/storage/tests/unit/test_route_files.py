@@ -434,7 +434,7 @@ async def test_upload_same_file_uuid_aborts_previous_upload(
 ):
     assert client.app
     # create upload file link
-    await upload_file_link(
+    file_upload_link = await upload_file_link(
         user_id, location_id, file_uuid, link_type=link_type, file_size=file_size
     )
     expect_upload_id = bool(
@@ -459,22 +459,30 @@ async def test_upload_same_file_uuid_aborts_previous_upload(
 
     # now we create a new upload, incase it was a multipart, we should abort the previous upload
     # to prevent unwanted costs
-    await upload_file_link(
+    new_file_upload_link = await upload_file_link(
         user_id, location_id, file_uuid, link_type=link_type, file_size=file_size
     )
+    if expect_upload_id:
+        assert file_upload_link != new_file_upload_link
+    else:
+        assert file_upload_link == new_file_upload_link
     # we shall have an entry in the db, waiting for upload
-    upload_id = await assert_file_meta_data_in_db(
+    new_upload_id = await assert_file_meta_data_in_db(
         aiopg_engine,
         file_uuid=file_uuid,
         expected_entry_exists=True,
         expected_file_size=-1,
         expected_upload_id=expect_upload_id,
     )
+    if expect_upload_id:
+        assert (
+            upload_id != new_upload_id
+        ), "There shall be a new upload id after a new call to create_upload_file"
 
     # check that the s3 multipart upload was initiated properly
     await assert_multipart_uploads_in_progress(
         storage_s3_client,
         bucket,
         file_uuid,
-        expected_upload_ids=([upload_id] if upload_id else None),
+        expected_upload_ids=([new_upload_id] if new_upload_id else None),
     )
