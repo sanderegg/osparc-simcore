@@ -31,16 +31,6 @@ _LOCATION_ID_TO_TAG_MAP = {0: SIMCORE_S3_STR, 1: DATCORE_STR}
 UNDEFINED_LOCATION_TAG: str = "undefined"
 
 
-def _parse_datcore(file_uuid: str) -> tuple[str, str]:
-    # we should have 12/123123123/111.txt and return (12/123123123, 111.txt)
-
-    file_path = Path(file_uuid)
-    destination = str(file_path.parent)
-    file_name = str(file_path.name)
-
-    return destination, file_name
-
-
 def get_location_from_id(location_id: Union[str, int]) -> str:
     try:
         loc_id = int(location_id)
@@ -132,6 +122,7 @@ class FileMetaData:
             self.file_size = -1
             self.entity_tag = None
             self.is_soft_link = False
+            self.upload_id = None
 
     def __str__(self):
         d = attr.asdict(self)
