@@ -20,11 +20,17 @@ from models_library.api_schemas_storage import FileUploadSchema
 from models_library.projects import ProjectID
 from models_library.projects_nodes import NodeID
 from models_library.users import UserID
-from pydantic import ByteSize, PositiveInt, parse_obj_as
+from pydantic import AnyUrl, ByteSize, PositiveInt, parse_obj_as
 from pytest_simcore.helpers.utils_assert import assert_status
 from simcore_postgres_database.models.file_meta_data import file_meta_data
 from simcore_service_storage.dsm import _MULTIPART_UPLOADS_MIN_TOTAL_SIZE
-from simcore_service_storage.s3 import FileID, StorageS3Client, UploadID, get_s3_client
+from simcore_service_storage.s3 import (
+    ETag,
+    FileID,
+    StorageS3Client,
+    UploadID,
+    get_s3_client,
+)
 from simcore_service_storage.settings import Settings
 from yarl import URL
 
@@ -528,7 +534,7 @@ def create_file_of_size(tmp_path: Path, faker: Faker) -> Callable[[ByteSize], Pa
 _SUB_CHUNKS: Final[int] = parse_obj_as(ByteSize, "16Mib")
 
 
-async def file_sender(file_name: Path, *, offset: int, bytes_to_send: int):
+async def _file_sender(file_name: Path, *, offset: int, bytes_to_send: int):
     async with aiofiles.open(file_name, "rb") as f:
         await f.seek(offset)
         num_read_bytes = 0
@@ -537,7 +543,78 @@ async def file_sender(file_name: Path, *, offset: int, bytes_to_send: int):
             yield chunk
 
 
-@pytest.mark.parametrize("file_size", [parse_obj_as(ByteSize, "5Mib")])
+async def _upload_file_part(
+    session: ClientSession,
+    file: Path,
+    part_index: int,
+    file_offset: int,
+    this_file_chunk_size: int,
+    num_parts: int,
+    upload_url: AnyUrl,
+) -> ETag:
+    print(
+        f"--> uploading {this_file_chunk_size=} of {file=}, {part_index+1}/{num_parts}..."
+    )
+    response = await session.put(
+        upload_url,
+        data=_file_sender(
+            file,
+            offset=file_offset,
+            bytes_to_send=this_file_chunk_size,
+        ),
+        headers={
+            "Content-Type": "application/json",
+            "Content-Length": f"{this_file_chunk_size}",
+        },
+    )
+    response.raise_for_status()
+    # NOTE: the response from minio does not contain a json body
+    assert response.status == web.HTTPOk.status_code
+    assert response.headers
+    assert "Etag" in response.headers
+    received_e_tag = json.loads(response.headers["Etag"])
+    print(
+        f"--> completed upload {part_index+1}/{num_parts} of {file=}, {received_e_tag=}"
+    )
+    return received_e_tag
+
+
+async def _upload_file_to_presigned_link(
+    file: Path, file_upload_link: FileUploadSchema
+) -> list[dict[str, Union[PositiveInt, str]]]:
+    part_to_etag: list[dict[str, Union[PositiveInt, str]]] = []
+    file_size = file.stat().st_size
+
+    async with ClientSession() as session:
+        file_chunk_size = int(file_upload_link.chunk_size)
+        num_urls = len(file_upload_link.urls)
+        last_chunk_size = file_size - file_chunk_size * (num_urls - 1)
+        for index, upload_url in enumerate(file_upload_link.urls):
+            this_file_chunk_size = (
+                file_chunk_size if (index + 1) < num_urls else last_chunk_size
+            )
+            received_e_tag = await _upload_file_part(
+                session,
+                file,
+                index,
+                index * file_chunk_size,
+                this_file_chunk_size,
+                num_urls,
+                upload_url,
+            )
+            part_to_etag.append({"number": index + 1, "e_tag": received_e_tag})
+    return part_to_etag
+
+
+@pytest.mark.parametrize(
+    "file_size",
+    [
+        # pytest.param(parse_obj_as(ByteSize, "5Mib"), id="5Mib"),
+        # pytest.param(parse_obj_as(ByteSize, "500Mib"), id="500Mib"),
+        # pytest.param(parse_obj_as(ByteSize, "5Gib"), id="5Gib"),
+        pytest.param(parse_obj_as(ByteSize, "711Mib"), id="7Gib"),
+    ],
+)
 async def test_upload_real_file(
     aiopg_engine: Engine,
     client: TestClient,
@@ -560,34 +637,9 @@ async def test_upload_real_file(
         user_id, location_id, file_uuid, link_type="presigned", file_size=file_size
     )
     # upload the file
-    part_to_etag: list[dict[str, Union[PositiveInt, str]]] = []
-    session = ClientSession()
-    file_chunk_size = file_upload_link.chunk_size
-    num_urls = len(file_upload_link.urls)
-    last_chunk_size = file_size - file_chunk_size * (num_urls - 1)
-    for index, upload_url in enumerate(file_upload_link.urls):
-        this_file_chunk_size = (
-            int(file_chunk_size) if index < num_urls else last_chunk_size
-        )
-        response = await session.put(
-            upload_url,
-            data=file_sender(
-                file,
-                offset=index * file_chunk_size,
-                bytes_to_send=this_file_chunk_size,
-            ),
-            headers={
-                "Content-Type": "application/json",
-                "Content-Length": f"{this_file_chunk_size}",
-            },
-        )
-        response.raise_for_status()
-        # NOTE: the response from minio does not contain a json body
-        assert response.status == web.HTTPOk.status_code
-        assert response.headers
-        assert "Etag" in response.headers
-        received_e_tag = json.loads(response.headers["Etag"])
-        part_to_etag.append({"number": index + 1, "e_tag": received_e_tag})
+    part_to_etag: list[
+        dict[str, Union[PositiveInt, str]]
+    ] = await _upload_file_to_presigned_link(file, file_upload_link)
 
     # complete the upload
     complete_url = URL(file_upload_link.links.complete_upload).relative()
