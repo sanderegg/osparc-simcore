@@ -526,6 +526,16 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
                 )
             # in case something bad happen this needs to be rolled back
             async with conn.begin():
+                # NOTE: if this gets called successively with the same file_uuid, and
+                # there was a multipart upload in progress beforehand, it MUST be
+                # cancelled
+                if upload_id := await db_file_meta_data.get_upload_id(conn, file_uuid):
+                    await get_s3_client(self.app).abort_multipart_upload(
+                        bucket=self.simcore_bucket_name,
+                        file_id=file_uuid,
+                        upload_id=upload_id,
+                    )
+
                 await db_file_meta_data.upsert_file_metadata_for_upload(
                     conn, user_id, self.simcore_bucket_name, file_uuid, upload_id=None
                 )

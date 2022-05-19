@@ -411,4 +411,70 @@ async def test_delete_unuploaded_file_correctly_cleans_up_db_and_s3(
     )
 
 
-# TODO: test multiple uploads to same path shall reset multipart beforehand
+@pytest.mark.parametrize(
+    "link_type, file_size",
+    [
+        ("presigned", parse_obj_as(ByteSize, "10Mib")),
+        ("presigned", parse_obj_as(ByteSize, "1000Mib")),
+        ("s3", parse_obj_as(ByteSize, "10Mib")),
+        ("s3", parse_obj_as(ByteSize, "1000Mib")),
+    ],
+)
+async def test_upload_same_file_uuid_aborts_previous_upload(
+    aiopg_engine: Engine,
+    client: TestClient,
+    storage_s3_client: StorageS3Client,
+    bucket: str,
+    user_id: UserID,
+    location_id: int,
+    file_uuid: str,
+    link_type: str,
+    file_size: ByteSize,
+    upload_file_link: Callable[..., Awaitable[FileUploadSchema]],
+):
+    assert client.app
+    # create upload file link
+    await upload_file_link(
+        user_id, location_id, file_uuid, link_type=link_type, file_size=file_size
+    )
+    expect_upload_id = bool(
+        file_size > _MULTIPART_UPLOADS_MIN_TOTAL_SIZE and link_type == "presigned"
+    )
+    # we shall have an entry in the db, waiting for upload
+    upload_id = await assert_file_meta_data_in_db(
+        aiopg_engine,
+        file_uuid=file_uuid,
+        expected_entry_exists=True,
+        expected_file_size=-1,
+        expected_upload_id=expect_upload_id,
+    )
+
+    # check that the s3 multipart upload was initiated properly
+    await assert_multipart_uploads_in_progress(
+        storage_s3_client,
+        bucket,
+        file_uuid,
+        expected_upload_ids=([upload_id] if upload_id else None),
+    )
+
+    # now we create a new upload, incase it was a multipart, we should abort the previous upload
+    # to prevent unwanted costs
+    await upload_file_link(
+        user_id, location_id, file_uuid, link_type=link_type, file_size=file_size
+    )
+    # we shall have an entry in the db, waiting for upload
+    upload_id = await assert_file_meta_data_in_db(
+        aiopg_engine,
+        file_uuid=file_uuid,
+        expected_entry_exists=True,
+        expected_file_size=-1,
+        expected_upload_id=expect_upload_id,
+    )
+
+    # check that the s3 multipart upload was initiated properly
+    await assert_multipart_uploads_in_progress(
+        storage_s3_client,
+        bucket,
+        file_uuid,
+        expected_upload_ids=([upload_id] if upload_id else None),
+    )
