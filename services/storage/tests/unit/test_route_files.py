@@ -4,12 +4,15 @@
 # pylint: disable=unused-variable
 
 import asyncio
+import json
 import urllib.parse
 from dataclasses import dataclass
-from typing import AsyncIterator, Awaitable, Callable, Optional, Type
+from pathlib import Path
+from typing import AsyncIterator, Awaitable, Callable, Final, Optional, Type, Union
 
+import aiofiles
 import pytest
-from aiohttp import web
+from aiohttp import ClientSession, web
 from aiohttp.test_utils import TestClient
 from aiopg.sa import Engine
 from faker import Faker
@@ -17,12 +20,13 @@ from models_library.api_schemas_storage import FileUploadSchema
 from models_library.projects import ProjectID
 from models_library.projects_nodes import NodeID
 from models_library.users import UserID
-from pydantic import ByteSize, parse_obj_as
+from pydantic import ByteSize, PositiveInt, parse_obj_as
 from pytest_simcore.helpers.utils_assert import assert_status
 from simcore_postgres_database.models.file_meta_data import file_meta_data
 from simcore_service_storage.dsm import _MULTIPART_UPLOADS_MIN_TOTAL_SIZE
 from simcore_service_storage.s3 import FileID, StorageS3Client, UploadID, get_s3_client
 from simcore_service_storage.settings import Settings
+from yarl import URL
 
 pytest_simcore_core_services_selection = ["postgres"]
 pytest_simcore_ops_services_selection = ["minio", "adminer"]
@@ -65,7 +69,7 @@ def bucket(app_settings: Settings) -> str:
 
 
 @pytest.fixture
-async def upload_file_link(
+async def create_upload_file_link(
     client: TestClient,
 ) -> AsyncIterator[Callable[..., Awaitable[FileUploadSchema]]]:
 
@@ -208,11 +212,11 @@ async def test_create_upload_file_default_returns_single_link(
     expected_link_query_keys: list[str],
     expected_chunk_size: int,
     aiopg_engine: Engine,
-    upload_file_link: Callable[..., Awaitable[FileUploadSchema]],
+    create_upload_file_link: Callable[..., Awaitable[FileUploadSchema]],
     cleanup_user_projects_file_metadata: None,
 ):
     # create upload file link
-    received_file_upload = await upload_file_link(
+    received_file_upload = await create_upload_file_link(
         user_id, location_id, file_uuid, **url_query
     )
     # check links, there should be only 1
@@ -321,11 +325,11 @@ async def test_create_upload_file_presigned_with_file_size_returns_multipart_lin
     file_uuid: str,
     test_param: MultiPartParam,
     aiopg_engine: Engine,
-    upload_file_link: Callable[..., Awaitable[FileUploadSchema]],
+    create_upload_file_link: Callable[..., Awaitable[FileUploadSchema]],
     cleanup_user_projects_file_metadata: None,
 ):
     # create upload file link
-    received_file_upload = await upload_file_link(
+    received_file_upload = await create_upload_file_link(
         user_id,
         location_id,
         file_uuid,
@@ -376,11 +380,11 @@ async def test_delete_unuploaded_file_correctly_cleans_up_db_and_s3(
     file_uuid: str,
     link_type: str,
     file_size: ByteSize,
-    upload_file_link: Callable[..., Awaitable[FileUploadSchema]],
+    create_upload_file_link: Callable[..., Awaitable[FileUploadSchema]],
 ):
     assert client.app
     # create upload file link
-    await upload_file_link(
+    await create_upload_file_link(
         user_id, location_id, file_uuid, link_type=link_type, file_size=file_size
     )
     expect_upload_id = bool(
@@ -450,11 +454,11 @@ async def test_upload_same_file_uuid_aborts_previous_upload(
     file_uuid: str,
     link_type: str,
     file_size: ByteSize,
-    upload_file_link: Callable[..., Awaitable[FileUploadSchema]],
+    create_upload_file_link: Callable[..., Awaitable[FileUploadSchema]],
 ):
     assert client.app
     # create upload file link
-    file_upload_link = await upload_file_link(
+    file_upload_link = await create_upload_file_link(
         user_id, location_id, file_uuid, link_type=link_type, file_size=file_size
     )
     expect_upload_id = bool(
@@ -479,7 +483,7 @@ async def test_upload_same_file_uuid_aborts_previous_upload(
 
     # now we create a new upload, incase it was a multipart, we should abort the previous upload
     # to prevent unwanted costs
-    new_file_upload_link = await upload_file_link(
+    new_file_upload_link = await create_upload_file_link(
         user_id, location_id, file_uuid, link_type=link_type, file_size=file_size
     )
     if expect_upload_id:
@@ -508,6 +512,32 @@ async def test_upload_same_file_uuid_aborts_previous_upload(
     )
 
 
+@pytest.fixture
+def create_file_of_size(tmp_path: Path, faker: Faker) -> Callable[[ByteSize], Path]:
+    def _creator(size: ByteSize) -> Path:
+        file: Path = tmp_path / faker.file_name()
+        with file.open("wb") as fp:
+            fp.truncate(size)
+
+        assert file.stat().st_size == size
+        return file
+
+    return _creator
+
+
+_SUB_CHUNKS: Final[int] = parse_obj_as(ByteSize, "16Mib")
+
+
+async def file_sender(file_name: Path, *, offset: int, bytes_to_send: int):
+    async with aiofiles.open(file_name, "rb") as f:
+        await f.seek(offset)
+        num_read_bytes = 0
+        while chunk := await f.read(min(_SUB_CHUNKS, bytes_to_send - num_read_bytes)):
+            num_read_bytes += len(chunk)
+            yield chunk
+
+
+@pytest.mark.parametrize("file_size", [parse_obj_as(ByteSize, "5Mib")])
 async def test_upload_real_file(
     aiopg_engine: Engine,
     client: TestClient,
@@ -516,12 +546,59 @@ async def test_upload_real_file(
     user_id: UserID,
     location_id: int,
     file_uuid: str,
-    link_type: str,
     file_size: ByteSize,
-    upload_file_link: Callable[..., Awaitable[FileUploadSchema]],
+    create_upload_file_link: Callable[..., Awaitable[FileUploadSchema]],
+    create_file_of_size: Callable[[ByteSize], Path],
 ):
     assert client.app
-    # create upload file link
-    file_upload_link = await upload_file_link(
-        user_id, location_id, file_uuid, link_type=link_type, file_size=file_size
+
+    # create a file
+    file = create_file_of_size(file_size)
+
+    # get an upload link
+    file_upload_link = await create_upload_file_link(
+        user_id, location_id, file_uuid, link_type="presigned", file_size=file_size
+    )
+    # upload the file
+    part_to_etag: list[dict[str, Union[PositiveInt, str]]] = []
+    session = ClientSession()
+    file_chunk_size = file_upload_link.chunk_size
+    num_urls = len(file_upload_link.urls)
+    last_chunk_size = file_size - file_chunk_size * (num_urls - 1)
+    for index, upload_url in enumerate(file_upload_link.urls):
+        this_file_chunk_size = (
+            int(file_chunk_size) if index < num_urls else last_chunk_size
+        )
+        response = await session.put(
+            upload_url,
+            data=file_sender(
+                file,
+                offset=index * file_chunk_size,
+                bytes_to_send=this_file_chunk_size,
+            ),
+            headers={
+                "Content-Type": "application/json",
+                "Content-Length": f"{this_file_chunk_size}",
+            },
+        )
+        response.raise_for_status()
+        # NOTE: the response from minio does not contain a json body
+        assert response.status == web.HTTPOk.status_code
+        assert response.headers
+        assert "Etag" in response.headers
+        received_e_tag = json.loads(response.headers["Etag"])
+        part_to_etag.append({"number": index + 1, "e_tag": received_e_tag})
+
+    # complete the upload
+    complete_url = URL(file_upload_link.links.complete_upload).relative()
+    response = await client.post(f"{complete_url}", json={"parts": part_to_etag})
+    await assert_status(response, web.HTTPNoContent)
+
+    # check the entry in db now has the correct file size, and the upload id is gone
+    await assert_file_meta_data_in_db(
+        aiopg_engine,
+        file_uuid=file_uuid,
+        expected_entry_exists=True,
+        expected_file_size=file_size,
+        expected_upload_id=False,
     )
