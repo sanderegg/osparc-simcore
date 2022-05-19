@@ -19,7 +19,7 @@ aiohttp-swagger[performance]
 
 # s3 storage
 aiobotocore
-
+types-aiobotocore[s3]
 
 # i/o + db
 aiofiles

@@ -4,6 +4,6 @@
 
 --requirement ../../../requirements/devenv.txt
 
-types-aiobotocore[s3]
+
 # basic dev tools
 watchdog[watchmedo]
