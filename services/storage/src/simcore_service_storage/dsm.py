@@ -439,13 +439,13 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
         reraise_exceptions: bool,
     ) -> Optional[FileMetaDataEx]:
         try:
-            result = await get_s3_client(self.app).client.head_object(
+            response = await get_s3_client(self.app).client.head_object(
                 Bucket=bucket_name, Key=object_name
-            )  # type: ignore
+            )
 
-            file_size = result["ContentLength"]  # type: ignore
-            last_modified = result["LastModified"]  # type: ignore
-            entity_tag = result["ETag"].strip('"')  # type: ignore
+            file_size = response["ContentLength"]
+            last_modified = response["LastModified"]
+            entity_tag = response["ETag"].strip('"')
 
             async with self.engine.acquire() as conn:
                 result: ResultProxy = await conn.execute(
@@ -455,6 +455,7 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
                         file_size=file_size,
                         last_modified=last_modified,
                         entity_tag=entity_tag,
+                        upload_id=None,
                     )
                     .returning(literal_column("*"))
                 )
