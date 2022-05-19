@@ -28,7 +28,7 @@ async def test_s3_client(
     s3_client = get_s3_client(client.app)
     assert s3_client
 
-    response = await s3_client.list_buckets()
+    response = await s3_client.client.list_buckets()
     assert response
     assert "Buckets" in response
     assert len(response["Buckets"]) == 1
