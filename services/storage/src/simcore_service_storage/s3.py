@@ -11,7 +11,7 @@ from typing import Final
 from aiobotocore.session import AioSession, get_session
 from aiohttp import web
 from botocore.client import Config
-from pydantic import AnyUrl, ByteSize, parse_obj_as
+from pydantic import AnyUrl, ByteSize, PositiveInt, parse_obj_as
 from settings_library.s3 import S3Settings
 from tenacity._asyncio import AsyncRetrying
 from tenacity.before_sleep import before_sleep_log
@@ -56,11 +56,22 @@ def _compute_number_links(file_size: ByteSize) -> tuple[int, ByteSize]:
     )
 
 
+FileID = str
+UploadID = str
+ETag = str
+
+
 @dataclass(frozen=True)
 class MultiPartUploadLinks:
-    upload_id: str
+    upload_id: UploadID
     chunk_size: ByteSize
     urls: list[AnyUrl]
+
+
+@dataclass(frozen=True)
+class UploadedPart:
+    number: PositiveInt
+    e_tag: ETag
 
 
 @dataclass
@@ -99,7 +110,7 @@ class StorageS3Client:
             )
 
     async def create_single_presigned_upload_link(
-        self, bucket: str, file_id: str
+        self, bucket: str, file_id: FileID
     ) -> AnyUrl:
         generated_link = await self.client.generate_presigned_url(
             "put_object",
@@ -109,7 +120,7 @@ class StorageS3Client:
         return parse_obj_as(AnyUrl, generated_link)
 
     async def create_multipart_upload_links(
-        self, bucket: str, file_id: str, file_size: ByteSize
+        self, bucket: str, file_id: FileID, file_size: ByteSize
     ) -> MultiPartUploadLinks:
         # first initiate the multipart upload
         response = await self.client.create_multipart_upload(Bucket=bucket, Key=file_id)
@@ -137,8 +148,47 @@ class StorageS3Client:
         )
         return MultiPartUploadLinks(upload_id, chunk_size, upload_links)
 
+    async def list_ongoing_multipart_uploads(self, bucket: str, file_id: FileID = ""):
+        """Returns all the currently ongoing multipart uploads
+
+        NOTE: minio does not implement the same behaviour as AWS here and will
+        only return the uploads if a prefix or object name is given [minio issue](https://github.com/minio/minio/issues/7632).
+
+        :return: list of AWS uploads see [boto3 documentation](https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/s3.html#S3.Client.list_multipart_uploads)
+        """
+        return await self.client.list_multipart_uploads(Bucket=bucket, Prefix=file_id)
+
+    async def abort_multipart_upload(
+        self, bucket: str, file_id: FileID, upload_id: UploadID
+    ) -> None:
+        await self.client.abort_multipart_upload(
+            Bucket=bucket, Key=file_id, UploadId=upload_id
+        )
+
+    async def complete_multipart_upload(
+        self,
+        bucket: str,
+        file_id: FileID,
+        upload_id: UploadID,
+        uploaded_parts: list[UploadedPart],
+    ):
+        await self.client.complete_multipart_upload(
+            Bucket=bucket,
+            Key=file_id,
+            UploadId=upload_id,
+            MultipartUpload={
+                "Parts": [
+                    {"ETag": part.e_tag, "PartNumber": part.number}
+                    for part in uploaded_parts
+                ]
+            },
+        )
+
+    async def delete_file(self, bucket: str, file_id: FileID) -> None:
+        await self.client.delete_object(Bucket=bucket, Key=file_id)
+
     @staticmethod
-    def compute_s3_url(bucket: str, file_id: str) -> AnyUrl:
+    def compute_s3_url(bucket: str, file_id: FileID) -> AnyUrl:
         return parse_obj_as(AnyUrl, f"s3://{bucket}/{urllib.parse.quote(file_id)}")
 
 
