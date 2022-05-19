@@ -3,9 +3,10 @@
 # pylint: disable=unused-argument
 # pylint: disable=unused-variable
 
+import asyncio
 import urllib.parse
 from dataclasses import dataclass
-from typing import Awaitable, Callable, Optional, Type
+from typing import AsyncIterator, Awaitable, Callable, Optional, Type
 
 import pytest
 from aiohttp import web
@@ -64,14 +65,16 @@ def bucket(app_settings: Settings) -> str:
 
 
 @pytest.fixture
-def upload_file_link(
+async def upload_file_link(
     client: TestClient,
-) -> Callable[..., Awaitable[FileUploadSchema]]:
+) -> AsyncIterator[Callable[..., Awaitable[FileUploadSchema]]]:
+
+    file_params: list[tuple[UserID, int, FileID]] = []
+
     async def _link_creator(
-        user_id: UserID, location_id: int, file_uuid: str, **query_kwargs
+        user_id: UserID, location_id: int, file_uuid: FileID, **query_kwargs
     ) -> FileUploadSchema:
         assert client.app
-
         url = (
             client.app.router["upload_file"]
             .url_for(
@@ -86,9 +89,26 @@ def upload_file_link(
         assert data
         received_file_upload = FileUploadSchema.parse_obj(data)
         assert received_file_upload
+        print(f"--> created link for {file_uuid=}")
+        file_params.append((user_id, location_id, file_uuid))
         return received_file_upload
 
-    return _link_creator
+    yield _link_creator
+
+    # cleanup
+    assert client.app
+    clean_tasks = []
+    for user_id, location_id, file_uuid in file_params:
+        url = (
+            client.app.router["delete_file"]
+            .url_for(
+                location_id=f"{location_id}",
+                file_id=urllib.parse.quote(file_uuid, safe=""),
+            )
+            .with_query(user_id=user_id)
+        )
+        clean_tasks.append(client.delete(f"{url}"))
+    await asyncio.gather(*clean_tasks)
 
 
 async def assert_file_meta_data_in_db(
@@ -485,4 +505,23 @@ async def test_upload_same_file_uuid_aborts_previous_upload(
         bucket,
         file_uuid,
         expected_upload_ids=([new_upload_id] if new_upload_id else None),
+    )
+
+
+async def test_upload_real_file(
+    aiopg_engine: Engine,
+    client: TestClient,
+    storage_s3_client: StorageS3Client,
+    bucket: str,
+    user_id: UserID,
+    location_id: int,
+    file_uuid: str,
+    link_type: str,
+    file_size: ByteSize,
+    upload_file_link: Callable[..., Awaitable[FileUploadSchema]],
+):
+    assert client.app
+    # create upload file link
+    file_upload_link = await upload_file_link(
+        user_id, location_id, file_uuid, link_type=link_type, file_size=file_size
     )
