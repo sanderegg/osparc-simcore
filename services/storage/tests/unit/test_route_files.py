@@ -131,7 +131,9 @@ async def test_create_upload_file_default_returns_single_link(
         assert (
             row[file_meta_data.c.file_size] == -1
         ), "entry in file_meta_data was not initialized correctly, size should be set to -1"
-        assert row[file_meta_data.c.upload_id] == None
+        assert (
+            row[file_meta_data.c.upload_id] == None
+        ), "single file upload should not have an upload_id"
 
 
 @dataclass
@@ -234,12 +236,15 @@ async def test_create_upload_file_presigned_with_file_size_returns_multipart_lin
             row[file_meta_data.c.file_size] == -1
         ), "entry in file_meta_data was not initialized correctly, size should be set to -1"
         if test_param.expected_num_links == 1:
-            assert row[file_meta_data.c.upload_id] == None
+            assert (
+                row[file_meta_data.c.upload_id] == None
+            ), "single file upload should not have an upload_id"
         else:
-            assert row[file_meta_data.c.upload_id] is not None
+            assert (
+                row[file_meta_data.c.upload_id] is not None
+            ), "multipart upload shall have an upload_id, it is missing!"
 
 
-@pytest.mark.skip(reason="DEV")
 async def test_delete_unuploaded_file_correctly_cleans_up(
     client: TestClient,
     user_id: UserID,
