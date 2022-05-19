@@ -602,3 +602,7 @@ async def test_upload_real_file(
         expected_file_size=file_size,
         expected_upload_id=False,
     )
+    # check the file is in S3 for real
+    response = await storage_s3_client.client.head_object(Bucket=bucket, Key=file_uuid)
+    assert response
+    assert response["ContentLength"] == file_size
