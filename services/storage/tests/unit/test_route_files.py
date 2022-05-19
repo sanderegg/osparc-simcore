@@ -8,6 +8,7 @@ import json
 import urllib.parse
 from dataclasses import dataclass
 from pathlib import Path
+from time import perf_counter
 from typing import AsyncIterator, Awaitable, Callable, Final, Optional, Type, Union
 
 import aiofiles
@@ -551,9 +552,9 @@ async def _upload_file_part(
     this_file_chunk_size: int,
     num_parts: int,
     upload_url: AnyUrl,
-) -> ETag:
+) -> tuple[int, ETag]:
     print(
-        f"--> uploading {this_file_chunk_size=} of {file=}, {part_index+1}/{num_parts}..."
+        f"--> uploading {this_file_chunk_size=} of {file=}, [{part_index+1}/{num_parts}]..."
     )
     response = await session.put(
         upload_url,
@@ -574,45 +575,57 @@ async def _upload_file_part(
     assert "Etag" in response.headers
     received_e_tag = json.loads(response.headers["Etag"])
     print(
-        f"--> completed upload {part_index+1}/{num_parts} of {file=}, {received_e_tag=}"
+        f"--> completed upload {this_file_chunk_size=} of {file=}, [{part_index+1}/{num_parts}], {received_e_tag=}"
     )
-    return received_e_tag
+    return (part_index, received_e_tag)
 
 
 async def _upload_file_to_presigned_link(
     file: Path, file_upload_link: FileUploadSchema
 ) -> list[dict[str, Union[PositiveInt, str]]]:
-    part_to_etag: list[dict[str, Union[PositiveInt, str]]] = []
+
     file_size = file.stat().st_size
 
+    start = perf_counter()
+    print(f"--> uploading {file=}")
     async with ClientSession() as session:
         file_chunk_size = int(file_upload_link.chunk_size)
         num_urls = len(file_upload_link.urls)
         last_chunk_size = file_size - file_chunk_size * (num_urls - 1)
+        upload_tasks = []
         for index, upload_url in enumerate(file_upload_link.urls):
             this_file_chunk_size = (
                 file_chunk_size if (index + 1) < num_urls else last_chunk_size
             )
-            received_e_tag = await _upload_file_part(
-                session,
-                file,
-                index,
-                index * file_chunk_size,
-                this_file_chunk_size,
-                num_urls,
-                upload_url,
+            upload_tasks.append(
+                _upload_file_part(
+                    session,
+                    file,
+                    index,
+                    index * file_chunk_size,
+                    this_file_chunk_size,
+                    num_urls,
+                    upload_url,
+                )
             )
-            part_to_etag.append({"number": index + 1, "e_tag": received_e_tag})
+        results = await asyncio.gather(*upload_tasks)
+    part_to_etag = [
+        {"number": part_index + 1, "e_tag": received_e_tag}
+        for part_index, received_e_tag in results
+    ]
+    print(
+        f"--> upload of {file=} of {file_size=} completed in {perf_counter() - start}"
+    )
     return part_to_etag
 
 
 @pytest.mark.parametrize(
     "file_size",
     [
-        # pytest.param(parse_obj_as(ByteSize, "5Mib"), id="5Mib"),
-        # pytest.param(parse_obj_as(ByteSize, "500Mib"), id="500Mib"),
-        # pytest.param(parse_obj_as(ByteSize, "5Gib"), id="5Gib"),
-        pytest.param(parse_obj_as(ByteSize, "711Mib"), id="7Gib"),
+        pytest.param(parse_obj_as(ByteSize, "5Mib"), id="5Mib"),
+        pytest.param(parse_obj_as(ByteSize, "500Mib"), id="500Mib"),
+        pytest.param(parse_obj_as(ByteSize, "5Gib"), id="5Gib"),
+        pytest.param(parse_obj_as(ByteSize, "7Gib"), id="7Gib"),
     ],
 )
 async def test_upload_real_file(
@@ -643,8 +656,11 @@ async def test_upload_real_file(
 
     # complete the upload
     complete_url = URL(file_upload_link.links.complete_upload).relative()
+    start = perf_counter()
+    print(f"--> completing upload of {file=}")
     response = await client.post(f"{complete_url}", json={"parts": part_to_etag})
     await assert_status(response, web.HTTPNoContent)
+    print(f"--> completed upload in {perf_counter() - start}")
 
     # check the entry in db now has the correct file size, and the upload id is gone
     await assert_file_meta_data_in_db(
