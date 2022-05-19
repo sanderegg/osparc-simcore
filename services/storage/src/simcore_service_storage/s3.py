@@ -171,8 +171,8 @@ class StorageS3Client:
         file_id: FileID,
         upload_id: UploadID,
         uploaded_parts: list[UploadedPart],
-    ):
-        await self.client.complete_multipart_upload(
+    ) -> ETag:
+        response = await self.client.complete_multipart_upload(
             Bucket=bucket,
             Key=file_id,
             UploadId=upload_id,
@@ -183,6 +183,7 @@ class StorageS3Client:
                 ]
             },
         )
+        return response["ETag"]
 
     async def delete_file(self, bucket: str, file_id: FileID) -> None:
         await self.client.delete_object(Bucket=bucket, Key=file_id)
