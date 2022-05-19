@@ -5,7 +5,7 @@
 
 import urllib.parse
 from dataclasses import dataclass
-from typing import Awaitable, Callable, Type
+from typing import Awaitable, Callable, Optional, Type
 
 import pytest
 from aiohttp import web
@@ -77,6 +77,39 @@ def upload_file_link(
     return _link_creator
 
 
+async def assert_file_meta_data_in_db(
+    aiopg_engine: Engine,
+    *,
+    file_uuid: str,
+    expected_entry_exists: bool,
+    expected_file_size: Optional[int] = None,
+    expected_upload_id: bool = False,
+):
+    if expected_entry_exists and expected_file_size == None:
+        assert True, "Invalid usage of assertion, expected_file_size cannot be None"
+
+    async with aiopg_engine.acquire() as conn:
+        result = await conn.execute(
+            file_meta_data.select().where(file_meta_data.c.file_uuid == file_uuid)
+        )
+        db_data = await result.fetchall()
+        assert db_data is not None
+        assert len(db_data) == (1 if expected_entry_exists else 0)
+        if expected_entry_exists:
+            row = db_data[0]
+            assert (
+                row[file_meta_data.c.file_size] == expected_file_size
+            ), "entry in file_meta_data was not initialized correctly, size should be set to -1"
+            if expected_upload_id:
+                assert (
+                    row[file_meta_data.c.upload_id] is not None
+                ), "multipart upload shall have an upload_id, it is missing!"
+            else:
+                assert (
+                    row[file_meta_data.c.upload_id] is None
+                ), "single file upload should not have an upload_id"
+
+
 @pytest.mark.parametrize(
     "url_query, expected_link_scheme, expected_link_query_keys, expected_chunk_size",
     [
@@ -138,20 +171,12 @@ async def test_create_upload_file_default_returns_single_link(
         assert not received_file_upload.urls[0].query
 
     # now check the entry in the database is correct, there should be only one
-    async with aiopg_engine.acquire() as conn:
-        result = await conn.execute(
-            file_meta_data.select().where(file_meta_data.c.file_uuid == file_uuid)
-        )
-        db_data = await result.fetchall()
-        assert db_data
-        assert len(db_data) == 1
-        row = db_data[0]
-        assert (
-            row[file_meta_data.c.file_size] == -1
-        ), "entry in file_meta_data was not initialized correctly, size should be set to -1"
-        assert (
-            row[file_meta_data.c.upload_id] == None
-        ), "single file upload should not have an upload_id"
+    await assert_file_meta_data_in_db(
+        aiopg_engine,
+        file_uuid=file_uuid,
+        expected_entry_exists=True,
+        expected_file_size=-1,
+    )
 
 
 @dataclass(frozen=True)
@@ -206,6 +231,16 @@ class MultiPartParam:
             ),
             id="5TiB file",
         ),
+        pytest.param(
+            MultiPartParam(
+                link_type="s3",
+                file_size=parse_obj_as(ByteSize, "255GiB"),
+                expected_response=web.HTTPOk,
+                expected_num_links=1,
+                expected_chunk_size=parse_obj_as(ByteSize, "255GiB"),
+            ),
+            id="5TiB file",
+        ),
     ],
 )
 async def test_create_upload_file_presigned_with_file_size_returns_multipart_links_if_bigger_than_99MiB(
@@ -233,34 +268,39 @@ async def test_create_upload_file_presigned_with_file_size_returns_multipart_lin
     assert received_file_upload.chunk_size == test_param.expected_chunk_size
 
     # now check the entry in the database is correct, there should be only one
-    async with aiopg_engine.acquire() as conn:
-        result = await conn.execute(
-            file_meta_data.select().where(file_meta_data.c.file_uuid == file_uuid)
-        )
-        db_data = await result.fetchall()
-        assert db_data
-        assert len(db_data) == 1
-        row = db_data[0]
-        assert (
-            row[file_meta_data.c.file_size] == -1
-        ), "entry in file_meta_data was not initialized correctly, size should be set to -1"
-        if test_param.expected_num_links == 1:
-            assert (
-                row[file_meta_data.c.upload_id] == None
-            ), "single file upload should not have an upload_id"
-        else:
-            assert (
-                row[file_meta_data.c.upload_id] is not None
-            ), "multipart upload shall have an upload_id, it is missing!"
+    await assert_file_meta_data_in_db(
+        aiopg_engine,
+        file_uuid=file_uuid,
+        expected_entry_exists=True,
+        expected_file_size=-1,
+        expected_upload_id=True,
+    )
 
 
-async def test_delete_unuploaded_file_correctly_cleans_up(
+async def test_delete_unuploaded_file_correctly_cleans_up_db(
+    aiopg_engine: Engine,
     client: TestClient,
     user_id: UserID,
     location_id: int,
     file_uuid: str,
+    upload_file_link: Callable[..., Awaitable[FileUploadSchema]],
 ):
     assert client.app
+    # create upload file link
+    await upload_file_link(
+        user_id,
+        location_id,
+        file_uuid,
+    )
+    # we shall have an entry in the db, waiting for upload
+    await assert_file_meta_data_in_db(
+        aiopg_engine,
+        file_uuid=file_uuid,
+        expected_entry_exists=True,
+        expected_file_size=-1,
+        expected_upload_id=False,
+    )
+
     # delete/abort file upload
     delete_url = (
         client.app.router["delete_file"]
@@ -273,3 +313,10 @@ async def test_delete_unuploaded_file_correctly_cleans_up(
     data, error = await assert_status(response, web.HTTPNoContent)
     assert not error
     assert not data
+
+    # the DB shall be cleaned up
+    await assert_file_meta_data_in_db(
+        aiopg_engine,
+        file_uuid=file_uuid,
+        expected_entry_exists=False,
+    )
