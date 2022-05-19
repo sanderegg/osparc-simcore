@@ -5,7 +5,7 @@
 
 import urllib.parse
 from dataclasses import dataclass
-from typing import Type
+from typing import Awaitable, Callable, Type
 
 import pytest
 from aiohttp import web
@@ -49,6 +49,34 @@ _HTTP_PRESIGNED_LINK_QUERY_KEYS = [
 ]
 
 
+@pytest.fixture
+def upload_file_link(
+    client: TestClient,
+) -> Callable[..., Awaitable[FileUploadSchema]]:
+    async def _link_creator(
+        user_id: UserID, location_id: int, file_uuid: str, **query_kwargs
+    ) -> FileUploadSchema:
+        assert client.app
+
+        url = (
+            client.app.router["upload_file"]
+            .url_for(
+                location_id=f"{location_id}",
+                file_id=urllib.parse.quote(file_uuid, safe=""),
+            )
+            .with_query(**query_kwargs, user_id=user_id)
+        )
+        response = await client.put(f"{url}")
+        data, error = await assert_status(response, web.HTTPOk)
+        assert not error
+        assert data
+        received_file_upload = FileUploadSchema.parse_obj(data)
+        assert received_file_upload
+        return received_file_upload
+
+    return _link_creator
+
+
 @pytest.mark.parametrize(
     "url_query, expected_link_scheme, expected_link_query_keys, expected_chunk_size",
     [
@@ -76,7 +104,6 @@ _HTTP_PRESIGNED_LINK_QUERY_KEYS = [
     ],
 )
 async def test_create_upload_file_default_returns_single_link(
-    client: TestClient,
     user_id: UserID,
     location_id: int,
     file_uuid: str,
@@ -85,22 +112,13 @@ async def test_create_upload_file_default_returns_single_link(
     expected_link_query_keys: list[str],
     expected_chunk_size: int,
     aiopg_engine: Engine,
+    upload_file_link: Callable[..., Awaitable[FileUploadSchema]],
     cleanup_user_projects_file_metadata: None,
 ):
-    assert client.app
-    url = (
-        client.app.router["upload_file"]
-        .url_for(
-            location_id=f"{location_id}", file_id=urllib.parse.quote(file_uuid, safe="")
-        )
-        .with_query(**url_query, user_id=user_id)
+    # create upload file link
+    received_file_upload = await upload_file_link(
+        user_id, location_id, file_uuid, **url_query
     )
-    response = await client.put(f"{url}")
-    data, error = await assert_status(response, web.HTTPOk)
-    assert not error
-    assert data
-    received_file_upload = FileUploadSchema.parse_obj(data)
-    assert received_file_upload
     # check links, there should be only 1
     assert len(received_file_upload.urls) == 1
     assert received_file_upload.urls[0].scheme == expected_link_scheme
@@ -136,7 +154,7 @@ async def test_create_upload_file_default_returns_single_link(
         ), "single file upload should not have an upload_id"
 
 
-@dataclass
+@dataclass(frozen=True)
 class MultiPartParam:
     link_type: str
     file_size: ByteSize
@@ -197,27 +215,18 @@ async def test_create_upload_file_presigned_with_file_size_returns_multipart_lin
     file_uuid: str,
     test_param: MultiPartParam,
     aiopg_engine: Engine,
+    upload_file_link: Callable[..., Awaitable[FileUploadSchema]],
     cleanup_user_projects_file_metadata: None,
 ):
-    assert client.app
-    url = (
-        client.app.router["upload_file"]
-        .url_for(
-            location_id=f"{location_id}", file_id=urllib.parse.quote(file_uuid, safe="")
-        )
-        .with_query(
-            link_type=test_param.link_type,
-            user_id=user_id,
-            file_size=int(test_param.file_size.to("b")),
-        )
+    # create upload file link
+    received_file_upload = await upload_file_link(
+        user_id,
+        location_id,
+        file_uuid,
+        link_type=test_param.link_type,
+        file_size=int(test_param.file_size.to("b")),
     )
-    response = await client.put(f"{url}")
-
-    data, error = await assert_status(response, test_param.expected_response)
-    assert not error
-    assert data
-    received_file_upload = FileUploadSchema.parse_obj(data)
-    assert received_file_upload
+    # number of links
     assert len(received_file_upload.urls) == test_param.expected_num_links
     # all links are unique
     assert len(set(received_file_upload.urls)) == len(received_file_upload.urls)
@@ -251,6 +260,7 @@ async def test_delete_unuploaded_file_correctly_cleans_up(
     location_id: int,
     file_uuid: str,
 ):
+    assert client.app
     # delete/abort file upload
     delete_url = (
         client.app.router["delete_file"]
