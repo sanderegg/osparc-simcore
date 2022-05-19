@@ -306,12 +306,12 @@ paths:
                     type: object
                     required:
                       - number
-                      - eTag
+                      - e_tag
                     properties:
                       number:
                         type: integer
                         minimum: 1
-                      eTag:
+                      e_tag:
                         type: string
 
       responses:
