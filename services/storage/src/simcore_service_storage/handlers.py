@@ -14,6 +14,7 @@ from pydantic import AnyUrl, ByteSize, parse_obj_as
 from servicelib.aiohttp.application_keys import APP_CONFIG_KEY
 from servicelib.aiohttp.rest_utils import extract_and_validate
 from settings_library.s3 import S3Settings
+from simcore_service_storage.s3 import UploadedPart
 
 # Exclusive for simcore-s3 storage -----------------------
 from . import sts
@@ -364,9 +365,9 @@ async def upload_file(request: web.Request):
         abort_url = request.url.with_path(f"{request.url.path}").with_query(
             user_id=user_id
         )
-        complete_url = request.url.with_path(
-            f"{request.url.path}:completed"
-        ).with_query(user_id=user_id)
+        complete_url = request.url.with_path(f"{request.url.path}:complete").with_query(
+            user_id=user_id
+        )
         response = FileUploadSchema(
             chunk_size=links.chunk_size,
             urls=links.urls,
@@ -382,30 +383,6 @@ async def upload_file(request: web.Request):
     return {"data": json.loads(response.json(by_alias=True))}
 
 
-@routes.post(f"/{api_vtag}/locations/{{location_id}}/files/{{file_id}}:abort")  # type: ignore
-async def abort_upload_file(request: web.Request):
-    params, query, body = await extract_and_validate(request)
-    log.debug(
-        "received call to abort upload_file with %s", f"{params=}, {query=}, {body=}"
-    )
-    assert params, f"{params}"  # nosec
-    assert "file_id" in params  # nosec
-    params["file_id"] = urllib.parse.unquote(params["file_id"])
-    assert query, f"{query}"  # nosec
-    assert body, f"{body}"  # nosec
-
-    with handle_storage_errors():
-        user_id = query["user_id"]
-        file_uuid = params["file_id"]
-        upload_id = body["uploadId"]
-
-        dsm = await _prepare_storage_manager(params, query, request)
-
-        await dsm.abort_multi_part_upload(
-            file_uuid=file_uuid, user_id=user_id, upload_id=upload_id
-        )
-
-
 @routes.post(f"/{api_vtag}/locations/{{location_id}}/files/{{file_id}}:complete")  # type: ignore
 async def complete_upload_file(request: web.Request):
     params, query, body = await extract_and_validate(request)
@@ -416,22 +393,23 @@ async def complete_upload_file(request: web.Request):
     assert "file_id" in params  # nosec
     params["file_id"] = urllib.parse.unquote(params["file_id"])
     assert query, f"{query}"  # nosec
-    assert body, f"{body}"  # nosec
+    body = await request.json()
+    assert body  # nosec
 
     with handle_storage_errors():
         user_id = query["user_id"]
         file_uuid = params["file_id"]
-        upload_id = body["uploadId"]
-        multipart_upload_parts = body["uploaded_parts"]
+        parts = body.get("parts", {})
+        if not parts:
+            raise web.HTTPUnprocessableEntity(reason="missing parts to complete upload")
+        parts = parse_obj_as(list[UploadedPart], parts)
 
         dsm = await _prepare_storage_manager(params, query, request)
 
-        await dsm.complete_multi_part_upload(
-            file_uuid=file_uuid,
-            user_id=user_id,
-            upload_id=upload_id,
-            uploaded_parts=multipart_upload_parts,
+        await dsm.complete_upload(
+            file_uuid=file_uuid, user_id=user_id, uploaded_parts=parts
         )
+        return web.HTTPNoContent(content_type="application/json")
 
 
 @routes.delete(f"/{api_vtag}/locations/{{location_id}}/files/{{file_id}}")  # type: ignore

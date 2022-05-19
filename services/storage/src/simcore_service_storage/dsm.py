@@ -62,7 +62,7 @@ from .models import (
     get_location_from_id,
     projects,
 )
-from .s3 import UploadedPart, get_s3_client
+from .s3 import FileID, UploadedPart, get_s3_client
 from .settings import Settings
 from .utils import download_to_file_or_raise, is_file_entry_valid, to_meta_data_extended
 
@@ -507,7 +507,7 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
     async def create_upload_links(
         self,
         user_id: UserID,
-        file_uuid: str,
+        file_uuid: FileID,
         link_type: LinkType,
         file_size_bytes: ByteSize,
     ) -> UploadLinks:
@@ -580,28 +580,10 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
                     [s3_link], file_size_bytes or _MAX_LINK_CHUNK_BYTE_SIZE[link_type]
                 )
 
-    async def abort_multi_part_upload(self, file_uuid: str, user_id: int) -> None:
-        async with self.engine.acquire() as conn:
-            can: Optional[AccessRights] = await get_file_access_rights(
-                conn, int(user_id), file_uuid
-            )
-            if not can.write:
-                raise web.HTTPForbidden(
-                    reason=f"User {user_id} does not have enough access rights to upload file {file_uuid}"
-                )
-            upload_id: Optional[str] = await db_file_meta_data.get_upload_id(
-                conn, file_uuid
-            )
-
-        if upload_id:
-            await get_s3_client(self.app).abort_multipart_upload(
-                bucket=self.simcore_bucket_name, file_id=file_uuid, upload_id=upload_id
-            )
-
-    async def complete_multi_part_upload(
+    async def complete_upload(
         self,
-        file_uuid: str,
-        user_id: int,
+        file_uuid: FileID,
+        user_id: UserID,
         uploaded_parts: list[UploadedPart],
     ) -> None:
         async with self.engine.acquire() as conn:
@@ -617,12 +599,24 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
             )
 
         if upload_id:
+            # NOTE: Processing of a Complete Multipart Upload request
+            # could take several minutes to complete. After Amazon S3
+            # begins processing the request, it sends an HTTP response
+            # header that specifies a 200 OK response. While processing
+            # is in progress, Amazon S3 periodically sends white space
+            # characters to keep the connection from timing out. Because
+            # a request could fail after the initial 200 OK response
+            # has been sent, it is important that you check the response
+            # body to determine whether the request succeeded.
             await get_s3_client(self.app).complete_multipart_upload(
                 bucket=self.simcore_bucket_name,
                 file_id=file_uuid,
                 upload_id=upload_id,
                 uploaded_parts=uploaded_parts,
             )
+        await self.try_update_database_from_storage(
+            file_uuid, self.simcore_bucket_name, file_uuid, reraise_exceptions=True
+        )
 
     async def download_link_s3(
         self, file_uuid: str, user_id: int, as_presigned_link: bool
