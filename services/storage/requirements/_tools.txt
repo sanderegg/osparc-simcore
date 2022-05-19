@@ -5,9 +5,7 @@
 #    pip-compile --output-file=requirements/_tools.txt --strip-extras requirements/_tools.in
 #
 aiobotocore==2.3.2
-    # via
-    #   -c requirements/_base.txt
-    #   types-aiobotocore
+    # via -c requirements/_base.txt
 aiohttp==3.8.1
     # via
     #   -c requirements/../../../requirements/constraints.txt
@@ -40,8 +38,6 @@ botocore==1.24.21
     #   -c requirements/_base.txt
     #   -c requirements/_test.txt
     #   aiobotocore
-botocore-stubs==1.25.7
-    # via types-aiobotocore
 bump2version==1.0.1
     # via -r requirements/../../../requirements/devenv.txt
 cfgv==3.3.1
@@ -131,19 +127,12 @@ tomli==2.0.1
     #   -c requirements/_test.txt
     #   black
     #   pep517
-types-aiobotocore==2.3.2
-    # via -r requirements/_tools.in
-types-aiobotocore-s3==2.3.2
-    # via types-aiobotocore
 typing-extensions==4.1.1
     # via
     #   -c requirements/_base.txt
     #   -c requirements/_test.txt
     #   aioitertools
     #   black
-    #   botocore-stubs
-    #   types-aiobotocore
-    #   types-aiobotocore-s3
 urllib3==1.26.9
     # via
     #   -c requirements/../../../requirements/constraints.txt
