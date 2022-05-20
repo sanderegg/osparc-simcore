@@ -39,7 +39,7 @@ class Settings(BaseCustomSettings, MixinLoggingSettings):
         None, description="Pennsieve API secret ONLY for testing purposes"
     )
 
-    STORAGE_POSTGRES: PostgresSettings = Field(auto_default_from_env=True)
+    STORAGE_POSTGRES: Optional[PostgresSettings] = Field(auto_default_from_env=True)
 
     STORAGE_S3: S3Settings = Field(auto_default_from_env=True)
 

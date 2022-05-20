@@ -4,26 +4,11 @@
 
 
 from contextlib import AsyncExitStack
-from typing import Iterator
 
 import pytest
 from aiobotocore.session import get_session
 from botocore import exceptions as boto_exceptions
 from moto.server import ThreadedMotoServer
-from pytest_simcore.helpers.utils_docker import get_localhost_ip
-
-
-@pytest.fixture
-def mocked_s3_server(aiohttp_unused_port, monkeypatch) -> Iterator[ThreadedMotoServer]:
-    server = ThreadedMotoServer(
-        ip_address=get_localhost_ip(), port=aiohttp_unused_port()
-    )
-    # pylint: disable=protected-access
-    print(f"--> started mock S3 server on {server._ip_address}:{server._port}")
-    server.start()
-    yield server
-    server.stop()
-    print(f"<-- stopped mock S3 server on {server._ip_address}:{server._port}")
 
 
 async def test_s3_client_fails_if_no_s3():

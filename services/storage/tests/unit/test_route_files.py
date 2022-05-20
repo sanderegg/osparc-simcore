@@ -515,19 +515,6 @@ async def test_upload_same_file_uuid_aborts_previous_upload(
     )
 
 
-@pytest.fixture
-def create_file_of_size(tmp_path: Path, faker: Faker) -> Callable[[ByteSize], Path]:
-    def _creator(size: ByteSize) -> Path:
-        file: Path = tmp_path / faker.file_name()
-        with file.open("wb") as fp:
-            fp.truncate(size)
-
-        assert file.stat().st_size == size
-        return file
-
-    return _creator
-
-
 _SUB_CHUNKS: Final[int] = parse_obj_as(ByteSize, "16Mib")
 
 
