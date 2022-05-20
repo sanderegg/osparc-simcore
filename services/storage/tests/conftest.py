@@ -389,6 +389,7 @@ def mock_config(
     postgres_host_config: dict[str, str],
     mocked_s3_server_envs,
 ):
+    # NOTE: this can be overriden in tests that do not need all dependencies up
     ...
 
 

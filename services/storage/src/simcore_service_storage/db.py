@@ -95,11 +95,6 @@ def get_engine_state(app: web.Application) -> Dict[str, Any]:
 
 
 def setup_db(app: web.Application):
-    if "postgres" in app[APP_CONFIG_KEY].STORAGE_DISABLE_SERVICES:
-        app[APP_DB_ENGINE_KEY] = None
-        log.warning("Service '%s' explicitly disabled in config", "postgres")
-        return
-
     app[APP_DB_ENGINE_KEY] = None
 
     # app is created at this point but not yet started
