@@ -154,6 +154,8 @@ async def dsm_mockup_complete_db(
             Bucket=storage_s3_bucket, Key=object_name, Body=fp
         )
     assert response
+    assert "ETag" in response
+    assert response["ETag"]
 
     file_2 = {
         "project_id": "161b8782-b13e-5840-9ae2-e2250c231001",
@@ -166,6 +168,9 @@ async def dsm_mockup_complete_db(
         response = await storage_s3_client.client.put_object(
             Bucket=storage_s3_bucket, Key=object_name, Body=fp
         )
+    assert response
+    assert "ETag" in response
+    assert response["ETag"]
     yield (file_1, file_2)
 
 
