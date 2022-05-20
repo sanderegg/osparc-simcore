@@ -526,8 +526,8 @@ async def test_upload_same_file_uuid_aborts_previous_upload(
     [
         pytest.param(parse_obj_as(ByteSize, "1Mib"), id="7Mib"),
         pytest.param(parse_obj_as(ByteSize, "500Mib"), id="500Mib"),
-        pytest.param(parse_obj_as(ByteSize, "5Gib"), id="5Gib"),
-        pytest.param(parse_obj_as(ByteSize, "7Gib"), id="7Gib"),
+        # pytest.param(parse_obj_as(ByteSize, "5Gib"), id="5Gib"),
+        # pytest.param(parse_obj_as(ByteSize, "7Gib"), id="7Gib"),
     ],
 )
 async def test_upload_real_file(
