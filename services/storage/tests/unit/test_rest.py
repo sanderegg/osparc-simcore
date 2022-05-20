@@ -8,22 +8,19 @@ import json
 import os
 import sys
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 from urllib.parse import quote
 
 import pytest
 import simcore_service_storage._meta
 from aiohttp import web
 from aiohttp.test_utils import TestClient
-from aiopg.sa import Engine
 from pytest_simcore.helpers.utils_assert import assert_status
 from simcore_service_storage.access_layer import AccessRights
 from simcore_service_storage.app_handlers import HealthCheck
-from simcore_service_storage.application import create
 from simcore_service_storage.constants import SIMCORE_S3_ID
 from simcore_service_storage.dsm import APP_DSM_KEY, DataStorageManager
 from simcore_service_storage.models import FileMetaData
-from simcore_service_storage.settings import Settings
 from tests.helpers.utils import USER_ID, has_datcore_tokens
 from tests.helpers.utils_project import clone_project_data
 
@@ -45,37 +42,6 @@ def parse_db(dsm_mockup_db: dict[str, FileMetaData]):
             id_file_count[md.user_id] = id_file_count[md.user_id] + 1
 
     return id_file_count, id_name_map
-
-
-@pytest.fixture
-def app_settings(
-    aiopg_engine: Engine,
-    postgres_host_config: dict[str, str],
-    monkeypatch: pytest.MonkeyPatch,
-) -> Settings:
-    monkeypatch.setenv("STORAGE_LOG_LEVEL", "DEBUG")
-    monkeypatch.setenv("STORAGE_TESTING", "1")
-
-    monkeypatch.setenv("SC_BOOT_MODE", "local-development")
-    test_app_settings = Settings.create_from_envs()
-    print(f"{test_app_settings.json(indent=2)=}")
-    return test_app_settings
-
-
-@pytest.fixture
-def client(
-    event_loop: asyncio.AbstractEventLoop,
-    aiohttp_client: Callable,
-    unused_tcp_port_factory: Callable[..., int],
-    app_settings: Settings,
-) -> TestClient:
-
-    app = create(app_settings)
-
-    cli = event_loop.run_until_complete(
-        aiohttp_client(app, server_kwargs={"port": unused_tcp_port_factory()})
-    )
-    return cli
 
 
 async def test_health_check(client: TestClient):
