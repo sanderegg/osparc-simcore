@@ -174,11 +174,7 @@ async def test_delete_file(client, dsm_mockup_db):
             )
         )
         payload = await resp.json()
-        assert resp.status == 200, str(payload)
-
-        data, error = tuple(payload.get(k) for k in ("data", "error"))
-        assert not error
-        assert not data
+        assert resp.status == 204, str(payload)
 
     for _id in id_file_count:
         resp = await client.get("/v0/locations/0/files/metadata?user_id={}".format(_id))
