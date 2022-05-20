@@ -13,8 +13,9 @@ from aiohttp import ClientSession
 from faker import Faker
 from moto.server import ThreadedMotoServer
 from pydantic import ByteSize, parse_obj_as
-from simcore_service_storage.s3_client import StorageS3Client
+from simcore_service_storage.s3_client import StorageS3Client, UploadedPart
 from simcore_service_storage.settings import Settings
+from tests.helpers.file_utils import upload_file_to_presigned_link
 
 
 @pytest.fixture
@@ -110,3 +111,117 @@ async def test_create_single_presigned_upload_link(
     response = await s3_client.client.get_object(Bucket=bucket, Key=file.name)
     assert response
     assert response["ContentLength"] == file.stat().st_size
+
+
+async def test_create_multipart_presigned_upload_link(
+    s3_client: StorageS3Client,
+    bucket: str,
+    create_file_of_size: Callable[[ByteSize], Path],
+):
+    file = create_file_of_size(parse_obj_as(ByteSize, "100Mib"))
+    upload_links = await s3_client.create_multipart_upload_links(
+        bucket, file.name, parse_obj_as(ByteSize, file.stat().st_size)
+    )
+    assert upload_links
+
+    # upload the file
+    part_to_etag: list[UploadedPart] = await upload_file_to_presigned_link(
+        file, upload_links
+    )
+
+    # check it is not yet completed
+    with pytest.raises(botocore.exceptions.ClientError):
+        await s3_client.client.head_object(Bucket=bucket, Key=file.name)
+
+    # check we have the multipart upload listed
+    response = await s3_client.client.list_multipart_uploads(Bucket=bucket)
+    assert response
+    assert "Uploads" in response
+    assert len(response["Uploads"]) == 1
+    assert "UploadId" in response["Uploads"][0]
+    assert response["Uploads"][0]["UploadId"] == upload_links.upload_id
+
+    # now complete it
+    received_e_tag = await s3_client.complete_multipart_upload(
+        bucket, file.name, upload_links.upload_id, part_to_etag
+    )
+
+    # check that the multipart upload is not listed anymore
+    response = await s3_client.client.list_multipart_uploads(Bucket=bucket)
+    assert response
+    assert "Uploads" not in response
+
+    # check the object is complete
+    response = await s3_client.client.head_object(Bucket=bucket, Key=file.name)
+    assert response
+    assert response["ContentLength"] == file.stat().st_size
+    assert response["ETag"] == f"{received_e_tag}"
+
+
+async def test_abort_multipart_upload(
+    s3_client: StorageS3Client,
+    bucket: str,
+    create_file_of_size: Callable[[ByteSize], Path],
+):
+    file = create_file_of_size(parse_obj_as(ByteSize, "100Mib"))
+    upload_links = await s3_client.create_multipart_upload_links(
+        bucket, file.name, parse_obj_as(ByteSize, file.stat().st_size)
+    )
+    assert upload_links
+
+    # upload the file
+    await upload_file_to_presigned_link(file, upload_links)
+
+    # check it is not yet completed
+    with pytest.raises(botocore.exceptions.ClientError):
+        await s3_client.client.head_object(Bucket=bucket, Key=file.name)
+
+    # check we have the multipart upload listed
+    response = await s3_client.client.list_multipart_uploads(Bucket=bucket)
+    assert response
+    assert "Uploads" in response
+    assert len(response["Uploads"]) == 1
+    assert "UploadId" in response["Uploads"][0]
+    assert response["Uploads"][0]["UploadId"] == upload_links.upload_id
+
+    # now abort it
+    await s3_client.abort_multipart_upload(bucket, file.name, upload_links.upload_id)
+
+    # now check that the listing is empty
+    response = await s3_client.client.list_multipart_uploads(Bucket=bucket)
+    assert response
+    assert "Uploads" not in response
+
+    # check it is not available
+    with pytest.raises(botocore.exceptions.ClientError):
+        await s3_client.client.head_object(Bucket=bucket, Key=file.name)
+
+
+async def test_delete_file(
+    s3_client: StorageS3Client,
+    bucket: str,
+    create_file_of_size: Callable[[ByteSize], Path],
+):
+
+    file = create_file_of_size(parse_obj_as(ByteSize, "1Mib"))
+    presigned_url = await s3_client.create_single_presigned_upload_link(
+        bucket, file.name
+    )
+    assert presigned_url
+
+    # upload the file
+    async with ClientSession() as session:
+        response = await session.put(presigned_url, data=file.open("rb"))
+        response.raise_for_status()
+
+    # check the object is complete
+    response = await s3_client.client.head_object(Bucket=bucket, Key=file.name)
+    assert response
+    assert response["ContentLength"] == file.stat().st_size
+
+    # delete the file
+    await s3_client.delete_file(bucket, file.name)
+
+    # check it is not available
+    with pytest.raises(botocore.exceptions.ClientError):
+        await s3_client.client.head_object(Bucket=bucket, Key=file.name)
