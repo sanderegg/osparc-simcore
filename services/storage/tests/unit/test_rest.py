@@ -24,9 +24,8 @@ from simcore_service_storage.constants import SIMCORE_S3_ID
 from simcore_service_storage.dsm import APP_DSM_KEY, DataStorageManager
 from simcore_service_storage.models import FileMetaData
 from simcore_service_storage.settings import Settings
+from tests.helpers.utils import USER_ID, has_datcore_tokens
 from tests.helpers.utils_project import clone_project_data
-
-from services.storage.tests.helpers.utils import USER_ID, has_datcore_tokens
 
 current_dir = Path(sys.argv[0] if __name__ == "__main__" else __file__).resolve().parent
 
