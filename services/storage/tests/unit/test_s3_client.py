@@ -6,20 +6,24 @@ import asyncio
 from contextlib import AsyncExitStack
 from pathlib import Path
 from typing import AsyncIterator, Callable
+from uuid import uuid4
 
 import botocore.exceptions
 import pytest
 from aiohttp import ClientSession
 from faker import Faker
-from moto.server import ThreadedMotoServer
 from pydantic import ByteSize, parse_obj_as
-from simcore_service_storage.s3_client import StorageS3Client, UploadedPart
+from simcore_service_storage.s3_client import (
+    MultiPartUploadLinks,
+    StorageS3Client,
+    UploadedPart,
+)
 from simcore_service_storage.settings import Settings
 from tests.helpers.file_utils import upload_file_to_presigned_link
 
 
 @pytest.fixture
-def mock_config(mocked_s3_server: ThreadedMotoServer, monkeypatch: pytest.MonkeyPatch):
+def mock_config(mocked_s3_server_envs, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("STORAGE_POSTGRES", "null")
 
 
@@ -97,28 +101,43 @@ async def test_create_single_presigned_upload_link(
     create_file_of_size: Callable[[ByteSize], Path],
 ):
     file = create_file_of_size(parse_obj_as(ByteSize, "1Mib"))
+    file_uuid = f"{uuid4()}/{uuid4()}/{file.name}"
     presigned_url = await s3_client.create_single_presigned_upload_link(
-        bucket, file.name
+        bucket, file_uuid
     )
     assert presigned_url
 
-    # upload the file
-    async with ClientSession() as session:
-        response = await session.put(presigned_url, data=file.open("rb"))
-        response.raise_for_status()
+    # upload the file with a fake multipart upload links structure
+    await upload_file_to_presigned_link(
+        file,
+        MultiPartUploadLinks(
+            upload_id="fake",
+            chunk_size=parse_obj_as(ByteSize, file.stat().st_size),
+            urls=[presigned_url],
+        ),
+    )
 
     # check it is there
-    response = await s3_client.client.get_object(Bucket=bucket, Key=file.name)
+    response = await s3_client.client.get_object(Bucket=bucket, Key=file_uuid)
     assert response
     assert response["ContentLength"] == file.stat().st_size
 
 
+@pytest.mark.parametrize(
+    "file_size",
+    [
+        parse_obj_as(ByteSize, "10Mib"),
+        parse_obj_as(ByteSize, "100Mib"),
+        parse_obj_as(ByteSize, "1000Mib"),
+    ],
+)
 async def test_create_multipart_presigned_upload_link(
     s3_client: StorageS3Client,
     bucket: str,
     create_file_of_size: Callable[[ByteSize], Path],
+    file_size: ByteSize,
 ):
-    file = create_file_of_size(parse_obj_as(ByteSize, "100Mib"))
+    file = create_file_of_size(file_size)
     upload_links = await s3_client.create_multipart_upload_links(
         bucket, file.name, parse_obj_as(ByteSize, file.stat().st_size)
     )
