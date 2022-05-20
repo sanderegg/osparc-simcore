@@ -8,7 +8,7 @@ from pytest_simcore.helpers.utils_assert import assert_status
 from settings_library.s3 import S3Settings
 
 pytest_simcore_core_services_selection = ["postgres"]
-pytest_simcore_ops_services_selection = ["minio", "adminer"]
+pytest_simcore_ops_services_selection = ["adminer"]
 
 
 async def test_simcore_s3_access_returns_default(client: TestClient):

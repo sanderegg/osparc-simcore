@@ -161,14 +161,14 @@ async def assert_file_meta_data_in_db(
 
 
 async def assert_multipart_uploads_in_progress(
-    s3_client: StorageS3Client,
+    storage_s3_client: StorageS3Client,
     bucket: str,
     file_id: FileID,
     *,
     expected_upload_ids: Optional[list[str]],
 ):
     """if None is passed, then it checks that no uploads are in progress"""
-    response = await s3_client.list_ongoing_multipart_uploads(
+    response = await storage_s3_client.list_ongoing_multipart_uploads(
         bucket=bucket, file_id=file_id
     )
     if expected_upload_ids is None:
