@@ -90,8 +90,9 @@ _MAX_LINK_CHUNK_BYTE_SIZE: Final[dict[LinkType, ByteSize]] = {
 
 def setup_dsm(app: web.Application):
     async def _cleanup_context(app: web.Application):
-        cfg: Settings = app[APP_CONFIG_KEY]
 
+        cfg: Settings = app[APP_CONFIG_KEY]
+        assert cfg.STORAGE_S3  # nosec
         dsm = DataStorageManager(
             engine=app.get(APP_DB_ENGINE_KEY),
             simcore_bucket_name=cfg.STORAGE_S3.S3_BUCKET_NAME,
