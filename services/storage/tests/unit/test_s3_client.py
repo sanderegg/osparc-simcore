@@ -29,6 +29,7 @@ def mock_config(mocked_s3_server_envs, monkeypatch: pytest.MonkeyPatch):
 
 
 async def test_storage_s3_client_creation(app_settings: Settings):
+    assert app_settings.STORAGE_S3
     async with AsyncExitStack() as exit_stack:
         s3_client = await StorageS3Client.create(exit_stack, app_settings.STORAGE_S3)
         assert s3_client
@@ -40,6 +41,7 @@ async def test_storage_s3_client_creation(app_settings: Settings):
 
 @pytest.fixture
 async def s3_client(app_settings: Settings) -> AsyncIterator[StorageS3Client]:
+    assert app_settings.STORAGE_S3
     async with AsyncExitStack() as exit_stack:
         s3_client = await StorageS3Client.create(exit_stack, app_settings.STORAGE_S3)
         assert s3_client
