@@ -370,12 +370,26 @@ async def storage_s3_client(
 
 @pytest.fixture
 async def with_bucket_in_s3(storage_s3_client: StorageS3Client) -> AsyncIterator[str]:
+    response = await storage_s3_client.client.list_buckets()
+    assert BUCKET_NAME not in [
+        bucket_struct.get("Name") for bucket_struct in response["Buckets"]
+    ], f"{BUCKET_NAME} is already in S3, please check why"
     await storage_s3_client.create_bucket(BUCKET_NAME)
+    response = await storage_s3_client.client.list_buckets()
+    assert response["Buckets"]
+    assert BUCKET_NAME in [
+        bucket_struct.get("Name") for bucket_struct in response["Buckets"]
+    ], f"failed creating {BUCKET_NAME}"
+
     yield BUCKET_NAME
     # cleanup the bucket
     await _clean_bucket_content(storage_s3_client, BUCKET_NAME)
     # remove bucket
     await storage_s3_client.client.delete_bucket(Bucket=BUCKET_NAME)
+    response = await storage_s3_client.client.list_buckets()
+    assert BUCKET_NAME not in [
+        bucket_struct.get("Name") for bucket_struct in response["Buckets"]
+    ], f"{BUCKET_NAME} is already in S3, please check why"
 
 
 @pytest.fixture
