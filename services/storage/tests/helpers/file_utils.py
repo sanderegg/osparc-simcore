@@ -2,13 +2,13 @@ import asyncio
 import json
 from pathlib import Path
 from time import perf_counter
-from typing import Final
+from typing import Final, Union
 
 import aiofiles
 from aiohttp import ClientSession, web
 from models_library.api_schemas_storage import FileUploadSchema
 from pydantic import AnyUrl, ByteSize, parse_obj_as
-from simcore_service_storage.s3_client import ETag, UploadedPart
+from simcore_service_storage.s3_client import ETag, MultiPartUploadLinks, UploadedPart
 
 _SUB_CHUNKS: Final[int] = parse_obj_as(ByteSize, "16Mib")
 
@@ -59,7 +59,7 @@ async def _upload_file_part(
 
 
 async def upload_file_to_presigned_link(
-    file: Path, file_upload_link: FileUploadSchema
+    file: Path, file_upload_link: Union[FileUploadSchema, MultiPartUploadLinks]
 ) -> list[UploadedPart]:
 
     file_size = file.stat().st_size
