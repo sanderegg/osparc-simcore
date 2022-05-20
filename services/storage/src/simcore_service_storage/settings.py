@@ -27,8 +27,6 @@ class Settings(BaseCustomSettings, MixinLoggingSettings):
 
     STORAGE_MONITORING_ENABLED: bool = False
 
-    STORAGE_DISABLE_SERVICES: list[str] = []
-
     STORAGE_TESTING: bool = Field(
         False, description="Flag to enable some fakes for testing purposes"
     )
@@ -41,7 +39,7 @@ class Settings(BaseCustomSettings, MixinLoggingSettings):
 
     STORAGE_POSTGRES: Optional[PostgresSettings] = Field(auto_default_from_env=True)
 
-    STORAGE_S3: S3Settings = Field(auto_default_from_env=True)
+    STORAGE_S3: Optional[S3Settings] = Field(auto_default_from_env=True)
 
     STORAGE_TRACING: Optional[TracingSettings] = Field(auto_default_from_env=True)
 
