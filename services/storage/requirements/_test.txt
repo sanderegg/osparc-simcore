@@ -44,9 +44,7 @@ botocore==1.24.21
     #   moto
     #   s3transfer
 certifi==2021.10.8
-    # via
-    #   minio
-    #   requests
+    # via requests
 cffi==1.15.0
     # via cryptography
 cfn-lint==0.59.1
@@ -161,11 +159,7 @@ markupsafe==2.1.1
     #   moto
 mccabe==0.7.0
     # via pylint
-minio==7.0.4
-    # via
-    #   -c requirements/../../../requirements/constraints.txt
-    #   -r requirements/_test.in
-moto==3.1.7
+moto==3.1.9
     # via -r requirements/_test.in
 multidict==6.0.2
     # via
@@ -301,7 +295,6 @@ urllib3==1.26.9
     #   -c requirements/../../../requirements/constraints.txt
     #   -c requirements/_base.txt
     #   botocore
-    #   minio
     #   requests
     #   responses
 websocket-client==1.3.2
