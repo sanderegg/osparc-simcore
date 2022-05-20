@@ -20,8 +20,7 @@ from simcore_service_storage.constants import SIMCORE_S3_ID, SIMCORE_S3_STR
 from simcore_service_storage.dsm import DataStorageManager, LinkType
 from simcore_service_storage.models import FileMetaData, FileMetaDataEx
 from simcore_service_storage.s3_client import StorageS3Client
-
-from services.storage.tests.helpers.utils import BUCKET_NAME, USER_ID
+from tests.helpers.utils import BUCKET_NAME, USER_ID
 
 pytest_simcore_core_services_selection = ["postgres"]
 pytest_simcore_ops_services_selection = ["adminer"]

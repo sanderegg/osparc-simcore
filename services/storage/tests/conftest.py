@@ -31,9 +31,13 @@ from simcore_service_storage.dsm import DataStorageManager, DatCoreApiToken
 from simcore_service_storage.models import FileMetaData, file_meta_data, projects, users
 from simcore_service_storage.s3_client import StorageS3Client
 from simcore_service_storage.settings import Settings
-from tests.helpers.utils import fill_tables_from_csv_files, insert_metadata
-
-from services.storage.tests.helpers.utils import BUCKET_NAME, DATA_DIR, USER_ID
+from tests.helpers.utils import (
+    BUCKET_NAME,
+    DATA_DIR,
+    USER_ID,
+    fill_tables_from_csv_files,
+    insert_metadata,
+)
 
 pytest_plugins = [
     "pytest_simcore.cli_runner",
@@ -150,13 +154,11 @@ async def dsm_mockup_complete_db(
     }
     f = DATA_DIR / "outputController.dat"
     object_name = "{project_id}/{node_id}/{filename}".format(**file_1)
-    response = await storage_s3_client.client.upload_file(
-        Filename=f"{f}", Bucket=with_bucket_in_s3, Key=object_name
-    )
+    with f.open("rb") as fp:
+        response = await storage_s3_client.client.put_object(
+            Bucket=with_bucket_in_s3, Key=object_name, Body=fp
+        )
     assert response
-    import pdb
-
-    pdb.set_trace()
 
     file_2 = {
         "project_id": "161b8782-b13e-5840-9ae2-e2250c231001",
@@ -165,9 +167,10 @@ async def dsm_mockup_complete_db(
     }
     f = DATA_DIR / "notebooks.zip"
     object_name = "{project_id}/{node_id}/{filename}".format(**file_2)
-    await storage_s3_client.client.upload_file(
-        Filename=f"{f}", Bucket=with_bucket_in_s3, Key=object_name
-    )
+    with f.open("rb") as fp:
+        response = await storage_s3_client.client.put_object(
+            Bucket=with_bucket_in_s3, Key=object_name, Body=fp
+        )
     yield (file_1, file_2)
 
 
@@ -219,9 +222,10 @@ async def dsm_mockup_db(
         created_at = str(datetime.datetime.utcnow())
         file_size = _file.stat().st_size
 
-        response = await storage_s3_client.client.upload_file(
-            Filename=f"{_file}", Bucket=with_bucket_in_s3, Key=object_name
-        )
+        with _file.open("rb") as fp:
+            response = await storage_s3_client.client.put_object(
+                Bucket=with_bucket_in_s3, Key=object_name, Body=fp
+            )
         response = await storage_s3_client.client.head_object(
             Bucket=with_bucket_in_s3, Key=object_name
         )
