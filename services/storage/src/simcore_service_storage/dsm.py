@@ -696,7 +696,10 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
             dest_uuid = str(Path(dest_uuid) / filename)
 
         s3_upload_links = await self.create_upload_links(
-            user_id, dest_uuid, link_type=LinkType.PRESIGNED, file_size_bytes=None
+            UserID(user_id),
+            dest_uuid,
+            link_type=LinkType.PRESIGNED,
+            file_size_bytes=ByteSize(0),
         )
         assert s3_upload_links
         assert s3_upload_links.urls
