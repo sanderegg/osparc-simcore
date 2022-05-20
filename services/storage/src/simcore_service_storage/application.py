@@ -41,9 +41,12 @@ def create(settings: Settings) -> web.Application:
             skip_routes=None,
         )
 
-    setup_db(app)  # -> postgres service
-    setup_s3(app)  # -> minio service
-    setup_dsm(app)  # core subsystem. Needs s3 and db setups done
+    if settings.STORAGE_POSTGRES:
+        setup_db(app)  # -> postgres service
+    if settings.STORAGE_S3:
+        setup_s3(app)  # -> minio service
+    if settings.STORAGE_POSTGRES and settings.STORAGE_S3:
+        setup_dsm(app)  # core subsystem. Needs s3 and db setups done
     setup_rest(app)  # lastly, we expose API to the world
 
     if settings.LOG_LEVEL == "DEBUG":

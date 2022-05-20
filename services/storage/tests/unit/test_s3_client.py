@@ -24,6 +24,7 @@ from tests.helpers.file_utils import upload_file_to_presigned_link
 
 @pytest.fixture
 def mock_config(mocked_s3_server_envs, monkeypatch: pytest.MonkeyPatch):
+    # NOTE: override services/storage/tests/conftest.py::mock_config
     monkeypatch.setenv("STORAGE_POSTGRES", "null")
 
 
