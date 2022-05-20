@@ -25,7 +25,6 @@ PASS = "admin"
 ACCESS_KEY = "12345678"
 SECRET_KEY = "12345678"
 
-BUCKET_NAME = "simcore-testing-bucket"
 USER_ID = "0"
 
 PG_TABLES_NEEDED_FOR_STORAGE = [
