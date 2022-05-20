@@ -29,8 +29,8 @@ from simcore_service_storage.constants import SIMCORE_S3_STR
 from simcore_service_storage.dsm import DataStorageManager, DatCoreApiToken
 from simcore_service_storage.models import FileMetaData, file_meta_data, projects, users
 from simcore_service_storage.settings import Settings
-from tests.helpers.s3_client import MinioClientWrapper
 from tests.utils import BUCKET_NAME, DATA_DIR, USER_ID
+from types_aiobotocore_s3 import S3Client
 
 import tests
 
@@ -105,7 +105,7 @@ def project_env_devel_environment(project_env_devel_dict, monkeypatch) -> None:
 
 
 @pytest.fixture(scope="module")
-def s3_client(minio_config: Dict[str, Any]) -> MinioClientWrapper:
+def s3_client(minio_config: Dict[str, Any]) -> S3Client:
 
     s3_client = MinioClientWrapper(
         endpoint=minio_config["client"]["endpoint"],
@@ -292,67 +292,6 @@ def dsm_fixture(aiopg_engine, client) -> Iterable[DataStorageManager]:
     yield dsm_fixture
 
 
-@pytest.fixture(scope="function")
-async def datcore_structured_testbucket(
-    mock_files_factory: Callable[[int], List[Path]], client
-):
-    api_token = os.environ.get("BF_API_KEY")
-    api_secret = os.environ.get("BF_API_SECRET")
-
-    if api_token is None or api_secret is None:
-        yield "no_bucket"
-        return
-    import warnings
-
-    warnings.warn("DISABLED!!!")
-    raise Exception
-    # TODO: there are some missing commands in datcore-adapter before this can run
-    # this shall be used when the time comes and this code should be enabled again
-
-    # dataset: DatasetMetaData = await datcore_adapter.create_dataset(
-    #     client.app, api_token, api_secret, BUCKET_NAME
-    # )
-    # dataset_id = dataset.dataset_id
-    # assert dataset_id, f"Could not create dataset {BUCKET_NAME}"
-
-    # tmp_files = mock_files_factory(3)
-
-    # # first file to the root
-    # filename1 = os.path.normpath(tmp_files[0])
-    # await datcore_adapter.upload_file(client.app, api_token, api_secret, filename1)
-    # file_id1 = await dcw.upload_file_to_id(dataset_id, filename1)
-    # assert file_id1, f"Could not upload {filename1} to the root of {BUCKET_NAME}"
-
-    # # create first level folder
-    # collection_id1 = await dcw.create_collection(dataset_id, "level1")
-
-    # # upload second file
-    # filename2 = os.path.normpath(tmp_files[1])
-    # file_id2 = await dcw.upload_file_to_id(collection_id1, filename2)
-    # assert file_id2, f"Could not upload {filename2} to the {BUCKET_NAME}/level1"
-
-    # # create 3rd level folder
-    # filename3 = os.path.normpath(tmp_files[2])
-    # collection_id2 = await dcw.create_collection(collection_id1, "level2")
-    # file_id3 = await dcw.upload_file_to_id(collection_id2, filename3)
-    # assert file_id3, f"Could not upload {filename3} to the {BUCKET_NAME}/level1/level2"
-
-    # yield {
-    #     "dataset_id": dataset_id,
-    #     "coll1_id": collection_id1,
-    #     "coll2_id": collection_id2,
-    #     "file_id1": file_id1,
-    #     "filename1": tmp_files[0],
-    #     "file_id2": file_id2,
-    #     "filename2": tmp_files[1],
-    #     "file_id3": file_id3,
-    #     "filename3": tmp_files[2],
-    #     "dcw": dcw,
-    # }
-
-    # await dcw.delete_test_dataset(BUCKET_NAME)
-
-
 @pytest.fixture(scope="module")
 def mocked_s3_server() -> Iterator[ThreadedMotoServer]:
     """creates a moto-server that emulates AWS services in place
@@ -375,8 +314,9 @@ def mocked_s3_server_envs(
     mocked_s3_server: ThreadedMotoServer, monkeypatch: pytest.MonkeyPatch
 ):
     monkeypatch.setenv("S3_SECURE", "false")
-    monkeypatch.setenv(  # pylint: disable=protected-access
-        "S3_ENDPOINT", f"{mocked_s3_server._ip_address}:{mocked_s3_server._port}"
+    monkeypatch.setenv(
+        "S3_ENDPOINT",
+        f"{mocked_s3_server._ip_address}:{mocked_s3_server._port}",  # pylint: disable=protected-access
     )
     monkeypatch.setenv("S3_ACCESS_KEY", "xxx")
     monkeypatch.setenv("S3_SECRET_KEY", "xxx")
