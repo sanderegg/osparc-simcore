@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 from aiobotocore.session import AioSession, get_session
 from botocore.client import Config
-from pydantic import AnyUrl, ByteSize, PositiveInt, parse_obj_as
+from pydantic import AnyUrl, BaseModel, ByteSize, PositiveInt, parse_obj_as
 from settings_library.s3 import S3Settings
 from types_aiobotocore_s3 import S3Client
 
@@ -20,15 +20,13 @@ UploadID = str
 ETag = str
 
 
-@dataclass(frozen=True)
-class MultiPartUploadLinks:
+class MultiPartUploadLinks(BaseModel):
     upload_id: UploadID
     chunk_size: ByteSize
     urls: list[AnyUrl]
 
 
-@dataclass(frozen=True)
-class UploadedPart:
+class UploadedPart(BaseModel):
     number: PositiveInt
     e_tag: ETag
 
@@ -105,7 +103,9 @@ class StorageS3Client:
                 ]
             ),
         )
-        return MultiPartUploadLinks(upload_id, chunk_size, upload_links)
+        return MultiPartUploadLinks(
+            upload_id=upload_id, chunk_size=chunk_size, urls=upload_links
+        )
 
     async def list_ongoing_multipart_uploads(self, bucket: str, file_id: FileID = ""):
         """Returns all the currently ongoing multipart uploads

@@ -5,16 +5,14 @@
 # pylint: disable=too-many-arguments
 
 import asyncio
-import json
 import urllib.parse
 from dataclasses import dataclass
 from pathlib import Path
 from time import perf_counter
-from typing import AsyncIterator, Awaitable, Callable, Final, Optional, Type, Union
+from typing import AsyncIterator, Awaitable, Callable, Optional, Type, Union
 
-import aiofiles
 import pytest
-from aiohttp import ClientSession, web
+from aiohttp import web
 from aiohttp.test_utils import TestClient
 from aiopg.sa import Engine
 from faker import Faker
@@ -22,13 +20,14 @@ from models_library.api_schemas_storage import FileUploadSchema
 from models_library.projects import ProjectID
 from models_library.projects_nodes import NodeID
 from models_library.users import UserID
-from pydantic import AnyUrl, ByteSize, PositiveInt, parse_obj_as
+from pydantic import ByteSize, PositiveInt, parse_obj_as
 from pytest_simcore.helpers.utils_assert import assert_status
 from simcore_postgres_database.models.file_meta_data import file_meta_data
 from simcore_service_storage.dsm import _MULTIPART_UPLOADS_MIN_TOTAL_SIZE
 from simcore_service_storage.s3 import get_s3_client
-from simcore_service_storage.s3_client import ETag, FileID, StorageS3Client, UploadID
+from simcore_service_storage.s3_client import FileID, StorageS3Client, UploadID
 from simcore_service_storage.settings import Settings
+from tests.helpers.file_utils import upload_file_to_presigned_link
 from yarl import URL
 
 pytest_simcore_core_services_selection = ["postgres"]
@@ -515,93 +514,6 @@ async def test_upload_same_file_uuid_aborts_previous_upload(
     )
 
 
-_SUB_CHUNKS: Final[int] = parse_obj_as(ByteSize, "16Mib")
-
-
-async def _file_sender(file_name: Path, *, offset: int, bytes_to_send: int):
-    async with aiofiles.open(file_name, "rb") as f:
-        await f.seek(offset)
-        num_read_bytes = 0
-        while chunk := await f.read(min(_SUB_CHUNKS, bytes_to_send - num_read_bytes)):
-            num_read_bytes += len(chunk)
-            yield chunk
-
-
-async def _upload_file_part(
-    session: ClientSession,
-    file: Path,
-    part_index: int,
-    file_offset: int,
-    this_file_chunk_size: int,
-    num_parts: int,
-    upload_url: AnyUrl,
-) -> tuple[int, ETag]:
-    print(
-        f"--> uploading {this_file_chunk_size=} of {file=}, [{part_index+1}/{num_parts}]..."
-    )
-    response = await session.put(
-        upload_url,
-        data=_file_sender(
-            file,
-            offset=file_offset,
-            bytes_to_send=this_file_chunk_size,
-        ),
-        headers={
-            "Content-Type": "application/json",
-            "Content-Length": f"{this_file_chunk_size}",
-        },
-    )
-    response.raise_for_status()
-    # NOTE: the response from minio does not contain a json body
-    assert response.status == web.HTTPOk.status_code
-    assert response.headers
-    assert "Etag" in response.headers
-    received_e_tag = json.loads(response.headers["Etag"])
-    print(
-        f"--> completed upload {this_file_chunk_size=} of {file=}, [{part_index+1}/{num_parts}], {received_e_tag=}"
-    )
-    return (part_index, received_e_tag)
-
-
-async def _upload_file_to_presigned_link(
-    file: Path, file_upload_link: FileUploadSchema
-) -> list[dict[str, Union[PositiveInt, str]]]:
-
-    file_size = file.stat().st_size
-
-    start = perf_counter()
-    print(f"--> uploading {file=}")
-    async with ClientSession() as session:
-        file_chunk_size = int(file_upload_link.chunk_size)
-        num_urls = len(file_upload_link.urls)
-        last_chunk_size = file_size - file_chunk_size * (num_urls - 1)
-        upload_tasks = []
-        for index, upload_url in enumerate(file_upload_link.urls):
-            this_file_chunk_size = (
-                file_chunk_size if (index + 1) < num_urls else last_chunk_size
-            )
-            upload_tasks.append(
-                _upload_file_part(
-                    session,
-                    file,
-                    index,
-                    index * file_chunk_size,
-                    this_file_chunk_size,
-                    num_urls,
-                    upload_url,
-                )
-            )
-        results = await asyncio.gather(*upload_tasks)
-    part_to_etag = [
-        {"number": part_index + 1, "e_tag": received_e_tag}
-        for part_index, received_e_tag in results
-    ]
-    print(
-        f"--> upload of {file=} of {file_size=} completed in {perf_counter() - start}"
-    )
-    return part_to_etag
-
-
 @pytest.mark.parametrize(
     "file_size",
     [
@@ -635,7 +547,7 @@ async def test_upload_real_file(
     # upload the file
     part_to_etag: list[
         dict[str, Union[PositiveInt, str]]
-    ] = await _upload_file_to_presigned_link(file, file_upload_link)
+    ] = await upload_file_to_presigned_link(file, file_upload_link)
 
     # complete the upload
     complete_url = URL(file_upload_link.links.complete_upload).relative()
