@@ -75,6 +75,13 @@ async def test_create_bucket(s3_client: StorageS3Client, faker: Faker):
     assert len(response["Buckets"]) == 1
     assert "Name" in response["Buckets"][0]
     assert response["Buckets"][0]["Name"] == bucket
+    # now we create the bucket again, it should silently work even if it exists already
+    await s3_client.create_bucket(bucket)
+    response = await s3_client.client.list_buckets()
+    assert response["Buckets"]
+    assert len(response["Buckets"]) == 1
+    assert "Name" in response["Buckets"][0]
+    assert response["Buckets"][0]["Name"] == bucket
 
 
 @pytest.fixture
