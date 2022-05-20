@@ -62,7 +62,8 @@ from .models import (
     get_location_from_id,
     projects,
 )
-from .s3 import FileID, UploadedPart, get_s3_client
+from .s3 import get_s3_client
+from .s3_client import FileID, UploadedPart
 from .settings import Settings
 from .utils import download_to_file_or_raise, is_file_entry_valid, to_meta_data_extended
 

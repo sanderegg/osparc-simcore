@@ -8,7 +8,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from .exceptions import FileMetaDataNotFoundError
 from .models import FileMetaData
-from .s3 import FileID, UploadID
+from .s3_client import FileID, UploadID
 
 
 async def upsert_file_metadata_for_upload(
