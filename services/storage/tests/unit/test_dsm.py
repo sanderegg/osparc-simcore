@@ -15,12 +15,13 @@ from pathlib import Path
 from typing import Any, Callable, Dict, Iterator, List, Optional, Tuple
 
 import pytest
+from pydantic import ByteSize
 from simcore_service_storage.access_layer import InvalidFileIdentifier
 from simcore_service_storage.constants import SIMCORE_S3_ID, SIMCORE_S3_STR
 from simcore_service_storage.dsm import DataStorageManager, LinkType
 from simcore_service_storage.models import FileMetaData, FileMetaDataEx
 from simcore_service_storage.s3_client import StorageS3Client
-from tests.helpers.utils import BUCKET_NAME, USER_ID
+from tests.helpers.utils import USER_ID
 
 pytest_simcore_core_services_selection = ["postgres"]
 pytest_simcore_ops_services_selection = ["adminer"]
@@ -97,7 +98,7 @@ async def test_dsm_s3(
 
 @pytest.fixture
 def create_file_meta_for_s3(
-    with_bucket_in_s3: str,
+    storage_s3_bucket: str,
     cleanup_user_projects_file_metadata: None,
 ) -> Iterator[Callable[..., FileMetaData]]:
     def _creator(tmp_file: Path) -> FileMetaData:
@@ -115,7 +116,7 @@ def create_file_meta_for_s3(
 
         d = {
             "object_name": os.path.join(str(project_id), str(node_id), str(file_name)),
-            "bucket_name": BUCKET_NAME,
+            "bucket_name": storage_s3_bucket,
             "file_name": filename,
             "user_id": USER_ID,
             "user_name": "starbucks",
@@ -148,7 +149,7 @@ async def _upload_file(
         file_metadata.user_id,
         file_metadata.file_uuid,
         link_type=LinkType.PRESIGNED,
-        file_size_bytes=None,
+        file_size_bytes=ByteSize(0),
     )
     assert file_path.exists()
     assert upload_links
@@ -345,6 +346,7 @@ async def test_sync_table_meta_data(
     dsm_fixture: DataStorageManager,
     dsm_mockup_complete_db: Tuple[Dict[str, str], Dict[str, str]],
     storage_s3_client: StorageS3Client,
+    storage_s3_bucket: str,
 ):
     dsm_fixture.has_project_db = True
 
@@ -359,7 +361,9 @@ async def test_sync_table_meta_data(
     # now remove the files
     for file_entry in dsm_mockup_complete_db:
         s3_key = f"{file_entry['project_id']}/{file_entry['node_id']}/{file_entry['filename']}"
-        await storage_s3_client.client.delete_object(Bucket=BUCKET_NAME, Key=s3_key)
+        await storage_s3_client.client.delete_object(
+            Bucket=storage_s3_bucket, Key=s3_key
+        )
         expected_removed_files.append(s3_key)
 
         # the list should now contain the removed entries
