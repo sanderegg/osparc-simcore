@@ -20,6 +20,10 @@ import pytest
 import simcore_service_storage
 from aiohttp.test_utils import TestClient
 from aiopg.sa import Engine
+from faker import Faker
+from moto.server import ThreadedMotoServer
+from pydantic import ByteSize
+from pytest_simcore.helpers.utils_docker import get_localhost_ip
 from simcore_service_storage.application import create
 from simcore_service_storage.constants import SIMCORE_S3_STR
 from simcore_service_storage.dsm import DataStorageManager, DatCoreApiToken
@@ -350,11 +354,36 @@ async def datcore_structured_testbucket(
 
 
 @pytest.fixture
-def app_settings(
+def mocked_s3_server(
+    aiohttp_unused_port, monkeypatch: pytest.MonkeyPatch
+) -> Iterator[ThreadedMotoServer]:
+    server = ThreadedMotoServer(
+        ip_address=get_localhost_ip(), port=aiohttp_unused_port()
+    )
+    # pylint: disable=protected-access
+    print(f"--> started mock S3 server on {server._ip_address}:{server._port}")
+    server.start()
+    monkeypatch.setenv("S3_SECURE", "false")
+    monkeypatch.setenv("S3_ENDPOINT", f"{server._ip_address}:{server._port}")
+    monkeypatch.setenv("S3_ACCESS_KEY", "xxx")
+    monkeypatch.setenv("S3_SECRET_KEY", "xxx")
+    monkeypatch.setenv("S3_BUCKET_NAME", "pytest_bucket")
+    yield server
+    server.stop()
+    print(f"<-- stopped mock S3 server on {server._ip_address}:{server._port}")
+
+
+@pytest.fixture
+def mock_config(
     aiopg_engine: Engine,
     postgres_host_config: dict[str, str],
-    minio_config: dict[str, str],
-) -> Settings:
+    mocked_s3_server: ThreadedMotoServer,
+):
+    ...
+
+
+@pytest.fixture
+def app_settings(mock_config) -> Settings:
     test_app_settings = Settings.create_from_envs()
     print(f"{test_app_settings.json(indent=2)=}")
     return test_app_settings
@@ -371,3 +400,16 @@ def client(
     return event_loop.run_until_complete(
         aiohttp_client(app, server_kwargs={"port": unused_tcp_port_factory()})
     )
+
+
+@pytest.fixture
+def create_file_of_size(tmp_path: Path, faker: Faker) -> Callable[[ByteSize], Path]:
+    def _creator(size: ByteSize) -> Path:
+        file: Path = tmp_path / faker.file_name()
+        with file.open("wb") as fp:
+            fp.truncate(size)
+
+        assert file.stat().st_size == size
+        return file
+
+    return _creator
