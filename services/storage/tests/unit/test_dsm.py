@@ -19,11 +19,12 @@ from simcore_service_storage.access_layer import InvalidFileIdentifier
 from simcore_service_storage.constants import SIMCORE_S3_ID, SIMCORE_S3_STR
 from simcore_service_storage.dsm import DataStorageManager, LinkType
 from simcore_service_storage.models import FileMetaData, FileMetaDataEx
-from tests.helpers.s3_client import MinioClientWrapper
-from tests.utils import BUCKET_NAME, USER_ID
+from simcore_service_storage.s3_client import StorageS3Client
+
+from services.storage.tests.helpers.utils import BUCKET_NAME, USER_ID
 
 pytest_simcore_core_services_selection = ["postgres"]
-pytest_simcore_ops_services_selection = ["minio", "adminer"]
+pytest_simcore_ops_services_selection = ["adminer"]
 
 
 async def test_dsm_s3(
@@ -97,13 +98,10 @@ async def test_dsm_s3(
 
 @pytest.fixture
 def create_file_meta_for_s3(
-    s3_client: MinioClientWrapper,
+    with_bucket_in_s3: str,
     cleanup_user_projects_file_metadata: None,
 ) -> Iterator[Callable[..., FileMetaData]]:
     def _creator(tmp_file: Path) -> FileMetaData:
-        bucket_name = BUCKET_NAME
-        s3_client.create_bucket(bucket_name, delete_contents_if_exists=True)
-
         # create file and upload
         filename = tmp_file.name
         project_id = "api"  # "357879cc-f65d-48b2-ad6c-074e2b9aa1c7"
@@ -118,7 +116,7 @@ def create_file_meta_for_s3(
 
         d = {
             "object_name": os.path.join(str(project_id), str(node_id), str(file_name)),
-            "bucket_name": bucket_name,
+            "bucket_name": BUCKET_NAME,
             "file_name": filename,
             "user_id": USER_ID,
             "user_name": "starbucks",
@@ -142,9 +140,6 @@ def create_file_meta_for_s3(
         return fmd
 
     yield _creator
-
-    # cleanup
-    s3_client.remove_bucket(BUCKET_NAME, delete_contents=True)
 
 
 async def _upload_file(
@@ -172,7 +167,6 @@ async def _upload_file(
 
 async def test_update_metadata_from_storage(
     postgres_dsn_url: str,
-    s3_client: MinioClientWrapper,
     mock_files_factory: Callable[[int], List[Path]],
     dsm_fixture: DataStorageManager,
     create_file_meta_for_s3: Callable,
@@ -214,7 +208,6 @@ async def test_update_metadata_from_storage(
 
 async def test_links_s3(
     postgres_dsn_url: str,
-    s3_client: MinioClientWrapper,
     mock_files_factory: Callable[[int], List[Path]],
     dsm_fixture: DataStorageManager,
     create_file_meta_for_s3: Callable,
@@ -352,7 +345,7 @@ async def test_dsm_list_datasets_s3(dsm_fixture, dsm_mockup_complete_db):
 async def test_sync_table_meta_data(
     dsm_fixture: DataStorageManager,
     dsm_mockup_complete_db: Tuple[Dict[str, str], Dict[str, str]],
-    s3_client: MinioClientWrapper,
+    storage_s3_client: StorageS3Client,
 ):
     dsm_fixture.has_project_db = True
 
@@ -367,7 +360,7 @@ async def test_sync_table_meta_data(
     # now remove the files
     for file_entry in dsm_mockup_complete_db:
         s3_key = f"{file_entry['project_id']}/{file_entry['node_id']}/{file_entry['filename']}"
-        s3_client.remove_objects(BUCKET_NAME, [s3_key])
+        await storage_s3_client.client.delete_object(Bucket=BUCKET_NAME, Key=s3_key)
         expected_removed_files.append(s3_key)
 
         # the list should now contain the removed entries

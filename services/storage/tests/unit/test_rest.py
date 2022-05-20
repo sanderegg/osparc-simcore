@@ -25,12 +25,13 @@ from simcore_service_storage.dsm import APP_DSM_KEY, DataStorageManager
 from simcore_service_storage.models import FileMetaData
 from simcore_service_storage.settings import Settings
 from tests.helpers.utils_project import clone_project_data
-from tests.utils import USER_ID, has_datcore_tokens
+
+from services.storage.tests.helpers.utils import USER_ID, has_datcore_tokens
 
 current_dir = Path(sys.argv[0] if __name__ == "__main__" else __file__).resolve().parent
 
 pytest_simcore_core_services_selection = ["postgres"]
-pytest_simcore_ops_services_selection = ["minio", "adminer"]
+pytest_simcore_ops_services_selection = ["adminer"]
 
 
 def parse_db(dsm_mockup_db: dict[str, FileMetaData]):
@@ -51,7 +52,6 @@ def parse_db(dsm_mockup_db: dict[str, FileMetaData]):
 def app_settings(
     aiopg_engine: Engine,
     postgres_host_config: dict[str, str],
-    minio_config: dict[str, Any],
     monkeypatch: pytest.MonkeyPatch,
 ) -> Settings:
     monkeypatch.setenv("STORAGE_LOG_LEVEL", "DEBUG")

@@ -11,9 +11,10 @@ import datetime
 import os
 import sys
 import uuid
+from contextlib import AsyncExitStack
 from pathlib import Path
 from random import randrange
-from typing import Any, Callable, Dict, Iterable, Iterator, List, Optional
+from typing import AsyncIterator, Callable, Dict, Iterable, Iterator, List, Optional
 
 import dotenv
 import pytest
@@ -28,11 +29,11 @@ from simcore_service_storage.application import create
 from simcore_service_storage.constants import SIMCORE_S3_STR
 from simcore_service_storage.dsm import DataStorageManager, DatCoreApiToken
 from simcore_service_storage.models import FileMetaData, file_meta_data, projects, users
+from simcore_service_storage.s3_client import StorageS3Client
 from simcore_service_storage.settings import Settings
-from tests.utils import BUCKET_NAME, DATA_DIR, USER_ID
-from types_aiobotocore_s3 import S3Client
+from tests.helpers.utils import fill_tables_from_csv_files, insert_metadata
 
-import tests
+from services.storage.tests.helpers.utils import BUCKET_NAME, DATA_DIR, USER_ID
 
 pytest_plugins = [
     "pytest_simcore.cli_runner",
@@ -44,7 +45,6 @@ pytest_plugins = [
     "pytest_simcore.docker_compose",
     "pytest_simcore.tmp_path_extra",
     "pytest_simcore.monkeypatch_extra",
-    "pytest_simcore.minio_service",
 ]
 
 CURRENT_DIR = Path(sys.argv[0] if __name__ == "__main__" else __file__).resolve().parent
@@ -104,17 +104,6 @@ def project_env_devel_environment(project_env_devel_dict, monkeypatch) -> None:
         monkeypatch.setenv(key, value)
 
 
-@pytest.fixture(scope="module")
-def s3_client(minio_config: Dict[str, Any]) -> S3Client:
-
-    s3_client = MinioClientWrapper(
-        endpoint=minio_config["client"]["endpoint"],
-        access_key=minio_config["client"]["access_key"],
-        secret_key=minio_config["client"]["secret_key"],
-    )
-    return s3_client
-
-
 ## FAKE DATA FIXTURES ----------------------------------------------
 
 
@@ -143,16 +132,17 @@ async def cleanup_user_projects_file_metadata(aiopg_engine: Engine):
 
 
 @pytest.fixture
-def dsm_mockup_complete_db(
-    postgres_dsn, s3_client, cleanup_user_projects_file_metadata
-) -> Iterator[tuple[dict[str, str], dict[str, str]]]:
+async def dsm_mockup_complete_db(
+    postgres_dsn: dict[str, str],
+    with_bucket_in_s3: str,
+    storage_s3_client: StorageS3Client,
+    cleanup_user_projects_file_metadata: None,
+) -> AsyncIterator[tuple[dict[str, str], dict[str, str]]]:
     dsn = "postgresql://{user}:{password}@{host}:{port}/{database}".format(
         **postgres_dsn
     )
-    tests.utils.fill_tables_from_csv_files(url=dsn)
+    fill_tables_from_csv_files(url=dsn)
 
-    bucket_name = BUCKET_NAME
-    s3_client.create_bucket(bucket_name, delete_contents_if_exists=True)
     file_1 = {
         "project_id": "161b8782-b13e-5840-9ae2-e2250c231001",
         "node_id": "ad9bda7f-1dc5-5480-ab22-5fef4fc53eac",
@@ -160,7 +150,13 @@ def dsm_mockup_complete_db(
     }
     f = DATA_DIR / "outputController.dat"
     object_name = "{project_id}/{node_id}/{filename}".format(**file_1)
-    s3_client.upload_file(bucket_name, object_name, f)
+    response = await storage_s3_client.client.upload_file(
+        Filename=f"{f}", Bucket=with_bucket_in_s3, Key=object_name
+    )
+    assert response
+    import pdb
+
+    pdb.set_trace()
 
     file_2 = {
         "project_id": "161b8782-b13e-5840-9ae2-e2250c231001",
@@ -169,24 +165,20 @@ def dsm_mockup_complete_db(
     }
     f = DATA_DIR / "notebooks.zip"
     object_name = "{project_id}/{node_id}/{filename}".format(**file_2)
-    s3_client.upload_file(bucket_name, object_name, f)
+    await storage_s3_client.client.upload_file(
+        Filename=f"{f}", Bucket=with_bucket_in_s3, Key=object_name
+    )
     yield (file_1, file_2)
-
-    # cleanup
-    s3_client.remove_bucket(bucket_name, delete_contents=True)
 
 
 @pytest.fixture
-def dsm_mockup_db(
+async def dsm_mockup_db(
     postgres_dsn_url,
-    s3_client: MinioClientWrapper,
+    with_bucket_in_s3: str,
+    storage_s3_client: StorageS3Client,
     mock_files_factory: Callable[[int], List[Path]],
     cleanup_user_projects_file_metadata,
-) -> Iterator[dict[str, FileMetaData]]:
-
-    # s3 client
-    bucket_name = BUCKET_NAME
-    s3_client.create_bucket(bucket_name, delete_contents_if_exists=True)
+) -> AsyncIterator[dict[str, FileMetaData]]:
 
     # TODO: use pip install Faker
     users = ["alice", "bob", "chuck", "dennis"]
@@ -227,16 +219,20 @@ def dsm_mockup_db(
         created_at = str(datetime.datetime.utcnow())
         file_size = _file.stat().st_size
 
-        assert s3_client.upload_file(bucket_name, object_name, _file)
-        s3_meta_data = s3_client.get_metadata(bucket_name, object_name)
-        assert "ETag" in s3_meta_data
-        entity_tag = s3_meta_data["ETag"].strip('"')
+        response = await storage_s3_client.client.upload_file(
+            Filename=f"{_file}", Bucket=with_bucket_in_s3, Key=object_name
+        )
+        response = await storage_s3_client.client.head_object(
+            Bucket=with_bucket_in_s3, Key=object_name
+        )
+        assert "ETag" in response
+        entity_tag = response["ETag"].strip('"')
 
         d = {
             "file_uuid": file_uuid,
             "location_id": "0",
             "location": location,
-            "bucket_name": bucket_name,
+            "bucket_name": with_bucket_in_s3,
             "object_name": object_name,
             "project_id": str(project_id),
             "project_name": project_name,
@@ -260,18 +256,13 @@ def dsm_mockup_db(
 
         # pylint: disable=no-member
 
-        tests.utils.insert_metadata(postgres_dsn_url, data[object_name])
+        insert_metadata(postgres_dsn_url, data[object_name])
 
-    total_count = 0
-    for _obj in s3_client.list_objects(bucket_name, recursive=True):
-        total_count = total_count + 1
-
+    response = await storage_s3_client.client.list_objects_v2(Bucket=with_bucket_in_s3)
+    total_count = response["KeyCount"]
     assert total_count == N
 
     yield data
-
-    # s3 client
-    s3_client.remove_bucket(bucket_name, delete_contents=True)
 
 
 @pytest.fixture(scope="function")
@@ -321,6 +312,60 @@ def mocked_s3_server_envs(
     monkeypatch.setenv("S3_ACCESS_KEY", "xxx")
     monkeypatch.setenv("S3_SECRET_KEY", "xxx")
     monkeypatch.setenv("S3_BUCKET_NAME", "pytestbucket")
+
+
+async def _remove_all_buckets(storage_s3_client: StorageS3Client):
+    response = await storage_s3_client.client.list_buckets()
+    bucket_names = [
+        bucket["Name"] for bucket in response["Buckets"] if "Name" in bucket
+    ]
+    for bucket in bucket_names:
+        response = await storage_s3_client.client.list_objects_v2(Bucket=bucket)
+        while response["KeyCount"] > 0:
+            await storage_s3_client.client.delete_objects(
+                Bucket=bucket,
+                Delete={
+                    "Objects": [
+                        {"Key": obj["Key"]}
+                        for obj in response["Contents"]
+                        if "Key" in obj
+                    ]
+                },
+            )
+            response = await storage_s3_client.client.list_objects_v2(Bucket=bucket)
+
+    await asyncio.gather(
+        *(
+            storage_s3_client.client.delete_bucket(Bucket=bucket)
+            for bucket in bucket_names
+        )
+    )
+
+
+@pytest.fixture
+async def storage_s3_client(
+    app_settings: Settings,
+) -> AsyncIterator[StorageS3Client]:
+    assert app_settings.STORAGE_S3
+    async with AsyncExitStack() as exit_stack:
+        storage_s3_client = await StorageS3Client.create(
+            exit_stack, app_settings.STORAGE_S3
+        )
+        # check that no bucket is lying around
+        assert storage_s3_client
+        response = await storage_s3_client.client.list_buckets()
+        assert not response[
+            "Buckets"
+        ], f"for testing puproses, there should be no bucket lying around! {response=}"
+        yield storage_s3_client
+        # cleanup
+        await _remove_all_buckets(storage_s3_client)
+
+
+@pytest.fixture
+async def with_bucket_in_s3(storage_s3_client: StorageS3Client) -> str:
+    await storage_s3_client.create_bucket(BUCKET_NAME)
+    return BUCKET_NAME
 
 
 @pytest.fixture
