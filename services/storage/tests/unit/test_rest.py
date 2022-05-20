@@ -77,9 +77,13 @@ async def test_locations(client: TestClient):
 
 
 async def test_s3_files_metadata(
-    client: TestClient, dsm_mockup_db: dict[str, FileMetaData]
+    client: TestClient,
+    dsm_mockup_db: dict[str, FileMetaData],
+    dsm_fixture: DataStorageManager,
 ):
     id_file_count, _id_name_map = parse_db(dsm_mockup_db)
+    # NOTE: this is really a joke
+    dsm_fixture.has_project_db = False
 
     # list files for every user
     for _id in id_file_count:
