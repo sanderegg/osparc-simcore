@@ -5,7 +5,7 @@
 --constraint ../../../requirements/constraints.txt
 --constraint _base.txt
 
-boto3==1.21.21
+boto3==1.21.21 # Added to resolve versions of botocore (required by aiobotocore and boto3 <- moto)
 codecov
 coverage
 coveralls

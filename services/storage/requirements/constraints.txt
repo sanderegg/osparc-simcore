@@ -1,0 +1,14 @@
+#
+# Add here **constraints** imposed in downstream requirements so they can
+# be accounted when computing base.txt
+#
+
+
+#
+# botocore==1.24.21 (from -c requirements/_base.txt (line 59)) is pulled via aiobotocore (from -c requirements/_base.in )
+#  botocore<1.24.22,>=1.24.21 (from aiobotocore==2.3.2->-r requirements/_base.in (line 21))
+#
+# but downstream, the latest boto3 has incompatible version constraints when checked AFTER _base.txt is compiled.
+# botocore<1.27.0,>=1.26.5 (from boto3==1.23.5->moto[server]==3.1.9->-r requirements/_test.in (line 13))
+#
+# So the only solution is to reduce the version of boto3 until
