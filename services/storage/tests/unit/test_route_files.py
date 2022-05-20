@@ -26,13 +26,8 @@ from pydantic import AnyUrl, ByteSize, PositiveInt, parse_obj_as
 from pytest_simcore.helpers.utils_assert import assert_status
 from simcore_postgres_database.models.file_meta_data import file_meta_data
 from simcore_service_storage.dsm import _MULTIPART_UPLOADS_MIN_TOTAL_SIZE
-from simcore_service_storage.s3 import (
-    ETag,
-    FileID,
-    StorageS3Client,
-    UploadID,
-    get_s3_client,
-)
+from simcore_service_storage.s3 import get_s3_client
+from simcore_service_storage.s3_client import ETag, FileID, StorageS3Client, UploadID
 from simcore_service_storage.settings import Settings
 from yarl import URL
 
@@ -41,12 +36,12 @@ pytest_simcore_ops_services_selection = ["minio", "adminer"]
 
 
 @pytest.fixture
-def node_id(faker: Faker):
+def node_id(faker: Faker) -> NodeID:
     return NodeID(faker.uuid4())
 
 
 @pytest.fixture
-def file_uuid(project_id: ProjectID, node_id: NodeID, faker: Faker) -> str:
+def file_uuid(project_id: ProjectID, node_id: NodeID, faker: Faker) -> FileID:
     return f"{project_id}/{node_id}/{faker.file_name()}"
 
 

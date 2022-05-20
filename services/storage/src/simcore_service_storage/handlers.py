@@ -14,7 +14,6 @@ from pydantic import AnyUrl, ByteSize, parse_obj_as
 from servicelib.aiohttp.application_keys import APP_CONFIG_KEY
 from servicelib.aiohttp.rest_utils import extract_and_validate
 from settings_library.s3 import S3Settings
-from simcore_service_storage.s3 import UploadedPart
 
 # Exclusive for simcore-s3 storage -----------------------
 from . import sts
@@ -24,6 +23,7 @@ from .constants import APP_DSM_KEY, DATCORE_STR, SIMCORE_S3_ID, SIMCORE_S3_STR
 from .db_tokens import get_api_token_and_secret
 from .dsm import DataStorageManager, DatCoreApiToken, LinkType, UploadLinks
 from .models import FileMetaDataEx
+from .s3_client import UploadedPart
 from .settings import Settings
 
 log = logging.getLogger(__name__)
