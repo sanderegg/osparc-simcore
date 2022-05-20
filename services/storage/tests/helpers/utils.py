@@ -36,7 +36,7 @@ PG_TABLES_NEEDED_FOR_STORAGE = [
 ]
 
 CURRENT_DIR = Path(sys.argv[0] if __name__ == "__main__" else __file__).resolve().parent
-DATA_DIR = CURRENT_DIR / "data"
+DATA_DIR = CURRENT_DIR / ".." / "data"
 
 
 def has_datcore_tokens() -> bool:
