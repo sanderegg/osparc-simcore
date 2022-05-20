@@ -41,7 +41,8 @@ async def test_dsm_s3(
             id_file_count[md.user_id] = id_file_count[md.user_id] + 1
 
     dsm = dsm_fixture
-
+    # NOTE: this one is a joke
+    dsm.has_project_db = False
     # list files for every user
     for _id in id_file_count:
         data = await dsm.list_files(user_id=_id, location=SIMCORE_S3_STR)
