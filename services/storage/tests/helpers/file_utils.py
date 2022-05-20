@@ -42,7 +42,6 @@ async def _upload_file_part(
             bytes_to_send=this_file_chunk_size,
         ),
         headers={
-            "Content-Type": "application/json",
             "Content-Length": f"{this_file_chunk_size}",
         },
     )

@@ -9,7 +9,7 @@ import urllib.parse
 from dataclasses import dataclass
 from pathlib import Path
 from time import perf_counter
-from typing import AsyncIterator, Awaitable, Callable, Optional, Type, Union
+from typing import AsyncIterator, Awaitable, Callable, Optional, Type
 
 import pytest
 from aiohttp import web
@@ -20,18 +20,24 @@ from models_library.api_schemas_storage import FileUploadSchema
 from models_library.projects import ProjectID
 from models_library.projects_nodes import NodeID
 from models_library.users import UserID
-from pydantic import ByteSize, PositiveInt, parse_obj_as
+from models_library.utils.fastapi_encoders import jsonable_encoder
+from pydantic import ByteSize, parse_obj_as
 from pytest_simcore.helpers.utils_assert import assert_status
 from simcore_postgres_database.models.file_meta_data import file_meta_data
 from simcore_service_storage.dsm import _MULTIPART_UPLOADS_MIN_TOTAL_SIZE
 from simcore_service_storage.s3 import get_s3_client
-from simcore_service_storage.s3_client import FileID, StorageS3Client, UploadID
+from simcore_service_storage.s3_client import (
+    FileID,
+    StorageS3Client,
+    UploadedPart,
+    UploadID,
+)
 from simcore_service_storage.settings import Settings
 from tests.helpers.file_utils import upload_file_to_presigned_link
 from yarl import URL
 
 pytest_simcore_core_services_selection = ["postgres"]
-pytest_simcore_ops_services_selection = ["minio", "adminer"]
+pytest_simcore_ops_services_selection = ["adminer"]
 
 
 @pytest.fixture
@@ -275,7 +281,7 @@ class MultiPartParam:
                 expected_num_links=1,
                 expected_chunk_size=parse_obj_as(ByteSize, "1MiB"),
             ),
-            id="1MiB file",
+            id="1MiB file,presigned",
         ),
         pytest.param(
             MultiPartParam(
@@ -285,7 +291,7 @@ class MultiPartParam:
                 expected_num_links=1,
                 expected_chunk_size=parse_obj_as(ByteSize, "10MiB"),
             ),
-            id="10MiB file",
+            id="10MiB file,presigned",
         ),
         pytest.param(
             MultiPartParam(
@@ -295,7 +301,7 @@ class MultiPartParam:
                 expected_num_links=10,
                 expected_chunk_size=parse_obj_as(ByteSize, "10MiB"),
             ),
-            id="100MiB file",
+            id="100MiB file,presigned",
         ),
         pytest.param(
             MultiPartParam(
@@ -305,7 +311,7 @@ class MultiPartParam:
                 expected_num_links=8739,
                 expected_chunk_size=parse_obj_as(ByteSize, "600MiB"),
             ),
-            id="5TiB file",
+            id="5TiB file,presigned",
         ),
         pytest.param(
             MultiPartParam(
@@ -315,7 +321,7 @@ class MultiPartParam:
                 expected_num_links=1,
                 expected_chunk_size=parse_obj_as(ByteSize, "255GiB"),
             ),
-            id="5TiB file",
+            id="5TiB file,s3",
         ),
     ],
 )
@@ -517,7 +523,7 @@ async def test_upload_same_file_uuid_aborts_previous_upload(
 @pytest.mark.parametrize(
     "file_size",
     [
-        pytest.param(parse_obj_as(ByteSize, "5Mib"), id="5Mib"),
+        pytest.param(parse_obj_as(ByteSize, "1Mib"), id="7Mib"),
         pytest.param(parse_obj_as(ByteSize, "500Mib"), id="500Mib"),
         pytest.param(parse_obj_as(ByteSize, "5Gib"), id="5Gib"),
         pytest.param(parse_obj_as(ByteSize, "7Gib"), id="7Gib"),
@@ -545,15 +551,16 @@ async def test_upload_real_file(
         user_id, location_id, file_uuid, link_type="presigned", file_size=file_size
     )
     # upload the file
-    part_to_etag: list[
-        dict[str, Union[PositiveInt, str]]
-    ] = await upload_file_to_presigned_link(file, file_upload_link)
-
+    part_to_etag: list[UploadedPart] = await upload_file_to_presigned_link(
+        file, file_upload_link
+    )
     # complete the upload
     complete_url = URL(file_upload_link.links.complete_upload).relative()
     start = perf_counter()
     print(f"--> completing upload of {file=}")
-    response = await client.post(f"{complete_url}", json={"parts": part_to_etag})
+    response = await client.post(
+        f"{complete_url}", json={"parts": jsonable_encoder(part_to_etag)}
+    )
     await assert_status(response, web.HTTPNoContent)
     print(f"--> completed upload in {perf_counter() - start}")
 

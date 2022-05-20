@@ -13,12 +13,12 @@ import sys
 import uuid
 from pathlib import Path
 from random import randrange
-from typing import Any, Callable, Iterable, Iterator
+from typing import Any, Callable, Iterable, Iterator, Optional
 
 import dotenv
 import pytest
 import simcore_service_storage
-from aiohttp.test_utils import TestClient
+from aiohttp.test_utils import TestClient, unused_port
 from aiopg.sa import Engine
 from faker import Faker
 from moto.server import ThreadedMotoServer
@@ -353,31 +353,41 @@ async def datcore_structured_testbucket(
     # await dcw.delete_test_dataset(BUCKET_NAME)
 
 
-@pytest.fixture
-def mocked_s3_server(
-    aiohttp_unused_port, monkeypatch: pytest.MonkeyPatch
-) -> Iterator[ThreadedMotoServer]:
-    server = ThreadedMotoServer(
-        ip_address=get_localhost_ip(), port=aiohttp_unused_port()
-    )
+@pytest.fixture(scope="module")
+def mocked_s3_server() -> Iterator[ThreadedMotoServer]:
+    """creates a moto-server that emulates AWS services in place
+    NOTE: Never use a bucket with underscores it fails!!
+    """
+    server = ThreadedMotoServer(ip_address=get_localhost_ip(), port=unused_port())
     # pylint: disable=protected-access
     print(f"--> started mock S3 server on {server._ip_address}:{server._port}")
+    print(
+        f"--> Dashboard available on [http://{server._ip_address}:{server._port}/moto-api/]"
+    )
     server.start()
-    monkeypatch.setenv("S3_SECURE", "false")
-    monkeypatch.setenv("S3_ENDPOINT", f"{server._ip_address}:{server._port}")
-    monkeypatch.setenv("S3_ACCESS_KEY", "xxx")
-    monkeypatch.setenv("S3_SECRET_KEY", "xxx")
-    monkeypatch.setenv("S3_BUCKET_NAME", "pytest_bucket")
     yield server
     server.stop()
     print(f"<-- stopped mock S3 server on {server._ip_address}:{server._port}")
 
 
 @pytest.fixture
+def mocked_s3_server_envs(
+    mocked_s3_server: ThreadedMotoServer, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setenv("S3_SECURE", "false")
+    monkeypatch.setenv(  # pylint: disable=protected-access
+        "S3_ENDPOINT", f"{mocked_s3_server._ip_address}:{mocked_s3_server._port}"
+    )
+    monkeypatch.setenv("S3_ACCESS_KEY", "xxx")
+    monkeypatch.setenv("S3_SECRET_KEY", "xxx")
+    monkeypatch.setenv("S3_BUCKET_NAME", "pytestbucket")
+
+
+@pytest.fixture
 def mock_config(
     aiopg_engine: Engine,
     postgres_host_config: dict[str, str],
-    mocked_s3_server: ThreadedMotoServer,
+    mocked_s3_server_envs,
 ):
     ...
 
@@ -404,8 +414,8 @@ def client(
 
 @pytest.fixture
 def create_file_of_size(tmp_path: Path, faker: Faker) -> Callable[[ByteSize], Path]:
-    def _creator(size: ByteSize) -> Path:
-        file: Path = tmp_path / faker.file_name()
+    def _creator(size: ByteSize, name: Optional[str] = None) -> Path:
+        file: Path = tmp_path / (name or faker.file_name())
         with file.open("wb") as fp:
             fp.truncate(size)
 
