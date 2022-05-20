@@ -318,26 +318,28 @@ def mocked_s3_server_envs(
     monkeypatch.setenv("S3_BUCKET_NAME", "pytestbucket")
 
 
+async def _clean_bucket_content(storage_s3_client: StorageS3Client, bucket: str):
+    response = await storage_s3_client.client.list_objects_v2(Bucket=bucket)
+    while response["KeyCount"] > 0:
+        await storage_s3_client.client.delete_objects(
+            Bucket=bucket,
+            Delete={
+                "Objects": [
+                    {"Key": obj["Key"]} for obj in response["Contents"] if "Key" in obj
+                ]
+            },
+        )
+        response = await storage_s3_client.client.list_objects_v2(Bucket=bucket)
+
+
 async def _remove_all_buckets(storage_s3_client: StorageS3Client):
     response = await storage_s3_client.client.list_buckets()
     bucket_names = [
         bucket["Name"] for bucket in response["Buckets"] if "Name" in bucket
     ]
-    for bucket in bucket_names:
-        response = await storage_s3_client.client.list_objects_v2(Bucket=bucket)
-        while response["KeyCount"] > 0:
-            await storage_s3_client.client.delete_objects(
-                Bucket=bucket,
-                Delete={
-                    "Objects": [
-                        {"Key": obj["Key"]}
-                        for obj in response["Contents"]
-                        if "Key" in obj
-                    ]
-                },
-            )
-            response = await storage_s3_client.client.list_objects_v2(Bucket=bucket)
-
+    await asyncio.gather(
+        *(_clean_bucket_content(storage_s3_client, bucket) for bucket in bucket_names)
+    )
     await asyncio.gather(
         *(
             storage_s3_client.client.delete_bucket(Bucket=bucket)
@@ -367,9 +369,13 @@ async def storage_s3_client(
 
 
 @pytest.fixture
-async def with_bucket_in_s3(storage_s3_client: StorageS3Client) -> str:
+async def with_bucket_in_s3(storage_s3_client: StorageS3Client) -> AsyncIterator[str]:
     await storage_s3_client.create_bucket(BUCKET_NAME)
-    return BUCKET_NAME
+    yield BUCKET_NAME
+    # cleanup the bucket
+    await _clean_bucket_content(storage_s3_client, BUCKET_NAME)
+    # remove bucket
+    await storage_s3_client.client.delete_bucket(Bucket=BUCKET_NAME)
 
 
 @pytest.fixture
