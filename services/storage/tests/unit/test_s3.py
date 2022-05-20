@@ -11,7 +11,7 @@ from simcore_service_storage.settings import Settings
 
 @pytest.fixture(params=[True, False])
 def enable_s3(request: pytest.FixtureRequest) -> bool:
-    return request.param
+    return request.param  # type: ignore
 
 
 @pytest.fixture

@@ -6,24 +6,21 @@
 # pylint: disable=no-member
 # pylint: disable=too-many-branches
 
-import copy
 import datetime
 import filecmp
 import os
 import urllib.request
 import uuid
 from pathlib import Path
-from shutil import copyfile
-from typing import Any, Callable, Iterator, Optional
+from typing import Any, Callable, Dict, Iterator, List, Optional, Tuple
 
 import pytest
-import tests.utils
 from simcore_service_storage.access_layer import InvalidFileIdentifier
-from simcore_service_storage.constants import DATCORE_STR, SIMCORE_S3_ID, SIMCORE_S3_STR
+from simcore_service_storage.constants import SIMCORE_S3_ID, SIMCORE_S3_STR
 from simcore_service_storage.dsm import DataStorageManager, LinkType
 from simcore_service_storage.models import FileMetaData, FileMetaDataEx
 from tests.helpers.s3_client import MinioClientWrapper
-from tests.utils import BUCKET_NAME, USER_ID, has_datcore_tokens
+from tests.utils import BUCKET_NAME, USER_ID
 
 pytest_simcore_core_services_selection = ["postgres"]
 pytest_simcore_ops_services_selection = ["minio", "adminer"]
@@ -278,127 +275,6 @@ async def test_links_s3(
     assert filecmp.cmp(tmp_file2, tmp_file)
 
 
-# NOTE: Below tests directly access the datcore platform, use with care!
-@pytest.mark.skipif(not has_datcore_tokens(), reason="no datcore tokens")
-def test_datcore_fixture(datcore_structured_testbucket):
-    print(datcore_structured_testbucket)
-
-
-@pytest.mark.skipif(not has_datcore_tokens(), reason="no datcore tokens")
-async def test_dsm_datcore(
-    postgres_dsn_url, dsm_fixture, datcore_structured_testbucket
-):
-    dsm = dsm_fixture
-    user_id = "0"
-    data = await dsm.list_files(
-        user_id=user_id, location=DATCORE_STR, uuid_filter=BUCKET_NAME
-    )
-    # the fixture creates 3 files
-    assert len(data) == 3
-
-    # delete the first one
-    fmd_to_delete = data[0].fmd
-    print("Deleting", fmd_to_delete.bucket_name, fmd_to_delete.object_name)
-    is_deleted = await dsm.delete_file(user_id, DATCORE_STR, fmd_to_delete.file_id)
-    assert is_deleted
-
-    import time
-
-    time.sleep(1)  # FIXME: takes some time to delete!!
-
-    data = await dsm.list_files(
-        user_id=user_id, location=DATCORE_STR, uuid_filter=BUCKET_NAME
-    )
-    assert len(data) == 2
-
-
-@pytest.mark.skipif(not has_datcore_tokens(), reason="no datcore tokens")
-async def test_dsm_s3_to_datcore(
-    postgres_dsn_url: str,
-    s3_client: MinioClientWrapper,
-    mock_files_factory: Callable[[int], list[Path]],
-    dsm_fixture: DataStorageManager,
-    datcore_structured_testbucket: str,
-    create_file_meta_for_s3: Callable,
-):
-    tmp_file = mock_files_factory(1)[0]
-
-    fmd = create_file_meta_for_s3(tmp_file)
-
-    dsm = dsm_fixture
-
-    upload_links = await dsm.create_upload_links(
-        fmd.user_id, fmd.file_uuid, link_type=LinkType.PRESIGNED, file_size_bytes=None
-    )
-    assert upload_links
-    assert upload_links.urls
-    assert len(upload_links.urls) == 1
-    with tmp_file.open("rb") as fp:
-        d = fp.read()
-        req = urllib.request.Request(upload_links.urls[0], data=d, method="PUT")
-        with urllib.request.urlopen(req) as _f:
-            pass
-
-    # given the fmd, upload to datcore
-    tmp_file2 = f"{tmp_file}.fordatcore"
-    user_id = USER_ID
-    down_url = await dsm.download_link_s3(
-        fmd.file_uuid, user_id, as_presigned_link=True
-    )
-    urllib.request.urlretrieve(down_url, tmp_file2)
-    assert filecmp.cmp(tmp_file2, tmp_file)
-    # now we have the file locally, upload the file
-    await dsm.upload_file_to_datcore(
-        user_id,
-        tmp_file2,
-        datcore_structured_testbucket["dataset_id"],
-    )
-    # and into a deeper strucutre
-    await dsm.upload_file_to_datcore(
-        user_id,
-        tmp_file2,
-        datcore_structured_testbucket["coll2_id"],
-    )
-
-    # FIXME: upload takes some time
-    import time
-
-    time.sleep(1)
-
-    data = await dsm.list_files(
-        user_id=user_id, location=DATCORE_STR, uuid_filter=BUCKET_NAME
-    )
-    # there should now be 5 files
-    assert len(data) == 5
-
-
-@pytest.mark.skipif(not has_datcore_tokens(), reason="no datcore tokens")
-async def test_dsm_datcore_to_local(
-    postgres_dsn_url,
-    dsm_fixture: DataStorageManager,
-    mock_files_factory: Callable[[int], list[Path]],
-    datcore_structured_testbucket,
-):
-
-    dsm = dsm_fixture
-    user_id = USER_ID
-    data = await dsm.list_files(
-        user_id=user_id, location=DATCORE_STR, uuid_filter=BUCKET_NAME
-    )
-    assert len(data)
-
-    url, filename = await dsm.download_link_datcore(
-        user_id, datcore_structured_testbucket["file_id1"]
-    )
-
-    tmp_file = mock_files_factory(1)[0]
-    tmp_file2 = f"{tmp_file}.fromdatcore"
-
-    urllib.request.urlretrieve(url, tmp_file2)
-
-    assert filecmp.cmp(tmp_file2, tmp_file)
-
-
 def test_fmd_build():
     file_uuid = str(Path("api") / Path("abcd") / Path("xx.dat"))
     fmd = FileMetaData()
@@ -464,109 +340,6 @@ async def test_delete_data_folders(
     assert not data
 
 
-@pytest.mark.skipif(not has_datcore_tokens(), reason="no datcore tokens")
-async def test_deep_copy_project_simcore_s3(
-    dsm_fixture, s3_client, postgres_dsn_url, datcore_structured_testbucket
-):
-    dsm = dsm_fixture
-
-    tests.utils.fill_tables_from_csv_files(url=postgres_dsn_url)
-
-    path_in_datcore = datcore_structured_testbucket["file_id3"]
-    file_name_in_datcore = Path(datcore_structured_testbucket["filename3"]).name
-    user_id = USER_ID
-
-    source_project = {
-        "uuid": "de2578c5-431e-4d5e-b80e-401c8066782f",
-        "name": "ISAN: 2D Plot",
-        "description": "2D RawGraphs viewer with one input",
-        "thumbnail": "",
-        "prjOwner": "my.email@osparc.io",
-        "creationDate": "2019-05-24T10:36:57.813Z",
-        "lastChangeDate": "2019-05-24T11:36:12.015Z",
-        "workbench": {
-            "de2578c5-431e-48eb-a9d2-aaad6b72400a": {
-                "key": "simcore/services/frontend/file-picker",
-                "version": "1.0.0",
-                "label": "File Picker",
-                "inputs": {},
-                "inputNodes": [],
-                "outputs": {
-                    "outFile": {
-                        "store": 1,
-                        "path": "N:package:ab8c214d-a596-401f-a90c-9c50e3c048b0",
-                    }
-                },
-                "progress": 100,
-                "thumbnail": "",
-                "position": {"x": 100, "y": 100},
-            },
-            "de2578c5-431e-4c63-a705-03a2c339646c": {
-                "key": "simcore/services/dynamic/raw-graphs",
-                "version": "2.8.0",
-                "label": "2D plot",
-                "inputs": {
-                    "input_1": {
-                        "nodeUuid": "de2578c5-431e-48eb-a9d2-aaad6b72400a",
-                        "output": "outFile",
-                    }
-                },
-                "inputNodes": ["de2578c5-431e-48eb-a9d2-aaad6b72400a"],
-                "outputs": {},
-                "progress": 0,
-                "thumbnail": "",
-                "position": {"x": 400, "y": 100},
-            },
-        },
-    }
-
-    bucket_name = BUCKET_NAME
-    s3_client.create_bucket(bucket_name, delete_contents_if_exists=True)
-
-    source_project["workbench"]["de2578c5-431e-48eb-a9d2-aaad6b72400a"]["outputs"][
-        "outFile"
-    ]["path"] = path_in_datcore
-
-    destination_project = copy.deepcopy(source_project)
-    source_project_id = source_project["uuid"]
-    destination_project["uuid"] = source_project_id.replace("template", "deep-copy")
-    destination_project["workbench"] = {}
-
-    node_mapping = {}
-
-    for node_id, node in source_project["workbench"].items():
-        object_name = str(
-            Path(source_project_id) / Path(node_id) / Path(node_id + ".dat")
-        )
-        f = tests.utils.data_dir() / Path("notebooks.zip")
-        s3_client.upload_file(bucket_name, object_name, f)
-        key = node_id.replace("template", "deep-copy")
-        destination_project["workbench"][key] = node
-        node_mapping[node_id] = key
-
-    status = await dsm.deep_copy_project_simcore_s3(
-        user_id, source_project, destination_project, node_mapping
-    )
-
-    new_path = destination_project["workbench"][
-        "deep-copy-uuid-48eb-a9d2-aaad6b72400a"
-    ]["outputs"]["outFile"]["path"]
-    assert new_path != path_in_datcore
-    assert Path(new_path).name == file_name_in_datcore
-    files = await dsm.list_files(user_id=user_id, location=SIMCORE_S3_STR)
-    assert len(files) == 3
-    # one of the files in s3 should be the dowloaded one from datcore
-    assert any(
-        f.fmd.file_name == Path(datcore_structured_testbucket["filename3"]).name
-        for f in files
-    )
-
-    response = await dsm.delete_project_simcore_s3(user_id, destination_project["uuid"])
-
-    files = await dsm.list_files(user_id=user_id, location=SIMCORE_S3_STR)
-    assert len(files) == 0
-
-
 async def test_dsm_list_datasets_s3(dsm_fixture, dsm_mockup_complete_db):
     dsm_fixture.has_project_db = True
 
@@ -616,16 +389,6 @@ async def test_sync_table_meta_data(
     assert list_changes["removed"] == []
 
 
-@pytest.mark.skipif(not has_datcore_tokens(), reason="no datcore tokens")
-async def test_dsm_list_datasets_datcore(
-    dsm_fixture: DataStorageManager, datcore_structured_testbucket: str
-):
-    datasets = await dsm_fixture.list_datasets(user_id=USER_ID, location=DATCORE_STR)
-
-    assert len(datasets)
-    assert any(BUCKET_NAME in d.display_name for d in datasets)
-
-
 async def test_dsm_list_dataset_files_s3(
     dsm_fixture: DataStorageManager,
     dsm_mockup_complete_db: tuple[dict[str, str], dict[str, str]],
@@ -656,48 +419,3 @@ async def test_dsm_list_dataset_files_s3(
             # NOTE: found and files differ in these attributes
             #  ['project_name', 'node_name', 'file_id', 'raw_file_path', 'display_file_path']
             #  because these are added artificially in list_files
-
-
-@pytest.mark.skipif(not has_datcore_tokens(), reason="no datcore tokens")
-async def test_dsm_list_dataset_files_datcore(
-    dsm_fixture: DataStorageManager, datcore_structured_testbucket: str
-):
-    datasets = await dsm_fixture.list_datasets(user_id=USER_ID, location=DATCORE_STR)
-
-    assert len(datasets)
-    assert any(BUCKET_NAME in d.display_name for d in datasets)
-
-    for d in datasets:
-        files = await dsm_fixture.list_files_dataset(
-            user_id=USER_ID, location=DATCORE_STR, dataset_id=d.dataset_id
-        )
-        if BUCKET_NAME in d.display_name:
-            assert len(files) == 3
-
-
-@pytest.mark.skip(reason="develop only")
-@pytest.mark.skipif(not has_datcore_tokens(), reason="no datcore tokens")
-async def test_download_links(
-    datcore_structured_testbucket: str,
-    s3_client: MinioClientWrapper,
-    mock_files_factory: Callable[[int], list[Path]],
-):
-    s3_client.create_bucket(BUCKET_NAME, delete_contents_if_exists=True)
-    _file = mock_files_factory(1)[0]
-
-    s3_client.upload_file(BUCKET_NAME, "test.txt", f"{_file}")
-    link = s3_client.create_presigned_get_url(BUCKET_NAME, "test.txt")
-    print(link)
-
-    dcw = datcore_structured_testbucket["dcw"]
-
-    endings = ["txt", "json", "zip", "dat", "mat"]
-    counter = 1
-    for e in endings:
-        file_name = "test{}.{}".format(counter, e)
-        copyfile(_file, file_name)
-        dataset_id = datcore_structured_testbucket["dataset_id"]
-        file_id = await dcw.upload_file_to_id(dataset_id, file_name)
-        link, _file_name = await dcw.download_link_by_id(file_id)
-        print(_file_name, link)
-        os.remove(file_name)

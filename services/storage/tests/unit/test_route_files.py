@@ -73,6 +73,7 @@ def storage_s3_client(client: TestClient) -> StorageS3Client:
 
 @pytest.fixture
 def bucket(app_settings: Settings) -> str:
+    assert app_settings.STORAGE_S3
     return app_settings.STORAGE_S3.S3_BUCKET_NAME
 
 
