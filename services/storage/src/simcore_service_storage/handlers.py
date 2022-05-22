@@ -9,6 +9,8 @@ import attr
 from aiohttp import web
 from aiohttp.web import RouteTableDef
 from models_library.api_schemas_storage import FileUploadLinks, FileUploadSchema
+from models_library.projects import ProjectID
+from models_library.projects_nodes import NodeID
 from models_library.users import UserID
 from pydantic import AnyUrl, ByteSize, parse_obj_as
 from servicelib.aiohttp.application_keys import APP_CONFIG_KEY
@@ -491,7 +493,9 @@ async def delete_folders_of_project(request: web.Request):
             query={"user_id": user_id},
             request=request,
         )
-        await dsm.delete_project_simcore_s3(user_id, folder_id, node_id)
+        await dsm.delete_project_simcore_s3(
+            UserID(user_id), ProjectID(folder_id), NodeID(node_id) if node_id else None
+        )
 
     raise web.HTTPNoContent(content_type="application/json")
 
