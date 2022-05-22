@@ -979,7 +979,7 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
     # SEARCH -------------------------------------
 
     async def search_files_starting_with(
-        self, user_id: int, prefix: str
+        self, user_id: UserID, prefix: str
     ) -> list[FileMetaDataEx]:
         # Avoids using list_files since it accounts for projects/nodes
         # Storage should know NOTHING about those concepts

@@ -15,6 +15,9 @@ from pathlib import Path
 from typing import Any, Callable, Dict, Iterator, List, Optional, Tuple
 
 import pytest
+from models_library.projects import ProjectID
+from models_library.projects_nodes_io import NodeID
+from models_library.users import UserID
 from pydantic import ByteSize
 from simcore_service_storage.access_layer import InvalidFileIdentifier
 from simcore_service_storage.constants import SIMCORE_S3_ID, SIMCORE_S3_STR
@@ -322,13 +325,15 @@ async def test_delete_data_folders(
     _id = "21"
     data = await dsm_fixture.list_files(user_id=_id, location=SIMCORE_S3_STR)
     response = await dsm_fixture.delete_project_simcore_s3(
-        user_id=_id, project_id=file_1["project_id"], node_id=file_1["node_id"]
+        user_id=UserID(_id),
+        project_id=ProjectID(file_1["project_id"]),
+        node_id=NodeID(file_1["node_id"]),
     )
     data = await dsm_fixture.list_files(user_id=_id, location=SIMCORE_S3_STR)
     assert len(data) == 1
     assert data[0].fmd.file_name == file_2["filename"]
     response = await dsm_fixture.delete_project_simcore_s3(
-        user_id=_id, project_id=file_1["project_id"], node_id=None
+        user_id=UserID(_id), project_id=ProjectID(file_1["project_id"]), node_id=None
     )
     data = await dsm_fixture.list_files(user_id=_id, location=SIMCORE_S3_STR)
     assert not data
@@ -406,7 +411,7 @@ async def test_dsm_list_dataset_files_s3(
 
         if files:
             found = await dsm_fixture.search_files_starting_with(
-                user_id="21", prefix=files[0].fmd.file_uuid
+                user_id=21, prefix=files[0].fmd.file_uuid
             )
             assert found
             assert len(found) == 1
