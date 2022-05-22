@@ -2,6 +2,8 @@ from typing import Optional
 
 import sqlalchemy as sa
 from aiopg.sa.connection import SAConnection
+from models_library.projects import ProjectID
+from models_library.projects_nodes import NodeID
 from models_library.users import UserID
 from simcore_postgres_database.models.file_meta_data import file_meta_data
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -60,6 +62,18 @@ async def exists(conn: SAConnection, file_uuid: FileID) -> bool:
 async def delete(conn: SAConnection, file_uuid: FileID) -> None:
     await conn.execute(
         file_meta_data.delete().where(file_meta_data.c.file_uuid == file_uuid)
+    )
+
+
+async def delete_all_from_project(conn: SAConnection, project_id: ProjectID) -> None:
+    await conn.execute(
+        file_meta_data.delete().where(file_meta_data.c.project_id == f"{project_id}")
+    )
+
+
+async def delete_all_from_node(conn: SAConnection, node_id: NodeID) -> None:
+    await conn.execute(
+        file_meta_data.delete().where(file_meta_data.c.node_id == f"{node_id}")
     )
 
 

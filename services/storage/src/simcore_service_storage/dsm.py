@@ -1,8 +1,3 @@
-# pylint: disable=no-value-for-parameter
-# FIXME: E1120:No value for argument 'dml' in method call
-# pylint: disable=protected-access
-# FIXME: Access to a protected member _result_proxy of a client class
-
 import dataclasses
 import logging
 import os
@@ -24,6 +19,8 @@ from aiohttp import web
 from aiopg.sa import Engine
 from aiopg.sa.result import ResultProxy, RowProxy
 from models_library.api_schemas_storage import LinkType
+from models_library.projects import ProjectID
+from models_library.projects_nodes import NodeID
 from models_library.users import UserID
 from pydantic import AnyUrl, ByteSize, parse_obj_as
 from servicelib.aiohttp.aiopg_utils import DBAPIError, PostgresRetryPolicyUponOperation
@@ -689,6 +686,7 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
 
         # 2 steps: Get download link for local copy, the upload link to s3
         # TODO: This should be a redirect stream!
+        # FIXME: this cannot work like that!
         dc_link, filename = await self.download_link_datcore(
             user_id=user_id, file_id=source_uuid
         )
@@ -951,7 +949,7 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
             )
 
     async def delete_project_simcore_s3(
-        self, user_id: str, project_id: str, node_id: Optional[str] = None
+        self, user_id: UserID, project_id: ProjectID, node_id: Optional[NodeID] = None
     ) -> Optional[web.Response]:
 
         """Deletes all files from a given node in a project in simcore.s3 and updated db accordingly.
@@ -959,40 +957,24 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
         """
 
         # FIXME: operation MUST be atomic. Mark for deletion and remove from db when deletion fully confirmed
-
         async with self.engine.acquire() as conn, conn.begin():
             # access layer
             can: Optional[AccessRights] = await get_project_access_rights(
-                conn, int(user_id), project_id
+                conn, user_id, f"{project_id}"
             )
             if not can.delete:
                 raise web.HTTPForbidden(
                     reason=f"User {user_id} does not have delete access for {project_id}"
                 )
 
-            delete_me = file_meta_data.delete().where(
-                file_meta_data.c.project_id == project_id,
-            )
-            if node_id:
-                delete_me = delete_me.where(file_meta_data.c.node_id == node_id)
-            await conn.execute(delete_me)
+            if not node_id:
+                await db_file_meta_data.delete_all_from_project(conn, project_id)
+            else:
+                await db_file_meta_data.delete_all_from_node(conn, node_id)
 
-        # Note: the / at the end of the Prefix is VERY important, makes the listing several order of magnitudes faster
-        response = await get_s3_client(self.app).client.list_objects_v2(
-            Bucket=self.simcore_bucket_name,
-            Prefix=f"{project_id}/{node_id}/" if node_id else f"{project_id}/",
+        await get_s3_client(self.app).delete_files_in_project_node(
+            self.simcore_bucket_name, project_id, node_id
         )
-
-        objects_to_delete = []
-        for f in response.get("Contents", []):
-            objects_to_delete.append({"Key": f["Key"]})
-
-        if objects_to_delete:
-            response = await get_s3_client(self.app).client.delete_objects(
-                Bucket=self.simcore_bucket_name,
-                Delete={"Objects": objects_to_delete},
-            )
-            return response
 
     # SEARCH -------------------------------------
 

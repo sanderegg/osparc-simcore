@@ -3,9 +3,12 @@ import logging
 import urllib.parse
 from contextlib import AsyncExitStack
 from dataclasses import dataclass
+from typing import Optional
 
 from aiobotocore.session import AioSession, get_session
 from botocore.client import Config
+from models_library.projects import ProjectID
+from models_library.projects_nodes_io import NodeID
 from pydantic import AnyUrl, BaseModel, ByteSize, PositiveInt, parse_obj_as
 from settings_library.s3 import S3Settings
 from types_aiobotocore_s3 import S3Client
@@ -146,6 +149,24 @@ class StorageS3Client:
 
     async def delete_file(self, bucket: str, file_id: FileID) -> None:
         await self.client.delete_object(Bucket=bucket, Key=file_id)
+
+    async def delete_files_in_project_node(
+        self, bucket: str, project_id: ProjectID, node_id: Optional[NodeID] = None
+    ) -> None:
+        # NOTE: the / at the end of the Prefix is VERY important,
+        # makes the listing several order of magnitudes faster
+        response = await self.client.list_objects_v2(
+            Bucket=bucket,
+            Prefix=f"{project_id}/{node_id}/" if node_id else f"{project_id}/",
+        )
+
+        if objects_to_delete := [
+            {"Key": f["Key"]} for f in response.get("Contents", [])
+        ]:
+            response = await self.client.delete_objects(
+                Bucket=bucket,
+                Delete={"Objects": objects_to_delete},
+            )
 
     @staticmethod
     def compute_s3_url(bucket: str, file_id: FileID) -> AnyUrl:

@@ -6,7 +6,7 @@
 import asyncio
 from contextlib import AsyncExitStack
 from pathlib import Path
-from typing import AsyncIterator, Callable
+from typing import AsyncIterator, Awaitable, Callable, Optional
 from uuid import uuid4
 
 import botocore.exceptions
@@ -15,6 +15,7 @@ from aiohttp import ClientSession
 from faker import Faker
 from pydantic import ByteSize, parse_obj_as
 from simcore_service_storage.s3_client import (
+    FileID,
     MultiPartUploadLinks,
     StorageS3Client,
     UploadedPart,
@@ -278,35 +279,129 @@ async def test_abort_multipart_upload(
         )
 
 
-async def test_delete_file(
+@pytest.fixture
+def upload_file(
     storage_s3_client: StorageS3Client,
     storage_s3_bucket: str,
     create_file_of_size: Callable[[ByteSize], Path],
+) -> Callable[..., Awaitable[FileID]]:
+    async def _uploader(file_id: Optional[FileID] = None) -> FileID:
+        file = create_file_of_size(parse_obj_as(ByteSize, "1Mib"))
+        if not file_id:
+            file_id = file.name
+        presigned_url = await storage_s3_client.create_single_presigned_upload_link(
+            storage_s3_bucket, file_id
+        )
+        assert presigned_url
+
+        # upload the file
+        async with ClientSession() as session:
+            response = await session.put(presigned_url, data=file.open("rb"))
+            response.raise_for_status()
+
+        # check the object is complete
+        response = await storage_s3_client.client.head_object(
+            Bucket=storage_s3_bucket, Key=file_id
+        )
+        assert response
+        assert response["ContentLength"] == file.stat().st_size
+        return file_id
+
+    return _uploader
+
+
+async def test_delete_file(
+    storage_s3_client: StorageS3Client,
+    storage_s3_bucket: str,
+    upload_file: Callable[..., Awaitable[FileID]],
 ):
-
-    file = create_file_of_size(parse_obj_as(ByteSize, "1Mib"))
-    presigned_url = await storage_s3_client.create_single_presigned_upload_link(
-        storage_s3_bucket, file.name
-    )
-    assert presigned_url
-
-    # upload the file
-    async with ClientSession() as session:
-        response = await session.put(presigned_url, data=file.open("rb"))
-        response.raise_for_status()
-
-    # check the object is complete
-    response = await storage_s3_client.client.head_object(
-        Bucket=storage_s3_bucket, Key=file.name
-    )
-    assert response
-    assert response["ContentLength"] == file.stat().st_size
+    file_id = await upload_file()
 
     # delete the file
-    await storage_s3_client.delete_file(storage_s3_bucket, file.name)
+    await storage_s3_client.delete_file(storage_s3_bucket, file_id)
 
     # check it is not available
     with pytest.raises(botocore.exceptions.ClientError):
         await storage_s3_client.client.head_object(
-            Bucket=storage_s3_bucket, Key=file.name
+            Bucket=storage_s3_bucket, Key=file_id
         )
+
+
+async def test_delete_files_in_project_node(
+    storage_s3_client: StorageS3Client,
+    storage_s3_bucket: str,
+    upload_file: Callable[..., Awaitable[FileID]],
+    faker: Faker,
+):
+    # we upload files in these paths
+    project_1 = uuid4()
+    project_2 = uuid4()
+    node_1 = uuid4()
+    node_2 = uuid4()
+    node_3 = uuid4()
+    upload_paths = (
+        "",
+        f"{project_1}/",
+        f"{project_1}/{node_1}/",
+        f"{project_1}/{node_2}/",
+        f"{project_1}/{node_2}/",
+        f"{project_1}/{node_3}/",
+        f"{project_1}/{node_3}/",
+        f"{project_1}/{node_3}/",
+        f"{project_2}/",
+        f"{project_2}/{node_1}/",
+        f"{project_2}/{node_2}/",
+        f"{project_2}/{node_2}/",
+        f"{project_2}/{node_2}/",
+        f"{project_2}/{node_2}/",
+        f"{project_2}/{node_3}/",
+        f"{project_2}/{node_3}/states/",
+        f"{project_2}/{node_3}/some_folder_of_sort/",
+    )
+
+    uploaded_file_ids = await asyncio.gather(
+        *(upload_file(file_id=f"{path}{faker.file_name()}") for path in upload_paths)
+    )
+    assert len(uploaded_file_ids) == len(upload_paths)
+
+    async def _assert_deleted(*, deleted_ids: tuple[str, ...]):
+        for file_id in uploaded_file_ids:
+            if file_id.startswith(deleted_ids):
+                with pytest.raises(botocore.exceptions.ClientError):
+                    await storage_s3_client.client.head_object(
+                        Bucket=storage_s3_bucket, Key=file_id
+                    )
+            else:
+                response = await storage_s3_client.client.head_object(
+                    Bucket=storage_s3_bucket, Key=file_id
+                )
+                assert response
+                assert response["ETag"]
+
+    # now let's delete some files and check they are correctly deleted
+    await storage_s3_client.delete_files_in_project_node(
+        storage_s3_bucket, project_1, node_3
+    )
+    await _assert_deleted(deleted_ids=(f"{project_1}/{node_3}",))
+
+    # delete some stuff in project 2
+    await storage_s3_client.delete_files_in_project_node(
+        storage_s3_bucket, project_2, node_3
+    )
+    await _assert_deleted(
+        deleted_ids=(
+            f"{project_1}/{node_3}",
+            f"{project_2}/{node_3}",
+        )
+    )
+
+    # completely delete project 2
+    await storage_s3_client.delete_files_in_project_node(
+        storage_s3_bucket, project_2, None
+    )
+    await _assert_deleted(
+        deleted_ids=(
+            f"{project_1}/{node_3}",
+            f"{project_2}",
+        )
+    )
