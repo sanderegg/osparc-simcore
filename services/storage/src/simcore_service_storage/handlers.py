@@ -435,11 +435,13 @@ async def complete_upload_file(request: web.Request):
         )
         request.app[UPLOAD_TASKS_KEY][task.get_name()] = task
         complete_task_state_url = request.url.join(
-            request.app.router["is_completed_upload_file"].url_for(
+            request.app.router["is_completed_upload_file"]
+            .url_for(
                 location_id=params["location_id"],
                 file_id=params["file_id"],
                 future_id=task.get_name(),
             )
+            .with_query(user_id=user_id)
         )
         return web.json_response(
             status=web.HTTPAccepted.status_code,
@@ -471,11 +473,16 @@ async def is_completed_upload_file(request: web.Request):
             if task.done():
                 task.result()
                 request.app[UPLOAD_TASKS_KEY].pop(task_name)
-                return web.json_response(status=web.HTTPOk.status_code, data="ok")
+                return web.json_response(
+                    status=web.HTTPOk.status_code, data={"data": {"state": "ok"}}
+                )
             # the task is still running
-            return web.json_response(status=web.HTTPOk.status_code, data="not_ready")
+            return web.json_response(
+                status=web.HTTPOk.status_code, data={"data": {"state": "nok"}}
+            )
         # there is no task, so storage was restarted in between?
         # TODO: what do we do here???
+    raise web.HTTPNotFound(reason="future not found!")
 
 
 @routes.delete(f"/{api_vtag}/locations/{{location_id}}/files/{{file_id}}")  # type: ignore

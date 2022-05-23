@@ -568,9 +568,10 @@ async def test_upload_real_file(
             data, error = await assert_status(response, web.HTTPOk)
             assert not error
             assert data
-            if data != "ok":
+            assert "state" in data
+            if data["state"] != "ok":
                 raise ValueError(f"{data=}")
-            assert data == "ok"
+            assert data["state"] == "ok"
             print(
                 f"--> done waiting, data is completely uploaded [{attempt.retry_state.retry_object.statistics}]"
             )
