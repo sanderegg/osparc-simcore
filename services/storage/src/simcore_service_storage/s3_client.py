@@ -70,27 +70,27 @@ class StorageS3Client:
             )
 
     async def create_single_presigned_download_link(
-        self, bucket: str, file_id: FileID
+        self, bucket: str, file_id: FileID, expiration_secs: int
     ) -> AnyUrl:
         generated_link = await self.client.generate_presigned_url(
             "get_object",
             Params={"Bucket": bucket, "Key": file_id},
-            ExpiresIn=3600,
+            ExpiresIn=expiration_secs,
         )
         return parse_obj_as(AnyUrl, generated_link)
 
     async def create_single_presigned_upload_link(
-        self, bucket: str, file_id: FileID
+        self, bucket: str, file_id: FileID, expiration_secs: int
     ) -> AnyUrl:
         generated_link = await self.client.generate_presigned_url(
             "put_object",
             Params={"Bucket": bucket, "Key": file_id},
-            ExpiresIn=3600,
+            ExpiresIn=expiration_secs,
         )
         return parse_obj_as(AnyUrl, generated_link)
 
     async def create_multipart_upload_links(
-        self, bucket: str, file_id: FileID, file_size: ByteSize
+        self, bucket: str, file_id: FileID, file_size: ByteSize, expiration_secs: int
     ) -> MultiPartUploadLinks:
         # first initiate the multipart upload
         response = await self.client.create_multipart_upload(Bucket=bucket, Key=file_id)
@@ -110,7 +110,7 @@ class StorageS3Client:
                             "PartNumber": i + 1,
                             "UploadId": upload_id,
                         },
-                        ExpiresIn=3600,
+                        ExpiresIn=expiration_secs,
                     )
                     for i in range(num_upload_links)
                 ]
@@ -171,11 +171,11 @@ class StorageS3Client:
         )
 
         if objects_to_delete := [
-            {"Key": f["Key"]} for f in response.get("Contents", [])
+            f["Key"] for f in response.get("Contents", []) if "Key" in f
         ]:
             response = await self.client.delete_objects(
                 Bucket=bucket,
-                Delete={"Objects": objects_to_delete},
+                Delete={"Objects": [{"Key": key} for key in objects_to_delete]},
             )
 
     @staticmethod
