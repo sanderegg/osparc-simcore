@@ -202,11 +202,9 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
         if location == SIMCORE_S3_STR:
             accesible_projects_ids = []
             async with self.engine.acquire() as conn, conn.begin():
-                accesible_projects_ids = await get_readable_project_ids(
-                    conn, int(user_id)
-                )
+                accesible_projects_ids = await get_readable_project_ids(conn, user_id)
                 where_statement = (
-                    file_meta_data.c.user_id == user_id
+                    file_meta_data.c.user_id == f"{user_id}"
                 ) | file_meta_data.c.project_id.in_(accesible_projects_ids)
                 if uuid_filter:
                     where_statement &= file_meta_data.c.file_uuid.ilike(
@@ -771,7 +769,7 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
             source_folder,
         )
 
-        # Step 1: List all objects for this project replace them with the destination object name
+        # Step 1: list all objects for this project replace them with the destination object name
         # and do a copy at the same time collect some names
         # Note: the / at the end of the Prefix is VERY important, makes the listing several order of magnitudes faster
         response = await get_s3_client(self.app).client.list_objects_v2(
