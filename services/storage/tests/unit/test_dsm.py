@@ -225,7 +225,7 @@ async def test_links_s3(
     fmd = await _upload_file(dsm_fixture, fmd, Path(tmp_file))
 
     # test wrong user
-    assert await dsm.list_file("654654654", fmd.location, fmd.file_uuid) is None
+    assert await dsm.list_file(654654654, fmd.location, fmd.file_uuid) is None
 
     # test wrong location
     assert await dsm.list_file(fmd.user_id, "whatever_location", fmd.file_uuid) is None
@@ -246,6 +246,7 @@ async def test_links_s3(
         "display_file_path",
         "created_at",
         "last_modified",
+        "upload_expires_at",
     ]
     for field in FileMetaData.__attrs_attrs__:
         if field.name not in excluded_fields:
@@ -275,7 +276,7 @@ async def test_links_s3(
 def test_fmd_build():
     file_uuid = str(Path("api") / Path("abcd") / Path("xx.dat"))
     fmd = FileMetaData()
-    fmd.simcore_from_uuid(file_uuid, "test-bucket")
+    fmd.simcore_from_uuid(user_id=12, file_uuid=file_uuid, bucket_name="test-bucket")
 
     assert not fmd.node_id
     assert not fmd.project_id
@@ -287,7 +288,7 @@ def test_fmd_build():
     assert fmd.bucket_name == "test-bucket"
 
     file_uuid = f"{uuid.uuid4()}/{uuid.uuid4()}/xx.dat"
-    fmd.simcore_from_uuid(file_uuid, "test-bucket")
+    fmd.simcore_from_uuid(user_id=12, file_uuid=file_uuid, bucket_name="test-bucket")
 
     assert fmd.node_id == file_uuid.split("/")[1]
     assert fmd.project_id == file_uuid.split("/")[0]

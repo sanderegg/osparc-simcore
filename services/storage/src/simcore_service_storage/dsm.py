@@ -160,14 +160,16 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
     app: web.Application
     settings: Settings
     session: AioSession = field(default_factory=get_session)
-    datcore_tokens: dict[str, DatCoreApiToken] = field(default_factory=dict)
+    datcore_tokens: dict[UserID, DatCoreApiToken] = field(default_factory=dict)
 
-    def _get_datcore_tokens(self, user_id: str) -> tuple[Optional[str], Optional[str]]:
+    def _get_datcore_tokens(
+        self, user_id: UserID
+    ) -> tuple[Optional[str], Optional[str]]:
         # pylint: disable=no-member
         token = self.datcore_tokens.get(user_id, DatCoreApiToken())
         return dataclasses.astuple(token)
 
-    async def locations(self, user_id: str):
+    async def locations(self, user_id: UserID):
         locs = []
         simcore_s3 = {"name": SIMCORE_S3_STR, "id": SIMCORE_S3_ID}
         locs.append(simcore_s3)
@@ -193,7 +195,7 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
     # pylint: disable=too-many-branches
     # pylint: disable=too-many-statements
     async def list_files(
-        self, user_id: str, location: str, uuid_filter: str = "", regex: str = ""
+        self, user_id: UserID, location: str, uuid_filter: str = "", regex: str = ""
     ) -> list[FileMetaDataEx]:
         """Returns a list of file paths
 
@@ -319,7 +321,7 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
         return list(data)
 
     async def list_files_dataset(
-        self, user_id: str, location: str, dataset_id: str
+        self, user_id: UserID, location: str, dataset_id: str
     ) -> Union[list[FileMetaData], list[FileMetaDataEx]]:
         # this is a cheap shot, needs fixing once storage/db is in sync
         data = []
@@ -340,7 +342,9 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
 
         return data
 
-    async def list_datasets(self, user_id: str, location: str) -> list[DatasetMetaData]:
+    async def list_datasets(
+        self, user_id: UserID, location: str
+    ) -> list[DatasetMetaData]:
         """Returns a list of top level datasets
 
         Works for simcore.s3 and datcore
@@ -380,7 +384,7 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
         return data
 
     async def list_file(
-        self, user_id: str, location: str, file_uuid: str
+        self, user_id: UserID, location: str, file_uuid: FileID
     ) -> Optional[FileMetaDataEx]:
 
         if location == SIMCORE_S3_STR:
@@ -659,12 +663,14 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
         )
         if as_presigned_link:
             link = await get_s3_client(self.app).create_single_presigned_download_link(
-                self.simcore_bucket_name, fmd.object_name
+                self.simcore_bucket_name,
+                fmd.object_name,
+                self.settings.STORAGE_DEFAULT_PRESIGNED_LINK_EXPIRATION_SECONDS,
             )
 
         return f"{link}"
 
-    async def download_link_datcore(self, user_id: str, file_id: str) -> URL:
+    async def download_link_datcore(self, user_id: UserID, file_id: str) -> URL:
         api_token, api_secret = self._get_datcore_tokens(user_id)
         assert self.app  # nosec
         assert api_secret  # nosec
@@ -677,7 +683,7 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
 
     async def copy_file_datcore_s3(
         self,
-        user_id: str,
+        user_id: UserID,
         dest_uuid: str,
         source_uuid: str,
         filename_missing: bool = False,
@@ -730,7 +736,7 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
 
     async def deep_copy_project_simcore_s3(
         self,
-        user_id: str,
+        user_id: UserID,
         source_project: dict[str, Any],
         destination_project: dict[str, Any],
         node_mapping: dict[str, str],
@@ -803,6 +809,8 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
         )
 
         for item in contents:
+            if "Key" not in item:
+                continue
             source_object_name = item["Key"]
             source_object_parts = Path(source_object_name).parts
 
@@ -871,8 +879,14 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
 
         if "Contents" in response:
             for item in response["Contents"]:
+                if "Key" not in item:
+                    continue
                 fmd = FileMetaData()
-                fmd.simcore_from_uuid(item["Key"], self.simcore_bucket_name)
+                fmd.simcore_from_uuid(
+                    user_id=user_id,
+                    file_uuid=item["Key"],
+                    bucket_name=self.simcore_bucket_name,
+                )
                 fmd.project_name = uuid_name_dict.get(dest_folder, "Untitled")
                 fmd.node_name = uuid_name_dict.get(fmd.node_id, "Untitled")
                 fmd.raw_file_path = fmd.file_uuid
@@ -880,7 +894,9 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
                     Path(fmd.project_name) / fmd.node_name / fmd.file_name
                 )
                 fmd.user_id = user_id
+                assert "Size" in item  # nosec
                 fmd.file_size = item["Size"]
+                assert "LastModified" in item  # nosec
                 fmd.last_modified = str(item["LastModified"])
                 fmds.append(fmd)
 
@@ -904,7 +920,7 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
 
     # DELETE -------------------------------------
 
-    async def delete_file(self, user_id: str, location: str, file_uuid: str):
+    async def delete_file(self, user_id: UserID, location: str, file_uuid: FileID):
         """Deletes a file given its fmd and location
 
         Additionally requires a user_id for 3rd party auth
@@ -1019,7 +1035,7 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
                 raise ValueError(f"Invalid link {link_uuid}. Link already exists")
 
         # validate target_uuid
-        target = await self.list_file(str(user_id), SIMCORE_S3_STR, target_uuid)
+        target = await self.list_file(user_id, SIMCORE_S3_STR, target_uuid)
         if not target:
             raise ValueError(
                 f"Invalid target '{target_uuid}'. File does not exists for this user"
@@ -1038,7 +1054,9 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
             )
 
             result = await conn.execute(stmt)
-            link = to_meta_data_extended(await result.first())
+            fmd = await result.first()
+            assert fmd  # nosec
+            link = to_meta_data_extended(fmd)
             return link
 
     async def synchronise_meta_data_table(

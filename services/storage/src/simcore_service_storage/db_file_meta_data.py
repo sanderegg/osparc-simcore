@@ -24,7 +24,12 @@ async def upsert_file_metadata_for_upload(
         raise ValueError(f"{file_uuid=} does not follow conventions")
 
     fmd = FileMetaData()
-    fmd.simcore_from_uuid(user_id, file_uuid, bucket, **file_meta_data_kwargs)
+    fmd.simcore_from_uuid(
+        user_id=user_id,
+        file_uuid=file_uuid,
+        bucket_name=bucket,
+        **file_meta_data_kwargs,
+    )
 
     # NOTE: upsert file_meta_data, if the file already exists, we update the whole row
     # so we get the correct time stamps

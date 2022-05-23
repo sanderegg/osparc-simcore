@@ -106,6 +106,7 @@ class FileMetaData:
     # pylint: disable=attribute-defined-outside-init
     def simcore_from_uuid(
         self,
+        *,
         user_id: UserID,
         file_uuid: FileID,
         bucket_name: str,
