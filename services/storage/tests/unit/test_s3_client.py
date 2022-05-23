@@ -6,7 +6,7 @@
 import asyncio
 from contextlib import AsyncExitStack
 from pathlib import Path
-from typing import AsyncIterator, Awaitable, Callable, Optional
+from typing import AsyncIterator, Awaitable, Callable, Final, Optional
 from uuid import uuid4
 
 import botocore.exceptions
@@ -146,7 +146,7 @@ async def test_create_single_presigned_upload_link(
     file = create_file_of_size(parse_obj_as(ByteSize, "1Mib"))
     file_uuid = f"{uuid4()}/{uuid4()}/{file.name}"
     presigned_url = await storage_s3_client.create_single_presigned_upload_link(
-        storage_s3_bucket, file_uuid
+        storage_s3_bucket, file_uuid, expiration_secs=DEFAULT_EXPIRATION_SECS
     )
     assert presigned_url
 
@@ -184,7 +184,10 @@ async def test_create_multipart_presigned_upload_link(
 ):
     file = create_file_of_size(file_size)
     upload_links = await storage_s3_client.create_multipart_upload_links(
-        storage_s3_bucket, file.name, parse_obj_as(ByteSize, file.stat().st_size)
+        storage_s3_bucket,
+        file.name,
+        parse_obj_as(ByteSize, file.stat().st_size),
+        expiration_secs=DEFAULT_EXPIRATION_SECS,
     )
     assert upload_links
 
@@ -237,7 +240,10 @@ async def test_abort_multipart_upload(
 ):
     file = create_file_of_size(parse_obj_as(ByteSize, "100Mib"))
     upload_links = await storage_s3_client.create_multipart_upload_links(
-        storage_s3_bucket, file.name, parse_obj_as(ByteSize, file.stat().st_size)
+        storage_s3_bucket,
+        file.name,
+        parse_obj_as(ByteSize, file.stat().st_size),
+        expiration_secs=DEFAULT_EXPIRATION_SECS,
     )
     assert upload_links
 
@@ -279,6 +285,9 @@ async def test_abort_multipart_upload(
         )
 
 
+DEFAULT_EXPIRATION_SECS: Final[int] = 10
+
+
 @pytest.fixture
 def upload_file(
     storage_s3_client: StorageS3Client,
@@ -290,7 +299,7 @@ def upload_file(
         if not file_id:
             file_id = file.name
         presigned_url = await storage_s3_client.create_single_presigned_upload_link(
-            storage_s3_bucket, file_id
+            storage_s3_bucket, file_id, expiration_secs=DEFAULT_EXPIRATION_SECS
         )
         assert presigned_url
 
@@ -417,7 +426,7 @@ async def test_create_single_presigned_download_link(
     file_id = await upload_file()
 
     presigned_url = await storage_s3_client.create_single_presigned_download_link(
-        storage_s3_bucket, file_id
+        storage_s3_bucket, file_id, expiration_secs=DEFAULT_EXPIRATION_SECS
     )
 
     assert presigned_url
