@@ -246,6 +246,31 @@ async def test_abort_multipart_upload(
         )
 
 
+async def test_multiple_completion_of_multipart_upload(
+    storage_s3_client: StorageS3Client,
+    storage_s3_bucket: str,
+    upload_file_multipart_presigned_link_without_completion: Callable[
+        ..., Awaitable[tuple[FileID, MultiPartUploadLinks, list[UploadedPart]]]
+    ],
+):
+    file_size = parse_obj_as(ByteSize, "1000Mib")
+    (
+        file_id,
+        upload_links,
+        uploaded_parts,
+    ) = await upload_file_multipart_presigned_link_without_completion(file_size)
+
+    # first completion
+    received_etag = await storage_s3_client.complete_multipart_upload(
+        storage_s3_bucket, file_id, upload_links.upload_id, uploaded_parts
+    )
+
+    with pytest.raises(botocore.exceptions.ClientError):
+        await storage_s3_client.complete_multipart_upload(
+            storage_s3_bucket, file_id, upload_links.upload_id, uploaded_parts
+        )
+
+
 async def test_break_completion_of_multipart_upload(
     storage_s3_client: StorageS3Client,
     storage_s3_bucket: str,
