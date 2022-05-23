@@ -1,4 +1,3 @@
-from datetime import datetime
 from typing import Optional
 
 import sqlalchemy as sa
@@ -10,8 +9,7 @@ from simcore_postgres_database.models.file_meta_data import file_meta_data
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from .exceptions import FileMetaDataNotFoundError
-from .models import FileMetaData
-from .s3_client import FileID, UploadID
+from .models import FileID, FileMetaData, UploadID
 
 
 async def upsert_file_metadata_for_upload(
@@ -19,17 +17,14 @@ async def upsert_file_metadata_for_upload(
     user_id: UserID,
     bucket: str,
     file_uuid: FileID,
-    upload_id: Optional[UploadID],
-    upload_expires_at: Optional[datetime],
+    **file_meta_data_kwargs,
 ) -> FileMetaData:
     parts = file_uuid.split("/")
     if len(parts) != 3:
         raise ValueError(f"{file_uuid=} does not follow conventions")
 
     fmd = FileMetaData()
-    fmd.simcore_from_uuid(user_id, file_uuid, bucket)
-    fmd.upload_id = upload_id  # type: ignore
-    fmd.upload_expires_at = upload_expires_at  # type: ignore
+    fmd.simcore_from_uuid(user_id, file_uuid, bucket, **file_meta_data_kwargs)
 
     # NOTE: upsert file_meta_data, if the file already exists, we update the whole row
     # so we get the correct time stamps
@@ -40,6 +35,15 @@ async def upsert_file_metadata_for_upload(
     await conn.execute(on_update_statement)
 
     return fmd
+
+
+async def get(conn: SAConnection, file_uuid: FileID) -> FileMetaData:
+    result = await conn.execute(
+        query=sa.select([file_meta_data]).where(file_meta_data.c.file_uuid == file_uuid)
+    )
+    if row := await result.fetchone():
+        return FileMetaData(**dict(row))  # type: ignore
+    raise FileMetaDataNotFoundError(file_uuid=file_uuid)
 
 
 async def get_upload_id(conn: SAConnection, file_uuid: FileID) -> Optional[UploadID]:
@@ -77,12 +81,3 @@ async def delete_all_from_node(conn: SAConnection, node_id: NodeID) -> None:
     await conn.execute(
         file_meta_data.delete().where(file_meta_data.c.node_id == f"{node_id}")
     )
-
-
-async def get(conn: SAConnection, file_uuid: FileID) -> FileMetaData:
-    result = await conn.execute(
-        query=sa.select([file_meta_data]).where(file_meta_data.c.file_uuid == file_uuid)
-    )
-    if row := await result.fetchone():
-        return FileMetaData(**dict(row))  # type: ignore
-    raise FileMetaDataNotFoundError(file_uuid=file_uuid)

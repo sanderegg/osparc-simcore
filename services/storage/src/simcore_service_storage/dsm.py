@@ -1,4 +1,5 @@
 import dataclasses
+import datetime
 import logging
 import os
 import re
@@ -95,6 +96,7 @@ def setup_dsm(app: web.Application):
             simcore_bucket_name=cfg.STORAGE_S3.S3_BUCKET_NAME,
             has_project_db=not cfg.STORAGE_TESTING,
             app=app,
+            settings=cfg,
         )
 
         app[APP_DSM_KEY] = dsm
@@ -156,6 +158,7 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
     simcore_bucket_name: str
     has_project_db: bool
     app: web.Application
+    settings: Settings
     session: AioSession = field(default_factory=get_session)
     datcore_tokens: dict[str, DatCoreApiToken] = field(default_factory=dict)
 
@@ -535,9 +538,12 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
                         file_id=file_uuid,
                         upload_id=upload_id,
                     )
-
                 await db_file_meta_data.upsert_file_metadata_for_upload(
-                    conn, user_id, self.simcore_bucket_name, file_uuid, upload_id=None
+                    conn,
+                    user_id,
+                    self.simcore_bucket_name,
+                    file_uuid,
+                    expiration_secs=self.settings.STORAGE_DEFAULT_PRESIGNED_LINK_EXPIRATION_SECONDS,
                 )
                 if (
                     link_type == LinkType.PRESIGNED
@@ -546,7 +552,9 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
                     single_presigned_link = await get_s3_client(
                         self.app
                     ).create_single_presigned_upload_link(
-                        self.simcore_bucket_name, file_uuid
+                        self.simcore_bucket_name,
+                        file_uuid,
+                        expiration_secs=self.settings.STORAGE_DEFAULT_PRESIGNED_LINK_EXPIRATION_SECONDS,
                     )
                     return UploadLinks(
                         [single_presigned_link],
@@ -558,7 +566,10 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
                     multipart_presigned_links = await get_s3_client(
                         self.app
                     ).create_multipart_upload_links(
-                        self.simcore_bucket_name, file_uuid, file_size_bytes
+                        self.simcore_bucket_name,
+                        file_uuid,
+                        file_size_bytes,
+                        expiration_secs=self.settings.STORAGE_DEFAULT_PRESIGNED_LINK_EXPIRATION_SECONDS,
                     )
                     # update the database so we keep the upload id
                     await db_file_meta_data.upsert_file_metadata_for_upload(
@@ -567,6 +578,10 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
                         self.simcore_bucket_name,
                         file_uuid,
                         upload_id=multipart_presigned_links.upload_id,
+                        upload_expires_at=datetime.datetime.utcnow()
+                        + datetime.timedelta(
+                            seconds=self.settings.STORAGE_DEFAULT_PRESIGNED_LINK_EXPIRATION_SECONDS
+                        ),
                     )
                     return UploadLinks(
                         multipart_presigned_links.urls,

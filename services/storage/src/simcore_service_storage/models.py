@@ -9,6 +9,7 @@ from uuid import UUID
 
 import attr
 from models_library.users import UserID
+from pydantic import constr
 from simcore_postgres_database.storage_models import (
     file_meta_data,
     groups,
@@ -21,15 +22,16 @@ from simcore_postgres_database.storage_models import (
 
 from .constants import DATCORE_STR, SIMCORE_S3_ID, SIMCORE_S3_STR
 
-# FIXME: W0611:Unused UUID imported from sqlalchemy.dialects.postgresql
-# from sqlalchemy.dialects.postgresql import UUID
-
-# FIXME: R0902: Too many instance attributes (11/7) (too-many-instance-attributes)
-# pylint: disable=R0902
-
-
 _LOCATION_ID_TO_TAG_MAP = {0: SIMCORE_S3_STR, 1: DATCORE_STR}
 UNDEFINED_LOCATION_TAG: str = "undefined"
+
+# NOTE: SAFE S3 characters are found here [https://docs.aws.amazon.com/AmazonS3/latest/userguide/object-keys.html]
+_SAFE_S3_FILE_NAME_RE = r"[\w!\-_\.\*\'\(\)]"
+_FILE_ID_RE = rf"^({_SAFE_S3_FILE_NAME_RE}+?)\/({_SAFE_S3_FILE_NAME_RE}+?)\/({_SAFE_S3_FILE_NAME_RE}+?)$"
+
+FileID = constr(regex=_FILE_ID_RE)
+UploadID = str
+ETag = str
 
 
 def get_location_from_id(location_id: Union[str, int]) -> str:
@@ -102,7 +104,13 @@ class FileMetaData:
     """
 
     # pylint: disable=attribute-defined-outside-init
-    def simcore_from_uuid(self, user_id: UserID, file_uuid: str, bucket_name: str):
+    def simcore_from_uuid(
+        self,
+        user_id: UserID,
+        file_uuid: FileID,
+        bucket_name: str,
+        **file_meta_data_kwargs,
+    ):
         parts = file_uuid.split("/")
         if len(parts) == 3:
             self.user_id = user_id
@@ -126,6 +134,8 @@ class FileMetaData:
             self.is_soft_link = False
             self.upload_id = None
             self.upload_expires_at = None
+            for k, v in file_meta_data_kwargs.items():
+                self.__setattr__(k, v)
 
     def __str__(self):
         d = attr.asdict(self)
@@ -163,14 +173,17 @@ class FileMetaDataEx:
         return _str
 
 
-__all__ = [
+__all__ = (
     "file_meta_data",
     "tokens",
     "metadata",
     "FileMetaData",
     "FileMetaDataEx",
+    "FileID",
+    "UploadID",
+    "ETag",
     "projects",
     "users",
     "groups",
     "user_to_groups",
-]
+)

@@ -13,14 +13,10 @@ from pydantic import AnyUrl, BaseModel, ByteSize, PositiveInt, parse_obj_as
 from settings_library.s3 import S3Settings
 from types_aiobotocore_s3 import S3Client
 
+from .models import ETag, FileID, UploadID
 from .s3_utils import compute_num_file_chunks
 
 log = logging.getLogger(__name__)
-
-
-FileID = str
-UploadID = str
-ETag = str
 
 
 class MultiPartUploadLinks(BaseModel):
