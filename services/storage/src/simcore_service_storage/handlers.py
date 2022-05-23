@@ -12,7 +12,7 @@ from models_library.api_schemas_storage import FileUploadLinks, FileUploadSchema
 from models_library.projects import ProjectID
 from models_library.projects_nodes import NodeID
 from models_library.users import UserID
-from pydantic import AnyUrl, ByteSize, parse_obj_as
+from pydantic import AnyUrl, ByteSize, ValidationError, parse_obj_as
 from servicelib.aiohttp.application_keys import APP_CONFIG_KEY
 from servicelib.aiohttp.rest_utils import extract_and_validate
 from settings_library.s3 import S3Settings
@@ -78,6 +78,8 @@ def handle_storage_errors():
         ) from err
     except FileMetaDataNotFoundError as err:
         raise web.HTTPNotFound(reason=f"{err}") from err
+    except ValidationError as err:
+        raise web.HTTPUnprocessableEntity(reason=f"{err}")
 
 
 # HANDLERS ---------------------------------------------------
