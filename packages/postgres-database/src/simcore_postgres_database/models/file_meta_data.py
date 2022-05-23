@@ -44,4 +44,7 @@ file_meta_data = sa.Table(
         nullable=True,
         doc="if filled, contains the uploadId for S3 multipart file upload",
     ),
+    sa.Column(
+        "expires_at", sa.DateTime(), nullable=True, doc="Timestamp of expiration"
+    ),
 )
