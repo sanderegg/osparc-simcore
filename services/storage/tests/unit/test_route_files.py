@@ -129,9 +129,9 @@ async def assert_file_meta_data_in_db(
     *,
     file_uuid: str,
     expected_entry_exists: bool,
-    expected_file_size: Optional[int] = None,
-    expected_upload_id: bool = False,
-    expected_upload_expiration_date: bool = False,
+    expected_file_size: Optional[int],
+    expected_upload_id: Optional[bool],
+    expected_upload_expiration_date: Optional[bool],
 ) -> Optional[UploadID]:
     if expected_entry_exists and expected_file_size == None:
         assert True, "Invalid usage of assertion, expected_file_size cannot be None"
@@ -256,6 +256,8 @@ async def test_create_upload_file_default_returns_single_link(
         file_uuid=file_uuid,
         expected_entry_exists=True,
         expected_file_size=-1,
+        expected_upload_id=False,
+        expected_upload_expiration_date=False,
     )
     # check that no s3 multipart upload was initiated
     await assert_multipart_uploads_in_progress(
@@ -363,6 +365,7 @@ async def test_create_upload_file_presigned_with_file_size_returns_multipart_lin
         expected_entry_exists=True,
         expected_file_size=-1,
         expected_upload_id=expect_upload_id,
+        expected_upload_expiration_date=True,
     )
 
     # check that the s3 multipart upload was initiated properly
@@ -410,6 +413,7 @@ async def test_delete_unuploaded_file_correctly_cleans_up_db_and_s3(
         expected_entry_exists=True,
         expected_file_size=-1,
         expected_upload_id=expect_upload_id,
+        expected_upload_expiration_date=True,
     )
 
     # check that the s3 multipart upload was initiated properly
@@ -438,6 +442,9 @@ async def test_delete_unuploaded_file_correctly_cleans_up_db_and_s3(
         aiopg_engine,
         file_uuid=file_uuid,
         expected_entry_exists=False,
+        expected_file_size=None,
+        expected_upload_id=None,
+        expected_upload_expiration_date=None,
     )
     # the multipart upload shall be aborted
     await assert_multipart_uploads_in_progress(
@@ -484,6 +491,7 @@ async def test_upload_same_file_uuid_aborts_previous_upload(
         expected_entry_exists=True,
         expected_file_size=-1,
         expected_upload_id=expect_upload_id,
+        expected_upload_expiration_date=True,
     )
 
     # check that the s3 multipart upload was initiated properly
@@ -510,6 +518,7 @@ async def test_upload_same_file_uuid_aborts_previous_upload(
         expected_entry_exists=True,
         expected_file_size=-1,
         expected_upload_id=expect_upload_id,
+        expected_upload_expiration_date=True,
     )
     if expect_upload_id:
         assert (
@@ -576,6 +585,7 @@ async def test_upload_real_file(
         expected_entry_exists=True,
         expected_file_size=file_size,
         expected_upload_id=False,
+        expected_upload_expiration_date=False,
     )
     # check the file is in S3 for real
     response = await storage_s3_client.client.head_object(Bucket=bucket, Key=file_uuid)

@@ -9,6 +9,7 @@ from typing import AsyncIterator
 import attr
 import pytest
 from aiopg.sa.engine import Engine
+from models_library.users import UserID
 from simcore_service_storage.constants import SIMCORE_S3_STR
 from simcore_service_storage.dsm import DataStorageManager
 from simcore_service_storage.models import FileMetaData, FileMetaDataEx, file_meta_data
@@ -18,20 +19,9 @@ pytest_simcore_core_services_selection = ["postgres"]
 pytest_simcore_ops_services_selection = ["adminer"]
 
 
-@pytest.fixture
-def storage(aiopg_engine: Engine, client) -> DataStorageManager:
-
-    return DataStorageManager(
-        engine=aiopg_engine,
-        simcore_bucket_name="master-simcore",
-        has_project_db=True,
-        app=client.app,
-    )
-
-
 @pytest.fixture()
 async def output_file(
-    user_id: int, project_id: str, aiopg_engine: Engine
+    user_id: UserID, project_id: str, aiopg_engine: Engine
 ) -> AsyncIterator[FileMetaData]:
 
     node_id = "fd6f9737-1988-341b-b4ac-0614b646fa82"
@@ -40,7 +30,9 @@ async def output_file(
 
     file = FileMetaData()
     file.simcore_from_uuid(
-        f"{project_id}/{node_id}/filename.txt", bucket_name="master-simcore"
+        user_id=user_id,
+        file_uuid=f"{project_id}/{node_id}/filename.txt",
+        bucket_name="master-simcore",
     )
     file.entity_tag = "df9d868b94e53d18009066ca5cd90e9f"
     file.file_size = 12
@@ -86,7 +78,7 @@ def create_resource_uuid(*resource_name_parts) -> uuid.UUID:
 
 
 async def test_create_soft_link(
-    storage: DataStorageManager, user_id: int, output_file: FileMetaData
+    dsm_fixture: DataStorageManager, user_id: int, output_file: FileMetaData
 ):
 
     api_file_id = create_resource_uuid(
@@ -94,7 +86,7 @@ async def test_create_soft_link(
     )
     file_name = output_file.file_name
 
-    link_file: FileMetaDataEx = await storage.create_soft_link(
+    link_file: FileMetaDataEx = await dsm_fixture.create_soft_link(
         user_id, output_file.file_uuid, f"api/{api_file_id}/{file_name}"
     )
     assert isinstance(link_file, FileMetaDataEx)
@@ -135,15 +127,15 @@ async def test_create_soft_link(
     # assert output_file.last_modified < link_file.fmd.last_modified
 
     # can find
-    files_list = await storage.search_files_starting_with(
+    files_list = await dsm_fixture.search_files_starting_with(
         user_id, f"api/{api_file_id}/{file_name}"
     )
     assert len(files_list) == 1
     assert files_list[0] == link_file
 
     # can get
-    got_file = await storage.list_file(
-        str(user_id), SIMCORE_S3_STR, f"api/{api_file_id}/{file_name}"
+    got_file = await dsm_fixture.list_file(
+        user_id, SIMCORE_S3_STR, f"api/{api_file_id}/{file_name}"
     )
 
     assert got_file == link_file
