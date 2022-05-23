@@ -528,6 +528,9 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
                     reason=f"User {user_id} does not have enough access rights to upload file {file_uuid}"
                 )
             # in case something bad happen this needs to be rolled back
+            upload_expiration_date = datetime.datetime.utcnow() + datetime.timedelta(
+                seconds=self.settings.STORAGE_DEFAULT_PRESIGNED_LINK_EXPIRATION_SECONDS
+            )
             async with conn.begin():
                 # NOTE: if this gets called successively with the same file_uuid, and
                 # there was a multipart upload in progress beforehand, it MUST be
@@ -543,7 +546,7 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
                     user_id,
                     self.simcore_bucket_name,
                     file_uuid,
-                    upload_expires_at=self.settings.STORAGE_DEFAULT_PRESIGNED_LINK_EXPIRATION_SECONDS,
+                    upload_expires_at=upload_expiration_date,
                 )
                 if (
                     link_type == LinkType.PRESIGNED
@@ -578,10 +581,7 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
                         self.simcore_bucket_name,
                         file_uuid,
                         upload_id=multipart_presigned_links.upload_id,
-                        upload_expires_at=datetime.datetime.utcnow()
-                        + datetime.timedelta(
-                            seconds=self.settings.STORAGE_DEFAULT_PRESIGNED_LINK_EXPIRATION_SECONDS
-                        ),
+                        upload_expires_at=upload_expiration_date,
                     )
                     return UploadLinks(
                         multipart_presigned_links.urls,
