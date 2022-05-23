@@ -157,9 +157,14 @@ async def assert_file_meta_data_in_db(
                 assert (
                     row[file_meta_data.c.upload_id] is None
                 ), "single file upload should not have an upload_id"
-            assert row[file_meta_data.c.upload_expires_at] is (
-                not None if expected_upload_expiration_date else None
-            )
+            if expected_upload_expiration_date:
+                assert row[
+                    file_meta_data.c.upload_expires_at
+                ], "no upload expiration date!"
+            else:
+                assert (
+                    row[file_meta_data.c.upload_expires_at] is None
+                ), "expiration date should be NULL"
             upload_id = row[file_meta_data.c.upload_id]
     return upload_id
 
@@ -257,7 +262,7 @@ async def test_create_upload_file_default_returns_single_link(
         expected_entry_exists=True,
         expected_file_size=-1,
         expected_upload_id=False,
-        expected_upload_expiration_date=False,
+        expected_upload_expiration_date=True,
     )
     # check that no s3 multipart upload was initiated
     await assert_multipart_uploads_in_progress(
