@@ -23,6 +23,8 @@ from simcore_service_storage.s3_client import (
 from simcore_service_storage.settings import Settings
 from tests.helpers.file_utils import upload_file_to_presigned_link
 
+DEFAULT_EXPIRATION_SECS: Final[int] = 10
+
 
 @pytest.fixture
 def mock_config(mocked_s3_server_envs, monkeypatch: pytest.MonkeyPatch):
@@ -140,7 +142,6 @@ async def storage_s3_bucket(
 async def test_create_single_presigned_upload_link(
     storage_s3_client: StorageS3Client,
     storage_s3_bucket: str,
-    faker: Faker,
     create_file_of_size: Callable[[ByteSize], Path],
 ):
     file = create_file_of_size(parse_obj_as(ByteSize, "1Mib"))
@@ -161,7 +162,7 @@ async def test_create_single_presigned_upload_link(
     )
 
     # check it is there
-    response = await storage_s3_client.client.get_object(
+    response = await storage_s3_client.client.head_object(
         Bucket=storage_s3_bucket, Key=file_uuid
     )
     assert response
@@ -179,42 +180,20 @@ async def test_create_single_presigned_upload_link(
 async def test_create_multipart_presigned_upload_link(
     storage_s3_client: StorageS3Client,
     storage_s3_bucket: str,
-    create_file_of_size: Callable[[ByteSize], Path],
+    upload_file_multipart_presigned_link_without_completion: Callable[
+        ..., Awaitable[tuple[FileID, MultiPartUploadLinks, list[UploadedPart]]]
+    ],
     file_size: ByteSize,
 ):
-    file = create_file_of_size(file_size)
-    upload_links = await storage_s3_client.create_multipart_upload_links(
-        storage_s3_bucket,
-        file.name,
-        parse_obj_as(ByteSize, file.stat().st_size),
-        expiration_secs=DEFAULT_EXPIRATION_SECS,
-    )
-    assert upload_links
-
-    # upload the file
-    part_to_etag: list[UploadedPart] = await upload_file_to_presigned_link(
-        file, upload_links
-    )
-
-    # check it is not yet completed
-    with pytest.raises(botocore.exceptions.ClientError):
-        await storage_s3_client.client.head_object(
-            Bucket=storage_s3_bucket, Key=file.name
-        )
-
-    # check we have the multipart upload listed
-    response = await storage_s3_client.client.list_multipart_uploads(
-        Bucket=storage_s3_bucket
-    )
-    assert response
-    assert "Uploads" in response
-    assert len(response["Uploads"]) == 1
-    assert "UploadId" in response["Uploads"][0]
-    assert response["Uploads"][0]["UploadId"] == upload_links.upload_id
+    (
+        file_id,
+        upload_links,
+        uploaded_parts,
+    ) = await upload_file_multipart_presigned_link_without_completion(file_size)
 
     # now complete it
     received_e_tag = await storage_s3_client.complete_multipart_upload(
-        storage_s3_bucket, file.name, upload_links.upload_id, part_to_etag
+        storage_s3_bucket, file_id, upload_links.upload_id, uploaded_parts
     )
 
     # check that the multipart upload is not listed anymore
@@ -226,49 +205,31 @@ async def test_create_multipart_presigned_upload_link(
 
     # check the object is complete
     response = await storage_s3_client.client.head_object(
-        Bucket=storage_s3_bucket, Key=file.name
+        Bucket=storage_s3_bucket, Key=file_id
     )
     assert response
-    assert response["ContentLength"] == file.stat().st_size
+    assert response["ContentLength"] == file_size
     assert response["ETag"] == f"{received_e_tag}"
 
 
 async def test_abort_multipart_upload(
     storage_s3_client: StorageS3Client,
     storage_s3_bucket: str,
-    create_file_of_size: Callable[[ByteSize], Path],
+    upload_file_multipart_presigned_link_without_completion: Callable[
+        ..., Awaitable[tuple[FileID, MultiPartUploadLinks, list[UploadedPart]]]
+    ],
 ):
-    file = create_file_of_size(parse_obj_as(ByteSize, "100Mib"))
-    upload_links = await storage_s3_client.create_multipart_upload_links(
-        storage_s3_bucket,
-        file.name,
-        parse_obj_as(ByteSize, file.stat().st_size),
-        expiration_secs=DEFAULT_EXPIRATION_SECS,
+    (
+        file_id,
+        upload_links,
+        _,
+    ) = await upload_file_multipart_presigned_link_without_completion(
+        parse_obj_as(ByteSize, "100Mib")
     )
-    assert upload_links
-
-    # upload the file
-    await upload_file_to_presigned_link(file, upload_links)
-
-    # check it is not yet completed
-    with pytest.raises(botocore.exceptions.ClientError):
-        await storage_s3_client.client.head_object(
-            Bucket=storage_s3_bucket, Key=file.name
-        )
-
-    # check we have the multipart upload listed
-    response = await storage_s3_client.client.list_multipart_uploads(
-        Bucket=storage_s3_bucket
-    )
-    assert response
-    assert "Uploads" in response
-    assert len(response["Uploads"]) == 1
-    assert "UploadId" in response["Uploads"][0]
-    assert response["Uploads"][0]["UploadId"] == upload_links.upload_id
 
     # now abort it
     await storage_s3_client.abort_multipart_upload(
-        storage_s3_bucket, file.name, upload_links.upload_id
+        storage_s3_bucket, file_id, upload_links.upload_id
     )
 
     # now check that the listing is empty
@@ -281,15 +242,62 @@ async def test_abort_multipart_upload(
     # check it is not available
     with pytest.raises(botocore.exceptions.ClientError):
         await storage_s3_client.client.head_object(
-            Bucket=storage_s3_bucket, Key=file.name
+            Bucket=storage_s3_bucket, Key=file_id
         )
 
 
-DEFAULT_EXPIRATION_SECS: Final[int] = 10
+async def test_break_completion_of_multipart_upload(
+    storage_s3_client: StorageS3Client,
+    storage_s3_bucket: str,
+    upload_file_multipart_presigned_link_without_completion: Callable[
+        ..., Awaitable[tuple[FileID, MultiPartUploadLinks, list[UploadedPart]]]
+    ],
+):
+    file_size = parse_obj_as(ByteSize, "1000Mib")
+    (
+        file_id,
+        upload_links,
+        uploaded_parts,
+    ) = await upload_file_multipart_presigned_link_without_completion(file_size)
+    # let's break the completion very quickly task and see what happens
+    VERY_SHORT_TIMEOUT = 0.2
+    with pytest.raises(asyncio.TimeoutError):
+        await asyncio.wait_for(
+            storage_s3_client.complete_multipart_upload(
+                storage_s3_bucket, file_id, upload_links.upload_id, uploaded_parts
+            ),
+            timeout=VERY_SHORT_TIMEOUT,
+        )
+    # check we have the multipart upload initialized and listed
+    response = await storage_s3_client.client.list_multipart_uploads(
+        Bucket=storage_s3_bucket
+    )
+    assert response
+    assert "Uploads" in response
+    assert len(response["Uploads"]) == 1
+    assert "UploadId" in response["Uploads"][0]
+    assert response["Uploads"][0]["UploadId"] == upload_links.upload_id
+
+    # now wait
+    await asyncio.sleep(10)
+
+    # check that the completion of the update completed...
+    response = await storage_s3_client.client.list_multipart_uploads(
+        Bucket=storage_s3_bucket
+    )
+    assert response
+    assert "Uploads" not in response
+
+    # check the object is complete
+    response = await storage_s3_client.client.head_object(
+        Bucket=storage_s3_bucket, Key=file_id
+    )
+    assert response
+    assert response["ContentLength"] == file_size
 
 
 @pytest.fixture
-def upload_file(
+def upload_file_single_presigned_link(
     storage_s3_client: StorageS3Client,
     storage_s3_bucket: str,
     create_file_of_size: Callable[[ByteSize], Path],
@@ -303,10 +311,15 @@ def upload_file(
         )
         assert presigned_url
 
-        # upload the file
-        async with ClientSession() as session:
-            response = await session.put(presigned_url, data=file.open("rb"))
-            response.raise_for_status()
+        # upload the file with a fake multipart upload links structure
+        await upload_file_to_presigned_link(
+            file,
+            MultiPartUploadLinks(
+                upload_id="fake",
+                chunk_size=parse_obj_as(ByteSize, file.stat().st_size),
+                urls=[presigned_url],
+            ),
+        )
 
         # check the object is complete
         response = await storage_s3_client.client.head_object(
@@ -319,12 +332,81 @@ def upload_file(
     return _uploader
 
 
+@pytest.fixture
+def upload_file_multipart_presigned_link_without_completion(
+    storage_s3_client: StorageS3Client,
+    storage_s3_bucket: str,
+    create_file_of_size: Callable[[ByteSize], Path],
+) -> Callable[..., Awaitable[tuple[FileID, MultiPartUploadLinks, list[UploadedPart]]]]:
+    async def _uploader(
+        file_size: ByteSize,
+        file_id: Optional[FileID] = None,
+    ) -> tuple[FileID, MultiPartUploadLinks, list[UploadedPart]]:
+        file = create_file_of_size(file_size)
+        if not file_id:
+            file_id = file.name
+        upload_links = await storage_s3_client.create_multipart_upload_links(
+            storage_s3_bucket,
+            file_id,
+            ByteSize(file.stat().st_size),
+            expiration_secs=DEFAULT_EXPIRATION_SECS,
+        )
+        assert upload_links
+
+        # check there is no file yet
+        with pytest.raises(botocore.exceptions.ClientError):
+            await storage_s3_client.client.head_object(
+                Bucket=storage_s3_bucket, Key=file.name
+            )
+
+        # check we have the multipart upload initialized and listed
+        response = await storage_s3_client.client.list_multipart_uploads(
+            Bucket=storage_s3_bucket
+        )
+        assert response
+        assert "Uploads" in response
+        assert len(response["Uploads"]) == 1
+        assert "UploadId" in response["Uploads"][0]
+        assert response["Uploads"][0]["UploadId"] == upload_links.upload_id
+
+        # upload the file
+        uploaded_parts: list[UploadedPart] = await upload_file_to_presigned_link(
+            file,
+            upload_links,
+        )
+        assert len(uploaded_parts) == len(upload_links.urls)
+
+        # check there is no file yet
+        with pytest.raises(botocore.exceptions.ClientError):
+            await storage_s3_client.client.head_object(
+                Bucket=storage_s3_bucket, Key=file.name
+            )
+
+        # check we have the multipart upload initialized and listed
+        response = await storage_s3_client.client.list_multipart_uploads(
+            Bucket=storage_s3_bucket
+        )
+        assert response
+        assert "Uploads" in response
+        assert len(response["Uploads"]) == 1
+        assert "UploadId" in response["Uploads"][0]
+        assert response["Uploads"][0]["UploadId"] == upload_links.upload_id
+
+        return (
+            file_id,
+            upload_links,
+            uploaded_parts,
+        )
+
+    return _uploader
+
+
 async def test_delete_file(
     storage_s3_client: StorageS3Client,
     storage_s3_bucket: str,
-    upload_file: Callable[..., Awaitable[FileID]],
+    upload_file_single_presigned_link: Callable[..., Awaitable[FileID]],
 ):
-    file_id = await upload_file()
+    file_id = await upload_file_single_presigned_link()
 
     # delete the file
     await storage_s3_client.delete_file(storage_s3_bucket, file_id)
@@ -339,7 +421,7 @@ async def test_delete_file(
 async def test_delete_files_in_project_node(
     storage_s3_client: StorageS3Client,
     storage_s3_bucket: str,
-    upload_file: Callable[..., Awaitable[FileID]],
+    upload_file_single_presigned_link: Callable[..., Awaitable[FileID]],
     faker: Faker,
 ):
     # we upload files in these paths
@@ -369,7 +451,10 @@ async def test_delete_files_in_project_node(
     )
 
     uploaded_file_ids = await asyncio.gather(
-        *(upload_file(file_id=f"{path}{faker.file_name()}") for path in upload_paths)
+        *(
+            upload_file_single_presigned_link(file_id=f"{path}{faker.file_name()}")
+            for path in upload_paths
+        )
     )
     assert len(uploaded_file_ids) == len(upload_paths)
 
@@ -419,11 +504,11 @@ async def test_delete_files_in_project_node(
 async def test_create_single_presigned_download_link(
     storage_s3_client: StorageS3Client,
     storage_s3_bucket: str,
-    upload_file: Callable[..., Awaitable[FileID]],
+    upload_file_single_presigned_link: Callable[..., Awaitable[FileID]],
     tmp_path: Path,
     faker: Faker,
 ):
-    file_id = await upload_file()
+    file_id = await upload_file_single_presigned_link()
 
     presigned_url = await storage_s3_client.create_single_presigned_download_link(
         storage_s3_bucket, file_id, expiration_secs=DEFAULT_EXPIRATION_SECS
