@@ -521,14 +521,13 @@ async def test_upload_real_file(
     create_file_of_size: Callable[[ByteSize], Path],
 ):
     assert client.app
-
     # create a file
     file = create_file_of_size(file_size)
-
     # get an upload link
     file_upload_link = await create_upload_file_link(
         user_id, location_id, file_uuid, link_type="presigned", file_size=file_size
     )
+
     # upload the file
     part_to_etag: list[UploadedPart] = await upload_file_to_presigned_link(
         file, file_upload_link
@@ -558,7 +557,3 @@ async def test_upload_real_file(
     )
     assert response
     assert response["ContentLength"] == file_size
-
-
-async def test_upload_file_after_expiration_fails():
-    ...
