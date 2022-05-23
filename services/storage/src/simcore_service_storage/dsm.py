@@ -24,7 +24,7 @@ from models_library.projects import ProjectID
 from models_library.projects_nodes import NodeID
 from models_library.users import UserID
 from pydantic import AnyUrl, ByteSize, parse_obj_as
-from servicelib.aiohttp.aiopg_utils import DBAPIError, PostgresRetryPolicyUponOperation
+from servicelib.aiohttp.aiopg_utils import DBAPIError
 from servicelib.aiohttp.client_session import get_client_session
 from simcore_service_storage.exceptions import FileMetaDataNotFoundError
 from sqlalchemy.sql.expression import literal_column
@@ -49,8 +49,10 @@ from .constants import (
 from .datcore_adapter import datcore_adapter
 from .models import (
     DatasetMetaData,
+    DatCoreApiToken,
     FileMetaData,
     FileMetaDataEx,
+    UploadLinks,
     file_meta_data,
     get_location_from_id,
     projects,
@@ -60,12 +62,7 @@ from .s3_client import FileID, UploadedPart
 from .settings import Settings
 from .utils import download_to_file_or_raise, is_file_entry_valid, to_meta_data_extended
 
-_MINUTE: Final[int] = 60
-_HOUR: Final[int] = 60 * _MINUTE
-
 logger = logging.getLogger(__name__)
-
-postgres_service_retry_policy_kwargs = PostgresRetryPolicyUponOperation(logger).kwargs
 
 
 # AWS S3 upload limits https://docs.aws.amazon.com/AmazonS3/latest/userguide/qfacts.html
@@ -103,18 +100,6 @@ def setup_dsm(app: web.Application):
     # ------
 
     app.cleanup_ctx.append(_cleanup_context)
-
-
-@dataclass
-class DatCoreApiToken:
-    api_token: Optional[str] = None
-    api_secret: Optional[str] = None
-
-
-@dataclass
-class UploadLinks:
-    urls: list[AnyUrl]
-    chunk_size: ByteSize
 
 
 @dataclass

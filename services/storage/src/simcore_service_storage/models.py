@@ -4,12 +4,12 @@
 import datetime
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Union
+from typing import Optional, Union
 from uuid import UUID
 
 import attr
 from models_library.users import UserID
-from pydantic import constr
+from pydantic import AnyUrl, ByteSize, constr
 from simcore_postgres_database.storage_models import (
     file_meta_data,
     groups,
@@ -174,14 +174,28 @@ class FileMetaDataEx:
         return _str
 
 
+@dataclass
+class DatCoreApiToken:
+    api_token: Optional[str] = None
+    api_secret: Optional[str] = None
+
+
+@dataclass
+class UploadLinks:
+    urls: list[AnyUrl]
+    chunk_size: ByteSize
+
+
 __all__ = (
     "file_meta_data",
     "tokens",
     "metadata",
+    "DatCoreApiToken",
     "FileMetaData",
     "FileMetaDataEx",
     "FileID",
     "UploadID",
+    "UploadLinks",
     "ETag",
     "projects",
     "users",
