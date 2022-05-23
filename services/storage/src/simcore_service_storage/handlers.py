@@ -480,9 +480,17 @@ async def is_completed_upload_file(request: web.Request):
             return web.json_response(
                 status=web.HTTPOk.status_code, data={"data": {"state": "nok"}}
             )
-        # there is no task, so storage was restarted in between?
-        # TODO: what do we do here???
-    raise web.HTTPNotFound(reason="future not found!")
+        # there is no task, either wrong call or storage was restarted
+        # we try to get the file to see if it exists in S3
+        dsm = await _prepare_storage_manager(params, query, request)
+        location = dsm.location_from_id(params["location_id"])
+        if await dsm.list_file(user_id=user_id, location=location, file_uuid=file_id):
+            return web.json_response(
+                status=web.HTTPOk.status_code, data={"data": {"state": "ok"}}
+            )
+    raise web.HTTPNotFound(
+        reason="Not found. Upload could not be completed. Please try again and contact support if it fails again."
+    )
 
 
 @routes.delete(f"/{api_vtag}/locations/{{location_id}}/files/{{file_id}}")  # type: ignore
