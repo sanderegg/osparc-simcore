@@ -543,7 +543,7 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
                     user_id,
                     self.simcore_bucket_name,
                     file_uuid,
-                    expiration_secs=self.settings.STORAGE_DEFAULT_PRESIGNED_LINK_EXPIRATION_SECONDS,
+                    upload_expires_at=self.settings.STORAGE_DEFAULT_PRESIGNED_LINK_EXPIRATION_SECONDS,
                 )
                 if (
                     link_type == LinkType.PRESIGNED
