@@ -131,6 +131,7 @@ async def assert_file_meta_data_in_db(
     expected_entry_exists: bool,
     expected_file_size: Optional[int] = None,
     expected_upload_id: bool = False,
+    expected_upload_expiration_date: bool = False,
 ) -> Optional[UploadID]:
     if expected_entry_exists and expected_file_size == None:
         assert True, "Invalid usage of assertion, expected_file_size cannot be None"
@@ -156,6 +157,9 @@ async def assert_file_meta_data_in_db(
                 assert (
                     row[file_meta_data.c.upload_id] is None
                 ), "single file upload should not have an upload_id"
+            assert row[file_meta_data.c.upload_expires_at] is (
+                not None if expected_upload_expiration_date else None
+            )
             upload_id = row[file_meta_data.c.upload_id]
     return upload_id
 
