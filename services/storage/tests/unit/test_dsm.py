@@ -170,7 +170,6 @@ async def _upload_file(
 
 
 async def test_update_metadata_from_storage(
-    postgres_dsn_url: str,
     mock_files_factory: Callable[[int], list[Path]],
     dsm_fixture: DataStorageManager,
     create_file_meta_for_s3: Callable,
@@ -305,7 +304,7 @@ async def test_dsm_complete_db(
     dsm_mockup_complete_db: tuple[dict[str, str], dict[str, str]],
 ):
     dsm = dsm_fixture
-    _id = "21"
+    _id = 21
     dsm.has_project_db = True
     data = await dsm.list_files(user_id=_id, location=SIMCORE_S3_STR)
 
@@ -323,7 +322,7 @@ async def test_delete_data_folders(
     dsm_mockup_complete_db: tuple[dict[str, str], dict[str, str]],
 ):
     file_1, file_2 = dsm_mockup_complete_db
-    _id = "21"
+    _id = 21
     data = await dsm_fixture.list_files(user_id=_id, location=SIMCORE_S3_STR)
     response = await dsm_fixture.delete_project_simcore_s3(
         user_id=UserID(_id),
@@ -403,7 +402,7 @@ async def test_dsm_list_dataset_files_s3(
     assert any("Kember" in d.display_name for d in datasets)
     for d in datasets:
         files = await dsm_fixture.list_files_dataset(
-            user_id="21", location=SIMCORE_S3_STR, dataset_id=d.dataset_id
+            user_id=21, location=SIMCORE_S3_STR, dataset_id=d.dataset_id
         )
         if "Kember" in d.display_name:
             assert len(files) == 2

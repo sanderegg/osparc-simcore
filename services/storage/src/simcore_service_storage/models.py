@@ -57,7 +57,7 @@ def is_uuid(value: str) -> bool:
         return True
 
 
-class FileMetaData:
+class FileMetaData:  # pylint: disable=too-many-instance-attributes
     """This is a proposal, probably no everything is needed.
     It is actually an overkill
 
