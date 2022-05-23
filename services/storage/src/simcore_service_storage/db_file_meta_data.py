@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Optional
 
 import sqlalchemy as sa
@@ -19,15 +20,16 @@ async def upsert_file_metadata_for_upload(
     bucket: str,
     file_uuid: FileID,
     upload_id: Optional[UploadID],
+    upload_expires_at: Optional[datetime],
 ) -> FileMetaData:
     parts = file_uuid.split("/")
     if len(parts) != 3:
         raise ValueError(f"{file_uuid=} does not follow conventions")
 
     fmd = FileMetaData()
-    fmd.simcore_from_uuid(file_uuid, bucket)
-    fmd.user_id = user_id  # type: ignore
+    fmd.simcore_from_uuid(user_id, file_uuid, bucket)
     fmd.upload_id = upload_id  # type: ignore
+    fmd.upload_expires_at = upload_expires_at  # type: ignore
 
     # NOTE: upsert file_meta_data, if the file already exists, we update the whole row
     # so we get the correct time stamps

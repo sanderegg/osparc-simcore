@@ -8,6 +8,7 @@ from typing import Union
 from uuid import UUID
 
 import attr
+from models_library.users import UserID
 from simcore_postgres_database.storage_models import (
     file_meta_data,
     groups,
@@ -101,9 +102,10 @@ class FileMetaData:
     """
 
     # pylint: disable=attribute-defined-outside-init
-    def simcore_from_uuid(self, file_uuid: str, bucket_name: str):
+    def simcore_from_uuid(self, user_id: UserID, file_uuid: str, bucket_name: str):
         parts = file_uuid.split("/")
         if len(parts) == 3:
+            self.user_id = user_id
             self.location = SIMCORE_S3_STR
             self.location_id = SIMCORE_S3_ID
             self.bucket_name = bucket_name
@@ -123,6 +125,7 @@ class FileMetaData:
             self.entity_tag = None
             self.is_soft_link = False
             self.upload_id = None
+            self.upload_expires_at = None
 
     def __str__(self):
         d = attr.asdict(self)
