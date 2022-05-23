@@ -49,6 +49,10 @@ class Settings(BaseCustomSettings, MixinLoggingSettings):
         180, description="Timeout (seconds) for metadata sync task"
     )
 
+    STORAGE_DEFAULT_PRESIGNED_LINK_EXPIRATION_SECONDS: int = Field(
+        3600, description="Default expiration time in seconds for presigned links"
+    )
+
     @validator("LOG_LEVEL")
     @classmethod
     def _validate_loglevel(cls, value) -> str:
