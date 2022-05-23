@@ -619,7 +619,7 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
         )
 
     async def download_link_s3(
-        self, file_uuid: str, user_id: int, as_presigned_link: bool
+        self, file_uuid: str, user_id: UserID, as_presigned_link: bool
     ) -> str:
 
         # access layer
@@ -636,30 +636,16 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
                     reason=f"User {user_id} does not have enough rights to download file {file_uuid}"
                 )
 
-        bucket_name = self.simcore_bucket_name
-        async with self.engine.acquire() as conn:
-            stmt = sa.select([file_meta_data.c.object_name]).where(
-                file_meta_data.c.file_uuid == file_uuid
-            )
-            object_name: Optional[str] = await conn.scalar(stmt)
+            fmd = await db_file_meta_data.get(conn, file_uuid)
 
-            if object_name is None:
-                raise web.HTTPNotFound(
-                    reason=f"File '{file_uuid}' does not exists in storage."
-                )
         link = parse_obj_as(
-            AnyUrl, f"s3://{bucket_name}/{urllib.parse.quote( object_name)}"
+            AnyUrl,
+            f"s3://{self.simcore_bucket_name}/{urllib.parse.quote(fmd.object_name)}",
         )
         if as_presigned_link:
-
-            get_presigned_link = await get_s3_client(
-                self.app
-            ).client.generate_presigned_url(
-                "get_object",
-                Params={"Bucket": bucket_name, "Key": object_name},
-                ExpiresIn=259200,
+            link = await get_s3_client(self.app).create_single_presigned_download_link(
+                self.simcore_bucket_name, fmd.object_name
             )
-            link = parse_obj_as(AnyUrl, get_presigned_link)
 
         return f"{link}"
 

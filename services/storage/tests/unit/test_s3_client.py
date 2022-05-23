@@ -405,3 +405,35 @@ async def test_delete_files_in_project_node(
             f"{project_2}",
         )
     )
+
+
+async def test_create_single_presigned_download_link(
+    storage_s3_client: StorageS3Client,
+    storage_s3_bucket: str,
+    upload_file: Callable[..., Awaitable[FileID]],
+    tmp_path: Path,
+    faker: Faker,
+):
+    file_id = await upload_file()
+
+    presigned_url = await storage_s3_client.create_single_presigned_download_link(
+        storage_s3_bucket, file_id
+    )
+
+    assert presigned_url
+
+    dest_file = tmp_path / faker.file_name()
+    # download the file
+    async with ClientSession() as session:
+        response = await session.get(presigned_url)
+        response.raise_for_status()
+        with dest_file.open("wb") as fp:
+            fp.write(await response.read())
+    assert dest_file.exists()
+
+    response = await storage_s3_client.client.head_object(
+        Bucket=storage_s3_bucket, Key=file_id
+    )
+    assert response
+    assert response["ETag"]
+    assert dest_file.stat().st_size == response["ContentLength"]

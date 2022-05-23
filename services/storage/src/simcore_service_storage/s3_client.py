@@ -69,6 +69,16 @@ class StorageS3Client:
                 bucket,
             )
 
+    async def create_single_presigned_download_link(
+        self, bucket: str, file_id: FileID
+    ) -> AnyUrl:
+        generated_link = await self.client.generate_presigned_url(
+            "get_object",
+            Params={"Bucket": bucket, "Key": file_id},
+            ExpiresIn=3600,
+        )
+        return parse_obj_as(AnyUrl, generated_link)
+
     async def create_single_presigned_upload_link(
         self, bucket: str, file_id: FileID
     ) -> AnyUrl:

@@ -16,6 +16,7 @@ from pydantic import AnyUrl, ByteSize, parse_obj_as
 from servicelib.aiohttp.application_keys import APP_CONFIG_KEY
 from servicelib.aiohttp.rest_utils import extract_and_validate
 from settings_library.s3 import S3Settings
+from simcore_service_storage.exceptions import FileMetaDataNotFoundError
 
 # Exclusive for simcore-s3 storage -----------------------
 from . import sts
@@ -75,6 +76,8 @@ def handle_storage_errors():
         raise web.HTTPUnprocessableEntity(
             reason=f"{err} is an invalid file identifier"
         ) from err
+    except FileMetaDataNotFoundError as err:
+        raise web.HTTPNotFound(reason=f"{err}") from err
 
 
 # HANDLERS ---------------------------------------------------
