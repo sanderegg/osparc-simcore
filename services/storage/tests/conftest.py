@@ -21,13 +21,21 @@ from aiobotocore.session import get_session
 from aiohttp.test_utils import TestClient, unused_port
 from aiopg.sa import Engine
 from faker import Faker
+from models_library.projects import ProjectID
+from models_library.projects_nodes import NodeID
 from moto.server import ThreadedMotoServer
 from pydantic import ByteSize
 from pytest_simcore.helpers.utils_docker import get_localhost_ip
 from simcore_service_storage.application import create
 from simcore_service_storage.constants import APP_DSM_KEY, SIMCORE_S3_STR
 from simcore_service_storage.dsm import DataStorageManager
-from simcore_service_storage.models import FileMetaData, file_meta_data, projects, users
+from simcore_service_storage.models import (
+    FileID,
+    FileMetaData,
+    file_meta_data,
+    projects,
+    users,
+)
 from simcore_service_storage.s3 import get_s3_client
 from simcore_service_storage.s3_client import StorageS3Client
 from simcore_service_storage.settings import Settings
@@ -399,3 +407,18 @@ def create_file_of_size(tmp_path: Path, faker: Faker) -> Callable[[ByteSize], Pa
         return file
 
     return _creator
+
+
+@pytest.fixture
+def node_id(faker: Faker) -> NodeID:
+    return NodeID(faker.uuid4())
+
+
+@pytest.fixture
+def file_uuid(project_id: ProjectID, node_id: NodeID, faker: Faker) -> FileID:
+    return f"{project_id}/{node_id}/{faker.file_name()}"
+
+
+@pytest.fixture
+def location_id() -> int:
+    return 0

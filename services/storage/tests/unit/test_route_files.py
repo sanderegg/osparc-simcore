@@ -15,44 +15,24 @@ import pytest
 from aiohttp import web
 from aiohttp.test_utils import TestClient
 from aiopg.sa import Engine
-from faker import Faker
 from models_library.api_schemas_storage import FileUploadSchema
-from models_library.projects import ProjectID
-from models_library.projects_nodes import NodeID
 from models_library.users import UserID
 from models_library.utils.fastapi_encoders import jsonable_encoder
 from pydantic import ByteSize, parse_obj_as
 from pytest_simcore.helpers.utils_assert import assert_status
 from simcore_postgres_database.models.file_meta_data import file_meta_data
 from simcore_service_storage.dsm import _MULTIPART_UPLOADS_MIN_TOTAL_SIZE
-from simcore_service_storage.s3 import get_s3_client
 from simcore_service_storage.s3_client import (
     FileID,
     StorageS3Client,
     UploadedPart,
     UploadID,
 )
-from simcore_service_storage.settings import Settings
 from tests.helpers.file_utils import upload_file_to_presigned_link
 from yarl import URL
 
 pytest_simcore_core_services_selection = ["postgres"]
 pytest_simcore_ops_services_selection = ["adminer"]
-
-
-@pytest.fixture
-def node_id(faker: Faker) -> NodeID:
-    return NodeID(faker.uuid4())
-
-
-@pytest.fixture
-def file_uuid(project_id: ProjectID, node_id: NodeID, faker: Faker) -> FileID:
-    return f"{project_id}/{node_id}/{faker.file_name()}"
-
-
-@pytest.fixture
-def location_id() -> int:
-    return 0
 
 
 _HTTP_PRESIGNED_LINK_QUERY_KEYS = [
@@ -63,18 +43,6 @@ _HTTP_PRESIGNED_LINK_QUERY_KEYS = [
     "X-Amz-Signature",
     "X-Amz-SignedHeaders",
 ]
-
-
-@pytest.fixture
-def storage_s3_client(client: TestClient) -> StorageS3Client:
-    assert client.app
-    return get_s3_client(client.app)
-
-
-@pytest.fixture
-def bucket(app_settings: Settings) -> str:
-    assert app_settings.STORAGE_S3
-    return app_settings.STORAGE_S3.S3_BUCKET_NAME
 
 
 @pytest.fixture
@@ -171,14 +139,14 @@ async def assert_file_meta_data_in_db(
 
 async def assert_multipart_uploads_in_progress(
     storage_s3_client: StorageS3Client,
-    bucket: str,
+    storage_s3_bucket: str,
     file_id: FileID,
     *,
     expected_upload_ids: Optional[list[str]],
 ):
     """if None is passed, then it checks that no uploads are in progress"""
     response = await storage_s3_client.list_ongoing_multipart_uploads(
-        bucket=bucket, file_id=file_id
+        bucket=storage_s3_bucket, file_id=file_id
     )
     if expected_upload_ids is None:
         assert (
@@ -221,7 +189,7 @@ async def assert_multipart_uploads_in_progress(
 )
 async def test_create_upload_file_default_returns_single_link(
     storage_s3_client,
-    bucket: str,
+    storage_s3_bucket: str,
     user_id: UserID,
     location_id: int,
     file_uuid: str,
@@ -267,7 +235,7 @@ async def test_create_upload_file_default_returns_single_link(
     # check that no s3 multipart upload was initiated
     await assert_multipart_uploads_in_progress(
         storage_s3_client,
-        bucket,
+        storage_s3_bucket,
         file_uuid,
         expected_upload_ids=None,
     )
@@ -339,7 +307,7 @@ class MultiPartParam:
 )
 async def test_create_upload_file_presigned_with_file_size_returns_multipart_links_if_bigger_than_99MiB(
     storage_s3_client: StorageS3Client,
-    bucket: str,
+    storage_s3_bucket: str,
     user_id: UserID,
     location_id: int,
     file_uuid: str,
@@ -376,7 +344,7 @@ async def test_create_upload_file_presigned_with_file_size_returns_multipart_lin
     # check that the s3 multipart upload was initiated properly
     await assert_multipart_uploads_in_progress(
         storage_s3_client,
-        bucket,
+        storage_s3_bucket,
         file_uuid,
         expected_upload_ids=([upload_id] if upload_id else None),
     )
@@ -395,7 +363,7 @@ async def test_delete_unuploaded_file_correctly_cleans_up_db_and_s3(
     aiopg_engine: Engine,
     client: TestClient,
     storage_s3_client: StorageS3Client,
-    bucket: str,
+    storage_s3_bucket: str,
     user_id: UserID,
     location_id: int,
     file_uuid: str,
@@ -405,7 +373,7 @@ async def test_delete_unuploaded_file_correctly_cleans_up_db_and_s3(
 ):
     assert client.app
     # create upload file link
-    await create_upload_file_link(
+    upload_link = await create_upload_file_link(
         user_id, location_id, file_uuid, link_type=link_type, file_size=file_size
     )
     expect_upload_id = bool(
@@ -424,23 +392,15 @@ async def test_delete_unuploaded_file_correctly_cleans_up_db_and_s3(
     # check that the s3 multipart upload was initiated properly
     await assert_multipart_uploads_in_progress(
         storage_s3_client,
-        bucket,
+        storage_s3_bucket,
         file_uuid,
         expected_upload_ids=([upload_id] if upload_id else None),
     )
 
     # delete/abort file upload
-    delete_url = (
-        client.app.router["delete_file"]
-        .url_for(
-            location_id=f"{location_id}", file_id=urllib.parse.quote(file_uuid, safe="")
-        )
-        .with_query(user_id=user_id)
-    )
-    response = await client.delete(f"{delete_url}")
-    data, error = await assert_status(response, web.HTTPNoContent)
-    assert not error
-    assert not data
+    abort_url = URL(upload_link.links.abort_upload).relative()
+    response = await client.delete(f"{abort_url}")
+    await assert_status(response, web.HTTPNoContent)
 
     # the DB shall be cleaned up
     await assert_file_meta_data_in_db(
@@ -454,7 +414,7 @@ async def test_delete_unuploaded_file_correctly_cleans_up_db_and_s3(
     # the multipart upload shall be aborted
     await assert_multipart_uploads_in_progress(
         storage_s3_client,
-        bucket,
+        storage_s3_bucket,
         file_uuid,
         expected_upload_ids=None,
     )
@@ -473,7 +433,7 @@ async def test_upload_same_file_uuid_aborts_previous_upload(
     aiopg_engine: Engine,
     client: TestClient,
     storage_s3_client: StorageS3Client,
-    bucket: str,
+    storage_s3_bucket: str,
     user_id: UserID,
     location_id: int,
     file_uuid: str,
@@ -502,7 +462,7 @@ async def test_upload_same_file_uuid_aborts_previous_upload(
     # check that the s3 multipart upload was initiated properly
     await assert_multipart_uploads_in_progress(
         storage_s3_client,
-        bucket,
+        storage_s3_bucket,
         file_uuid,
         expected_upload_ids=([upload_id] if upload_id else None),
     )
@@ -533,7 +493,7 @@ async def test_upload_same_file_uuid_aborts_previous_upload(
     # check that the s3 multipart upload was initiated properly
     await assert_multipart_uploads_in_progress(
         storage_s3_client,
-        bucket,
+        storage_s3_bucket,
         file_uuid,
         expected_upload_ids=([new_upload_id] if new_upload_id else None),
     )
@@ -552,7 +512,7 @@ async def test_upload_real_file(
     aiopg_engine: Engine,
     client: TestClient,
     storage_s3_client: StorageS3Client,
-    bucket: str,
+    storage_s3_bucket: str,
     user_id: UserID,
     location_id: int,
     file_uuid: str,
@@ -593,6 +553,12 @@ async def test_upload_real_file(
         expected_upload_expiration_date=False,
     )
     # check the file is in S3 for real
-    response = await storage_s3_client.client.head_object(Bucket=bucket, Key=file_uuid)
+    response = await storage_s3_client.client.head_object(
+        Bucket=storage_s3_bucket, Key=file_uuid
+    )
     assert response
     assert response["ContentLength"] == file_size
+
+
+async def test_upload_file_after_expiration_fails():
+    ...
