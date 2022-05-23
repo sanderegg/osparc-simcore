@@ -13,6 +13,7 @@ from servicelib.aiohttp.rest_middlewares import append_rest_middlewares
 
 from . import app_handlers, handlers
 from .constants import APP_OPENAPI_SPECS_KEY
+from .handlers import UPLOAD_TASKS_KEY
 from .resources import resources
 
 log = logging.getLogger(__name__)
@@ -49,6 +50,8 @@ def setup_rest(app: web.Application):
     set_default_names(handlers.routes)
     app.router.add_routes(handlers.routes)
     app.router.add_routes(app_handlers.routes)
+    # prepare container for upload tasks
+    app[UPLOAD_TASKS_KEY] = {}
 
     log.debug(
         "routes:\n %s",

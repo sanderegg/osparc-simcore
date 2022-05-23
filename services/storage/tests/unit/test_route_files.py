@@ -28,6 +28,12 @@ from simcore_service_storage.s3_client import (
     UploadedPart,
     UploadID,
 )
+from tenacity import (
+    AsyncRetrying,
+    retry_if_exception_type,
+    stop_after_delay,
+    wait_fixed,
+)
 from tests.helpers.file_utils import upload_file_to_presigned_link
 from yarl import URL
 
@@ -504,7 +510,7 @@ async def test_upload_same_file_uuid_aborts_previous_upload(
     [
         pytest.param(parse_obj_as(ByteSize, "1Mib"), id="7Mib"),
         pytest.param(parse_obj_as(ByteSize, "500Mib"), id="500Mib"),
-        # pytest.param(parse_obj_as(ByteSize, "5Gib"), id="5Gib"),
+        pytest.param(parse_obj_as(ByteSize, "5Gib"), id="5Gib"),
         # pytest.param(parse_obj_as(ByteSize, "7Gib"), id="7Gib"),
     ],
 )
@@ -539,7 +545,36 @@ async def test_upload_real_file(
     response = await client.post(
         f"{complete_url}", json={"parts": jsonable_encoder(part_to_etag)}
     )
-    await assert_status(response, web.HTTPNoContent)
+    response.raise_for_status()
+    data, error = await assert_status(response, web.HTTPAccepted)
+    assert not error
+    assert data
+    assert "links" in data
+    assert "state" in data["links"]
+    state_url = URL(data["links"]["state"]).relative()
+
+    async for attempt in AsyncRetrying(
+        reraise=True,
+        wait=wait_fixed(1),
+        stop=stop_after_delay(60),
+        retry=retry_if_exception_type(ValueError),
+    ):
+        with attempt:
+            print(
+                f"--> checking for upload {state_url=}, {attempt.retry_state.attempt_number}..."
+            )
+            response = await client.post(f"{state_url}")
+            response.raise_for_status()
+            data, error = await assert_status(response, web.HTTPOk)
+            assert not error
+            assert data
+            if data != "ok":
+                raise ValueError(f"{data=}")
+            assert data == "ok"
+            print(
+                f"--> done waiting, data is completely uploaded [{attempt.retry_state.retry_object.statistics}]"
+            )
+
     print(f"--> completed upload in {perf_counter() - start}")
 
     # check the entry in db now has the correct file size, and the upload id is gone
