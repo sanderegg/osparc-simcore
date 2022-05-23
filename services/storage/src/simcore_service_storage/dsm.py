@@ -28,11 +28,6 @@ from servicelib.aiohttp.aiopg_utils import DBAPIError, PostgresRetryPolicyUponOp
 from servicelib.aiohttp.client_session import get_client_session
 from simcore_service_storage.exceptions import FileMetaDataNotFoundError
 from sqlalchemy.sql.expression import literal_column
-from tenacity._asyncio import AsyncRetrying
-from tenacity.before_sleep import before_sleep_log
-from tenacity.retry import retry_if_exception_type
-from tenacity.stop import stop_after_delay
-from tenacity.wait import wait_exponential
 from yarl import URL
 
 from . import db_file_meta_data
@@ -438,9 +433,9 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
 
     async def try_update_database_from_storage(
         self,
-        file_uuid: str,
+        file_uuid: FileID,
         bucket_name: str,
-        object_name: str,
+        object_name: FileID,
         *,
         reraise_exceptions: bool,
     ) -> Optional[FileMetaDataEx]:
@@ -462,6 +457,7 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
                         last_modified=last_modified,
                         entity_tag=entity_tag,
                         upload_id=None,
+                        upload_expires_at=None,
                     )
                     .returning(literal_column("*"))
                 )
@@ -477,22 +473,8 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
             if reraise_exceptions:
                 raise
 
-    async def auto_update_database_from_storage_task(
-        self, file_uuid: str, bucket_name: str, object_name: str
-    ) -> Optional[FileMetaDataEx]:
-        async for attempt in AsyncRetrying(
-            stop=stop_after_delay(1 * _HOUR),
-            wait=wait_exponential(multiplier=0.1, exp_base=1.2, max=30),
-            retry=(retry_if_exception_type()),
-            before_sleep=before_sleep_log(logger, logging.INFO),
-        ):
-            with attempt:
-                return await self.try_update_database_from_storage(
-                    file_uuid, bucket_name, object_name, reraise_exceptions=True
-                )
-
     async def update_metadata(
-        self, file_uuid: str, user_id: int
+        self, file_uuid: FileID, user_id: UserID
     ) -> Optional[FileMetaDataEx]:
         async with self.engine.acquire() as conn:
             can: Optional[AccessRights] = await get_file_access_rights(
@@ -503,12 +485,8 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
                     reason=f"User {user_id} was not allowed to upload file {file_uuid}"
                 )
 
-        bucket_name = self.simcore_bucket_name
-        object_name = file_uuid
-        return await self.auto_update_database_from_storage_task(
-            file_uuid=file_uuid,
-            bucket_name=bucket_name,
-            object_name=object_name,
+        return await self.try_update_database_from_storage(
+            file_uuid, self.simcore_bucket_name, file_uuid, reraise_exceptions=True
         )
 
     async def create_upload_links(
