@@ -6,10 +6,10 @@ import uuid
 from functools import lru_cache
 from typing import AsyncIterator
 
-import attr
 import pytest
 from aiopg.sa.engine import Engine
 from models_library.users import UserID
+from models_library.utils.fastapi_encoders import jsonable_encoder
 from pydantic import ByteSize
 from simcore_service_storage.constants import SIMCORE_S3_STR
 from simcore_service_storage.dsm import DataStorageManager
@@ -42,9 +42,7 @@ async def output_file(
     async with aiopg_engine.acquire() as conn:
         stmt = (
             file_meta_data.insert()
-            .values(
-                **attr.asdict(file),
-            )
+            .values(jsonable_encoder(file))
             .returning(literal_column("*"))
         )
         result = await conn.execute(stmt)

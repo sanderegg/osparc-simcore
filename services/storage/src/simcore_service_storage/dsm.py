@@ -12,7 +12,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Final, Optional, Union
 
-import attr
 import botocore
 import botocore.exceptions
 import sqlalchemy as sa
@@ -23,6 +22,7 @@ from models_library.api_schemas_storage import LinkType
 from models_library.projects import ProjectID
 from models_library.projects_nodes import NodeID
 from models_library.users import UserID
+from models_library.utils.fastapi_encoders import jsonable_encoder
 from pydantic import AnyUrl, ByteSize, parse_obj_as
 from servicelib.aiohttp.aiopg_utils import DBAPIError
 from servicelib.aiohttp.client_session import get_client_session
@@ -1006,11 +1006,10 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
         target.fmd.file_uuid = link_uuid
         target.fmd.file_id = link_uuid  # NOTE: api-server relies on this id
         target.fmd.is_soft_link = True
-
         async with self.engine.acquire() as conn:
             stmt = (
                 file_meta_data.insert()
-                .values(**attr.asdict(target.fmd))
+                .values(jsonable_encoder(target.fmd))
                 .returning(literal_column("*"))
             )
 
