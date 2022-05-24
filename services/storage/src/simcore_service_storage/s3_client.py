@@ -146,7 +146,7 @@ class StorageS3Client:
                 upload["UploadId"],
                 upload["Key"],
             )
-            for upload in filter(_filter_uploads, response["Uploads"])
+            for upload in filter(_filter_uploads, response.get("Uploads", []))
         ]
 
     async def abort_multipart_upload(

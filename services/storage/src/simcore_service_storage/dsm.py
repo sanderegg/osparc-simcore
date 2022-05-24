@@ -15,6 +15,7 @@ from typing import Any, Final, Optional, Union
 import attr
 import botocore
 import botocore.exceptions
+import pytz
 import sqlalchemy as sa
 from aiohttp import web
 from aiopg.sa import Engine
@@ -1121,8 +1122,11 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
         )
 
         # if the database is 100% in sync it should not happen
-        latest_initiation_date = now - datetime.timedelta(
-            self.settings.STORAGE_DEFAULT_PRESIGNED_LINK_EXPIRATION_SECONDS
+        latest_initiation_date = pytz.UTC.localize(
+            dt=now
+            - datetime.timedelta(
+                self.settings.STORAGE_DEFAULT_PRESIGNED_LINK_EXPIRATION_SECONDS
+            )
         )
         expired_upload_ids = await get_s3_client(
             self.app
@@ -1137,6 +1141,6 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
                 get_s3_client(self.app).abort_multipart_upload(
                     self.simcore_bucket_name, file_id, upload_id
                 )
-                for file_id, upload_id in expired_upload_ids
+                for upload_id, file_id in expired_upload_ids
             )
         )
