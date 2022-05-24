@@ -6,6 +6,7 @@
 # pylint: disable=no-member
 # pylint: disable=too-many-branches
 
+import asyncio
 import datetime
 import filecmp
 import os
@@ -14,15 +15,23 @@ from pathlib import Path
 from typing import Any, Callable, Dict, Iterator, List, Optional, Tuple
 
 import pytest
+from aiopg.sa.engine import Engine
 from faker import Faker
 from models_library.projects import ProjectID
 from models_library.projects_nodes_io import NodeID
 from models_library.users import UserID
 from pydantic import ByteSize, parse_obj_as
+from simcore_service_storage import db_file_meta_data
 from simcore_service_storage.access_layer import InvalidFileIdentifier
 from simcore_service_storage.constants import SIMCORE_S3_ID, SIMCORE_S3_STR
 from simcore_service_storage.dsm import DataStorageManager, LinkType
-from simcore_service_storage.models import FileMetaData, FileMetaDataEx
+from simcore_service_storage.exceptions import FileMetaDataNotFoundError
+from simcore_service_storage.models import (
+    FileID,
+    FileMetaData,
+    FileMetaDataEx,
+    file_meta_data,
+)
 from simcore_service_storage.s3_client import StorageS3Client
 from tests.helpers.utils import USER_ID
 
@@ -419,5 +428,64 @@ async def test_clean_expired_uploads_cleans_dangling_multipart_uploads(
     # now run the cleaner
     await dsm_fixture.clean_expired_uploads()
 
+    # since there is no entry in the db, this upload shall be cleaned up
+    assert not await storage_s3_client.list_ongoing_multipart_uploads(storage_s3_bucket)
+
+
+@pytest.mark.parametrize(
+    "file_size",
+    [ByteSize(0), parse_obj_as(ByteSize, "10Mib"), parse_obj_as(ByteSize, "100Mib")],
+)
+@pytest.mark.parametrize("link_type", [LinkType.S3, LinkType.PRESIGNED])
+async def test_clean_expired_uploads_cleans_expired_pending_uploads(
+    aiopg_engine: Engine,
+    dsm_fixture: DataStorageManager,
+    file_uuid: FileID,
+    user_id: UserID,
+    link_type: LinkType,
+    file_size: ByteSize,
+    storage_s3_client: StorageS3Client,
+    storage_s3_bucket: str,
+):
+    await dsm_fixture.create_upload_links(user_id, file_uuid, link_type, file_size)
+    # ensure the database is correctly set up
+    async with aiopg_engine.acquire() as conn:
+        fmd = await db_file_meta_data.get(conn, file_uuid)
+    assert fmd
+    assert fmd.upload_expires_at
+    # ensure we have now an upload id
+    ongoing_uploads = await storage_s3_client.list_ongoing_multipart_uploads(
+        storage_s3_bucket
+    )
+    if fmd.upload_id:
+        assert len(ongoing_uploads) == 1
+    else:
+        assert not ongoing_uploads
+
+    # now run the cleaner, nothing should happen since the expiration was set to the default of 3600
+    await dsm_fixture.clean_expired_uploads()
+    # check the entries are still the same
+    async with aiopg_engine.acquire() as conn:
+        fmd_after_clean = await db_file_meta_data.get(conn, file_uuid)
+    assert fmd_after_clean == fmd
+    assert (
+        await storage_s3_client.list_ongoing_multipart_uploads(storage_s3_bucket)
+        == ongoing_uploads
+    )
+
+    # now change the upload_expires_at entry to simulate and expired entry
+    async with aiopg_engine.acquire() as conn:
+        await conn.execute(
+            file_meta_data.update()
+            .where(file_meta_data.c.file_uuid == file_uuid)
+            .values(upload_expires_at=datetime.datetime.utcnow())
+        )
+    await asyncio.sleep(1)
+    await dsm_fixture.clean_expired_uploads()
+
+    # check the entries were removed
+    async with aiopg_engine.acquire() as conn:
+        with pytest.raises(FileMetaDataNotFoundError):
+            await db_file_meta_data.get(conn, file_uuid)
     # since there is no entry in the db, this upload shall be cleaned up
     assert not await storage_s3_client.list_ongoing_multipart_uploads(storage_s3_bucket)
