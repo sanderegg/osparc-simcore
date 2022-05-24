@@ -5,13 +5,13 @@ import urllib.parse
 from contextlib import contextmanager
 from typing import Any, Optional
 
-import attr
 from aiohttp import web
 from aiohttp.web import RouteTableDef
 from models_library.api_schemas_storage import FileUploadLinks, FileUploadSchema
 from models_library.projects import ProjectID
 from models_library.projects_nodes import NodeID
 from models_library.users import UserID
+from models_library.utils.fastapi_encoders import jsonable_encoder
 from pydantic import AnyUrl, ByteSize, ValidationError, parse_obj_as
 from servicelib.aiohttp.application_keys import APP_CONFIG_KEY
 from servicelib.aiohttp.rest_utils import extract_and_validate
@@ -161,11 +161,10 @@ async def get_files_metadata(request: web.Request):
         data = await dsm.list_files(
             user_id=user_id, location=location, uuid_filter=uuid_filter
         )
-
         data_as_dict = []
         for d in data:
-            log.info("DATA %s", attr.asdict(d.fmd))
-            data_as_dict.append({**attr.asdict(d.fmd), "parent_id": d.parent_id})
+            log.info("DATA %s", jsonable_encoder(d.fmd))
+            data_as_dict.append({**jsonable_encoder(d.fmd), "parent_id": d.parent_id})
 
         return {"error": None, "data": data_as_dict}
 
@@ -201,8 +200,8 @@ async def get_files_metadata_dataset(request: web.Request):
 
         data_as_dict = []
         for d in data:
-            log.info("DATA %s", attr.asdict(d.fmd))
-            data_as_dict.append({**attr.asdict(d.fmd), "parent_id": d.parent_id})
+            log.info("DATA %s", jsonable_encoder(d.fmd))
+            data_as_dict.append({**jsonable_encoder(d.fmd), "parent_id": d.parent_id})
 
         return {"error": None, "data": data_as_dict}
 
@@ -241,7 +240,7 @@ async def get_file_metadata(request: web.Request):
 
         return {
             "error": None,
-            "data": {**attr.asdict(data.fmd), "parent_id": data.parent_id},
+            "data": {**jsonable_encoder(data.fmd), "parent_id": data.parent_id},
         }
 
 
@@ -310,7 +309,7 @@ async def update_file_meta_data(request: web.Request):
 
         return {
             "error": None,
-            "data": {**attr.asdict(data.fmd), "parent_id": data.parent_id},
+            "data": {**jsonable_encoder(data.fmd), "parent_id": data.parent_id},
         }
 
 
@@ -602,7 +601,7 @@ async def search_files_starting_with(request: web.Request):
         data = await dsm.search_files_starting_with(int(user_id), prefix=startswith)
         log.debug("Found %d files starting with '%s'", len(data), startswith)
 
-        return [{**attr.asdict(d.fmd), "parent_id": d.parent_id} for d in data]
+        return [{**jsonable_encoder(d.fmd), "parent_id": d.parent_id} for d in data]
 
 
 @routes.post(f"/{api_vtag}/files/{{file_id}}:soft-copy", name="copy_as_soft_link")  # type: ignore
@@ -625,5 +624,5 @@ async def copy_as_soft_link(request: web.Request):
 
         file_link = await dsm.create_soft_link(user_id, target_uuid, link_uuid)
 
-        data = {**attr.asdict(file_link.fmd), "parent_id": file_link.parent_id}
+        data = {**jsonable_encoder(file_link.fmd), "parent_id": file_link.parent_id}
         return data
