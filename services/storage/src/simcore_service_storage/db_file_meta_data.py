@@ -1,3 +1,4 @@
+import datetime
 from typing import Optional
 
 import sqlalchemy as sa
@@ -57,6 +58,28 @@ async def get_upload_id(conn: SAConnection, file_uuid: FileID) -> Optional[Uploa
             file_meta_data.c.file_uuid == file_uuid
         )
     )
+
+
+async def list_fmds(
+    conn: SAConnection,
+    user_id: Optional[UserID] = None,
+    project_id: Optional[ProjectID] = None,
+    expired_after: Optional[datetime.datetime] = None,
+) -> list[FileMetaData]:
+    stmt = sa.select([file_meta_data]).where(
+        ((file_meta_data.c.user_id == f"{user_id}") if user_id else True)
+        & ((file_meta_data.c.project_id == f"{project_id}") if project_id else True)
+        & (
+            (file_meta_data.c.upload_expires_at < expired_after)
+            if expired_after
+            else True
+        )
+    )
+
+    file_metadatas = []
+    async for row in await conn.execute(stmt):
+        file_metadatas.append(FileMetaData(**dict(row)))
+    return file_metadatas
 
 
 async def exists(conn: SAConnection, file_uuid: FileID) -> bool:
