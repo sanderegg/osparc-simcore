@@ -7,6 +7,7 @@ from models_library.projects import ProjectID
 from models_library.projects_nodes import NodeID
 from models_library.users import UserID
 from simcore_postgres_database.models.file_meta_data import file_meta_data
+from sqlalchemy import and_
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from .exceptions import FileMetaDataNotFoundError
@@ -69,13 +70,13 @@ async def list_fmds(
     expired_after: Optional[datetime.datetime] = None,
 ) -> list[FileMetaData]:
     stmt = sa.select([file_meta_data]).where(
-        ((file_meta_data.c.user_id == f"{user_id}") if user_id else True)
-        & ((file_meta_data.c.project_id == f"{project_id}") if project_id else True)
-        & ((file_meta_data.c.upload_id.in_(upload_ids)) if upload_ids else True)
-        & (
+        and_(
+            (file_meta_data.c.user_id == f"{user_id}") if user_id else True,
+            (file_meta_data.c.project_id == f"{project_id}") if project_id else True,
+            (file_meta_data.c.upload_id.in_(upload_ids)) if upload_ids else True,
             (file_meta_data.c.upload_expires_at < expired_after)
             if expired_after
-            else True
+            else True,
         )
     )
 
