@@ -53,6 +53,10 @@ class Settings(BaseCustomSettings, MixinLoggingSettings):
         3600, description="Default expiration time in seconds for presigned links"
     )
 
+    STORAGE_CLEANER_INTERVAL_S: int = Field(
+        30, description="Interval in seconds when task cleaning pending uploads runs"
+    )
+
     @validator("LOG_LEVEL")
     @classmethod
     def _validate_loglevel(cls, value) -> str:
