@@ -151,20 +151,20 @@ async def assert_multipart_uploads_in_progress(
     expected_upload_ids: Optional[list[str]],
 ):
     """if None is passed, then it checks that no uploads are in progress"""
-    response = await storage_s3_client.list_ongoing_multipart_uploads(
+    list_upload_ids: list[
+        UploadID
+    ] = await storage_s3_client.list_ongoing_multipart_uploads(
         bucket=storage_s3_bucket, file_id=file_id
     )
     if expected_upload_ids is None:
         assert (
-            "Uploads" not in response
-        ), f"expected NO multipart uploads in progress, got {response['Uploads']}"
+            not list_upload_ids
+        ), f"expected NO multipart uploads in progress, got {list_upload_ids}"
     else:
-        for upload in response["Uploads"]:
-            assert "UploadId" in upload
-            upload_id_in_progress = upload["UploadId"]
+        for upload_id in list_upload_ids:
             assert (
-                upload_id_in_progress in expected_upload_ids
-            ), f"upload {upload=} is in progress but was not expected!"
+                upload_id in expected_upload_ids
+            ), f"{upload_id=} is in progress but was not expected!"
 
 
 @pytest.mark.parametrize(

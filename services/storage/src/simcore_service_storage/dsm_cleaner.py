@@ -23,9 +23,9 @@ import socket
 from contextlib import suppress
 
 from aiohttp import web
-from aiopg.sa.engine import Engine
 
-from .constants import APP_CONFIG_KEY, APP_DB_ENGINE_KEY
+from .constants import APP_CONFIG_KEY, APP_DSM_KEY
+from .dsm import DataStorageManager
 from .settings import Settings
 
 logger = logging.getLogger(__name__)
@@ -34,10 +34,11 @@ logger = logging.getLogger(__name__)
 async def dsm_cleaner_task(app: web.Application) -> None:
     logger.info("starting dsm cleaner task...")
     cfg: Settings = app[APP_CONFIG_KEY]
-    db_engine: Engine = app[APP_DB_ENGINE_KEY]
+    dsm: DataStorageManager = app[APP_DSM_KEY]
     while await asyncio.sleep(cfg.STORAGE_CLEANER_INTERVAL_S, result=True):
         try:
-            ...
+            await dsm.clean_expired_uploads()
+
         except asyncio.CancelledError:
             logger.info("cancelled dsm cleaner task")
             raise
@@ -47,17 +48,20 @@ async def dsm_cleaner_task(app: web.Application) -> None:
             )
 
 
-async def setup_dsm_cleaner_task(app: web.Application):
-    task = asyncio.create_task(
-        dsm_cleaner_task(app),
-        name=f"dsm_cleaner_task_{socket.gethostname()}_{os.getpid()}",
-    )
-    logger.info("%s created", f"{task=}")
+def setup_dsm_cleaner_task(app: web.Application):
+    async def _setup(app: web.Application):
+        task = asyncio.create_task(
+            dsm_cleaner_task(app),
+            name=f"dsm_cleaner_task_{socket.gethostname()}_{os.getpid()}",
+        )
+        logger.info("%s created", f"{task=}")
 
-    yield
+        yield
 
-    logger.debug("stopping %s...", f"{task=}")
-    task.cancel()
-    with suppress(asyncio.CancelledError):
-        await task
-    logger.info("%s stopped.", f"{task=}")
+        logger.debug("stopping %s...", f"{task=}")
+        task.cancel()
+        with suppress(asyncio.CancelledError):
+            await task
+        logger.info("%s stopped.", f"{task=}")
+
+    app.cleanup_ctx.append(_setup)
