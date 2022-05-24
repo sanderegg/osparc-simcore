@@ -1,4 +1,5 @@
 import asyncio
+import datetime
 import logging
 import urllib.parse
 from contextlib import AsyncExitStack
@@ -116,7 +117,13 @@ class StorageS3Client:
             upload_id=upload_id, chunk_size=chunk_size, urls=upload_links
         )
 
-    async def list_ongoing_multipart_uploads(self, bucket: str, file_id: FileID = ""):
+    async def list_ongoing_multipart_uploads(
+        self,
+        bucket: str,
+        file_id: FileID = "",
+        *,
+        initiated_before: Optional[datetime.datetime] = None,
+    ) -> list[tuple[UploadID, FileID]]:
         """Returns all the currently ongoing multipart uploads
 
         NOTE: minio does not implement the same behaviour as AWS here and will
@@ -124,7 +131,23 @@ class StorageS3Client:
 
         :return: list of AWS uploads see [boto3 documentation](https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/s3.html#S3.Client.list_multipart_uploads)
         """
-        return await self.client.list_multipart_uploads(Bucket=bucket, Prefix=file_id)
+        response = await self.client.list_multipart_uploads(
+            Bucket=bucket,
+            Prefix=file_id,
+        )
+
+        def _filter_uploads(upload):
+            if initiated_before:
+                return upload["Initiated"] < initiated_before
+            return True
+
+        return [
+            (
+                upload["UploadId"],
+                upload["Key"],
+            )
+            for upload in filter(_filter_uploads, response["Uploads"])
+        ]
 
     async def abort_multipart_upload(
         self, bucket: str, file_id: FileID, upload_id: UploadID
