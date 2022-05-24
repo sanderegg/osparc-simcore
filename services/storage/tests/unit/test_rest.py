@@ -5,11 +5,9 @@
 
 import asyncio
 import json
-import os
 import sys
 from pathlib import Path
 from typing import Any
-from urllib.parse import quote
 
 import pytest
 import simcore_service_storage._meta
@@ -21,27 +19,12 @@ from simcore_service_storage.app_handlers import HealthCheck
 from simcore_service_storage.constants import SIMCORE_S3_ID
 from simcore_service_storage.dsm import APP_DSM_KEY, DataStorageManager
 from simcore_service_storage.models import FileMetaData
-from tests.helpers.utils import USER_ID, has_datcore_tokens
 from tests.helpers.utils_project import clone_project_data
 
 current_dir = Path(sys.argv[0] if __name__ == "__main__" else __file__).resolve().parent
 
 pytest_simcore_core_services_selection = ["postgres"]
 pytest_simcore_ops_services_selection = ["adminer"]
-
-
-def parse_db(dsm_mockup_db: dict[str, FileMetaData]):
-    id_name_map = {}
-    id_file_count = {}
-    for d in dsm_mockup_db.keys():
-        md = dsm_mockup_db[d]
-        if not md.user_id in id_name_map:
-            id_name_map[md.user_id] = md.user_name
-            id_file_count[md.user_id] = 1
-        else:
-            id_file_count[md.user_id] = id_file_count[md.user_id] + 1
-
-    return id_file_count, id_name_map
 
 
 async def test_health_check(client: TestClient):
@@ -59,131 +42,6 @@ async def test_health_check(client: TestClient):
     app_health = HealthCheck.parse_obj(data)
     assert app_health.name == simcore_service_storage._meta.app_name
     assert app_health.version == simcore_service_storage._meta.api_version
-
-
-async def test_locations(client: TestClient):
-    user_id = USER_ID
-
-    resp = await client.get("/v0/locations?user_id={}".format(user_id))
-
-    payload = await resp.json()
-    assert resp.status == 200, str(payload)
-
-    data, error = tuple(payload.get(k) for k in ("data", "error"))
-
-    _locs = 2 if has_datcore_tokens() else 1
-    assert len(data) == _locs
-    assert not error
-
-
-async def test_s3_files_metadata(
-    client: TestClient,
-    dsm_mockup_db: dict[str, FileMetaData],
-    dsm_fixture: DataStorageManager,
-):
-    id_file_count, _id_name_map = parse_db(dsm_mockup_db)
-    # NOTE: this is really a joke
-    dsm_fixture.has_project_db = False
-
-    # list files for every user
-    for _id in id_file_count:
-        resp = await client.get("/v0/locations/0/files/metadata?user_id={}".format(_id))
-        payload = await resp.json()
-        assert resp.status == 200, str(payload)
-
-        data, error = tuple(payload.get(k) for k in ("data", "error"))
-        assert not error
-        assert len(data) == id_file_count[_id]
-
-    # list files fileterd by uuid
-    for d in dsm_mockup_db.keys():
-        fmd = dsm_mockup_db[d]
-        assert fmd.project_id
-        uuid_filter = os.path.join(fmd.project_id, fmd.node_id)
-        resp = await client.get(
-            "/v0/locations/0/files/metadata?user_id={}&uuid_filter={}".format(
-                fmd.user_id, quote(uuid_filter, safe="")
-            )
-        )
-        payload = await resp.json()
-        assert resp.status == 200, str(payload)
-
-        data, error = tuple(payload.get(k) for k in ("data", "error"))
-        assert not error
-        for d in data:
-            assert os.path.join(d["project_id"], d["node_id"]) == uuid_filter
-
-
-async def test_s3_file_metadata(client, dsm_mockup_db):
-    # go through all files and get them
-    for d in dsm_mockup_db.keys():
-        fmd = dsm_mockup_db[d]
-        resp = await client.get(
-            "/v0/locations/0/files/{}/metadata?user_id={}".format(
-                quote(fmd.file_uuid, safe=""), fmd.user_id
-            )
-        )
-        payload = await resp.json()
-        assert resp.status == 200, str(payload)
-
-        data, error = tuple(payload.get(k) for k in ("data", "error"))
-        assert not error
-        assert data
-
-
-async def test_download_link(client, dsm_mockup_db):
-    for d in dsm_mockup_db.keys():
-        fmd = dsm_mockup_db[d]
-        resp = await client.get(
-            "/v0/locations/0/files/{}?user_id={}".format(
-                quote(fmd.file_uuid, safe=""), fmd.user_id
-            )
-        )
-        payload = await resp.json()
-        assert resp.status == 200, str(payload)
-
-        data, error = tuple(payload.get(k) for k in ("data", "error"))
-        assert not error
-        assert data
-
-
-async def test_upload_link(client, dsm_mockup_db):
-    for d in dsm_mockup_db.keys():
-        fmd = dsm_mockup_db[d]
-        resp = await client.put(
-            "/v0/locations/0/files/{}?user_id={}".format(
-                quote(fmd.file_uuid, safe=""), fmd.user_id
-            )
-        )
-        payload = await resp.json()
-        assert resp.status == 200, str(payload)
-
-        data, error = tuple(payload.get(k) for k in ("data", "error"))
-        assert not error
-        assert data
-
-
-async def test_delete_file(client, dsm_mockup_db):
-    id_file_count, _id_name_map = parse_db(dsm_mockup_db)
-
-    for d in dsm_mockup_db.keys():
-        fmd = dsm_mockup_db[d]
-        resp = await client.delete(
-            "/v0/locations/0/files/{}?user_id={}".format(
-                quote(fmd.file_uuid, safe=""), fmd.user_id
-            )
-        )
-        payload = await resp.json()
-        assert resp.status == 204, str(payload)
-
-    for _id in id_file_count:
-        resp = await client.get("/v0/locations/0/files/metadata?user_id={}".format(_id))
-        payload = await resp.json()
-        assert resp.status == 200, str(payload)
-
-        data, error = tuple(payload.get(k) for k in ("data", "error"))
-        assert not error
-        assert len(data) == 0
 
 
 async def test_action_check(client):
