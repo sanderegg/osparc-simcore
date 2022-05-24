@@ -10,9 +10,8 @@ from tenacity.before_sleep import before_sleep_log
 from tenacity.stop import stop_after_delay
 from tenacity.wait import wait_fixed
 
-from .constants import APP_CONFIG_KEY, APP_S3_KEY
+from .constants import APP_CONFIG_KEY, APP_S3_KEY, MINUTE, RETRY_WAIT_SECS
 from .s3_client import StorageS3Client
-from .utils import MINUTE, RETRY_WAIT_SECS
 
 log = logging.getLogger(__name__)
 

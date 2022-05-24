@@ -6,6 +6,7 @@ from aiopg.sa.connection import SAConnection
 from models_library.projects import ProjectID
 from models_library.projects_nodes import NodeID
 from models_library.users import UserID
+from models_library.utils.fastapi_encoders import jsonable_encoder
 from simcore_postgres_database.models.file_meta_data import file_meta_data
 from sqlalchemy import and_
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -15,29 +16,13 @@ from .models import FileID, FileMetaData, UploadID
 
 
 async def upsert_file_metadata_for_upload(
-    conn: SAConnection,
-    user_id: UserID,
-    bucket: str,
-    file_uuid: FileID,
-    **file_meta_data_kwargs,
+    conn: SAConnection, fmd: FileMetaData
 ) -> FileMetaData:
-    parts = file_uuid.split("/")
-    if len(parts) != 3:
-        raise ValueError(f"{file_uuid=} does not follow conventions")
-
-    fmd = FileMetaData()
-    fmd.simcore_from_uuid(
-        user_id=user_id,
-        file_uuid=file_uuid,
-        bucket_name=bucket,
-        **file_meta_data_kwargs,
-    )
-
     # NOTE: upsert file_meta_data, if the file already exists, we update the whole row
     # so we get the correct time stamps
-    insert_statement = pg_insert(file_meta_data).values(**vars(fmd))
+    insert_statement = pg_insert(file_meta_data).values(**jsonable_encoder(fmd))
     on_update_statement = insert_statement.on_conflict_do_update(
-        index_elements=[file_meta_data.c.file_uuid], set_=vars(fmd)
+        index_elements=[file_meta_data.c.file_uuid], set_=jsonable_encoder(fmd)
     )
     await conn.execute(on_update_statement)
 
@@ -49,7 +34,7 @@ async def get(conn: SAConnection, file_uuid: FileID) -> FileMetaData:
         query=sa.select([file_meta_data]).where(file_meta_data.c.file_uuid == file_uuid)
     )
     if row := await result.fetchone():
-        return FileMetaData(**dict(row))  # type: ignore
+        return FileMetaData.from_orm(row)
     raise FileMetaDataNotFoundError(file_uuid=file_uuid)
 
 
@@ -82,7 +67,7 @@ async def list_fmds(
 
     file_metadatas = []
     async for row in await conn.execute(stmt):
-        file_metadatas.append(FileMetaData(**dict(row)))
+        file_metadatas.append(FileMetaData.from_orm(row))
     return file_metadatas
 
 
