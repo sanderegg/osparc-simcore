@@ -14,10 +14,11 @@ from pathlib import Path
 from typing import Any, Callable, Dict, Iterator, List, Optional, Tuple
 
 import pytest
+from faker import Faker
 from models_library.projects import ProjectID
 from models_library.projects_nodes_io import NodeID
 from models_library.users import UserID
-from pydantic import ByteSize
+from pydantic import ByteSize, parse_obj_as
 from simcore_service_storage.access_layer import InvalidFileIdentifier
 from simcore_service_storage.constants import SIMCORE_S3_ID, SIMCORE_S3_STR
 from simcore_service_storage.dsm import DataStorageManager, LinkType
@@ -392,3 +393,31 @@ async def test_dsm_list_dataset_files_s3(
             # NOTE: found and files differ in these attributes
             #  ['project_name', 'node_name', 'file_id', 'raw_file_path', 'display_file_path']
             #  because these are added artificially in list_files
+
+
+async def test_clean_expired_uploads_cleans_dangling_multipart_uploads(
+    storage_s3_client: StorageS3Client,
+    storage_s3_bucket: str,
+    dsm_fixture: DataStorageManager,
+    faker: Faker,
+):
+    file_id = faker.file_name()
+    file_size = parse_obj_as(ByteSize, "100Mib")
+    upload_links = await storage_s3_client.create_multipart_upload_links(
+        storage_s3_bucket, file_id, file_size, expiration_secs=3600
+    )
+
+    # ensure we have now an upload id
+    all_ongoing_uploads = await storage_s3_client.list_ongoing_multipart_uploads(
+        storage_s3_bucket
+    )
+    assert len(all_ongoing_uploads) == 1
+    ongoing_upload_id, ongoing_file_id = all_ongoing_uploads[0]
+    assert upload_links.upload_id == ongoing_upload_id
+    assert ongoing_file_id == file_id
+
+    # now run the cleaner
+    await dsm_fixture.clean_expired_uploads()
+
+    # since there is no entry in the db, this upload shall be cleaned up
+    assert not await storage_s3_client.list_ongoing_multipart_uploads(storage_s3_bucket)
