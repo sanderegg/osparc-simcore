@@ -131,7 +131,7 @@ class FileMetaData(BaseModel):
             "node_id": parse_obj_as(NodeID, parts[1]) if is_uuid(parts[1]) else None,
             "file_id": file_uuid,
             "raw_file_path": file_uuid,
-            "display_file_path": f"not/yet/implemented",
+            "display_file_path": "not/yet/implemented",
             "created_at": now,
             "last_modified": now,
             "file_size": ByteSize(-1),
