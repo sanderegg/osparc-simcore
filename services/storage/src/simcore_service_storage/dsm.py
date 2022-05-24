@@ -15,7 +15,6 @@ from typing import Any, Final, Optional, Union
 import attr
 import botocore
 import botocore.exceptions
-import pytz
 import sqlalchemy as sa
 from aiohttp import web
 from aiopg.sa import Engine
@@ -1122,25 +1121,39 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
         )
 
         # if the database is 100% in sync it should not happen
-        latest_initiation_date = pytz.UTC.localize(
-            dt=now
-            - datetime.timedelta(
-                self.settings.STORAGE_DEFAULT_PRESIGNED_LINK_EXPIRATION_SECONDS
+        current_uploads = await get_s3_client(self.app).list_ongoing_multipart_uploads(
+            self.simcore_bucket_name
+        )
+        current_upload_ids = [u for u, _ in current_uploads]
+        async with self.engine.acquire() as conn:
+            list_of_valid_uploads = await db_file_meta_data.list_fmds(
+                conn, upload_ids=current_upload_ids
             )
-        )
-        expired_upload_ids = await get_s3_client(
-            self.app
-        ).list_ongoing_multipart_uploads(
-            self.simcore_bucket_name, initiated_before=latest_initiation_date
-        )
-        logger.debug(
-            "found following expired dangling uploads: %s", f"{expired_upload_ids=}"
-        )
+        if len(current_uploads) == len(list_of_valid_uploads):
+            # we are done
+            return
+
+        # there are dangling uploads that need aborting, find which ones
+        list_of_valid_upload_ids = [fmd.upload_id for fmd in list_of_valid_uploads]
+        list_of_invalid_uploads = [
+            (
+                upload_id,
+                file_id,
+            )
+            for upload_id, file_id in current_uploads
+            if upload_id not in list_of_valid_upload_ids
+        ]
+
         await asyncio.gather(
             *(
                 get_s3_client(self.app).abort_multipart_upload(
                     self.simcore_bucket_name, file_id, upload_id
                 )
-                for upload_id, file_id in expired_upload_ids
+                for upload_id, file_id in list_of_invalid_uploads
             )
+        )
+        logger.warning(
+            "There are dangling multipart uploads %s, which were aborted. "
+            "TIP: this indicates something wrong in how storage handles pending uploads",
+            f"{list_of_invalid_uploads}",
         )
