@@ -4,16 +4,20 @@
 # pylint: disable=too-many-arguments
 
 import asyncio
+import filecmp
 import urllib.parse
 from dataclasses import dataclass
 from pathlib import Path
 from time import perf_counter
 from typing import AsyncIterator, Awaitable, Callable, Optional, Type
 
+import botocore
+import botocore.exceptions
 import pytest
-from aiohttp import web
+from aiohttp import ClientSession, web
 from aiohttp.test_utils import TestClient
 from aiopg.sa import Engine
+from faker import Faker
 from models_library.api_schemas_storage import FileUploadSchema
 from models_library.users import UserID
 from models_library.utils.fastapi_encoders import jsonable_encoder
@@ -502,27 +506,19 @@ async def test_upload_same_file_uuid_aborts_previous_upload(
     )
 
 
-@pytest.mark.parametrize(
-    "file_size",
-    [
-        pytest.param(parse_obj_as(ByteSize, "1Mib"), id="7Mib"),
-        pytest.param(parse_obj_as(ByteSize, "500Mib"), id="500Mib"),
-        # pytest.param(parse_obj_as(ByteSize, "5Gib"), id="5Gib"),
-        # pytest.param(parse_obj_as(ByteSize, "7Gib"), id="7Gib"),
-    ],
-)
-async def test_upload_real_file(
+@pytest.fixture
+async def upload_file(
     aiopg_engine: Engine,
-    client: TestClient,
     storage_s3_client: StorageS3Client,
     storage_s3_bucket: str,
+    client: TestClient,
+    create_upload_file_link: Callable[..., Awaitable[FileUploadSchema]],
+    create_file_of_size: Callable[[ByteSize], Path],
     user_id: UserID,
     location_id: int,
     file_uuid: str,
     file_size: ByteSize,
-    create_upload_file_link: Callable[..., Awaitable[FileUploadSchema]],
-    create_file_of_size: Callable[[ByteSize], Path],
-):
+) -> Path:
     assert client.app
     # create a file
     file = create_file_of_size(file_size)
@@ -590,3 +586,104 @@ async def test_upload_real_file(
     )
     assert response
     assert response["ContentLength"] == file_size
+    return file
+
+
+@pytest.mark.parametrize(
+    "file_size",
+    [
+        pytest.param(parse_obj_as(ByteSize, "1Mib"), id="7Mib"),
+        pytest.param(parse_obj_as(ByteSize, "500Mib"), id="500Mib"),
+        # pytest.param(parse_obj_as(ByteSize, "5Gib"), id="5Gib"),
+        # pytest.param(parse_obj_as(ByteSize, "7Gib"), id="7Gib"),
+    ],
+)
+async def test_upload_real_file(upload_file: Path):
+    ...
+
+
+@pytest.mark.parametrize(
+    "file_size",
+    [
+        pytest.param(parse_obj_as(ByteSize, "1Mib"), id="7Mib"),
+        pytest.param(parse_obj_as(ByteSize, "500Mib"), id="500Mib"),
+    ],
+)
+async def test_download_file(
+    client: TestClient,
+    upload_file: Path,
+    location_id: int,
+    file_uuid: FileID,
+    user_id: UserID,
+    tmp_path: Path,
+    faker: Faker,
+):
+    assert client.app
+
+    download_url = (
+        client.app.router["download_file"]
+        .url_for(
+            location_id=f"{location_id}", file_id=urllib.parse.quote(file_uuid, safe="")
+        )
+        .with_query(user_id=user_id)
+    )
+    response = await client.get(f"{download_url}")
+    data, error = await assert_status(response, web.HTTPOk)
+    assert not error
+    assert data
+    assert "link" in data
+    # now download the link from S3
+    dest_file = tmp_path / faker.file_name()
+    async with ClientSession() as session:
+        response = await session.get(data["link"])
+        response.raise_for_status()
+        with dest_file.open("wb") as fp:
+            fp.write(await response.read())
+    assert dest_file.exists()
+    # compare files
+    assert filecmp.cmp(upload_file, dest_file)
+
+
+@pytest.mark.parametrize(
+    "file_size",
+    [
+        pytest.param(parse_obj_as(ByteSize, "1Mib"), id="7Mib"),
+        pytest.param(parse_obj_as(ByteSize, "500Mib"), id="500Mib"),
+    ],
+)
+async def test_delete_file(
+    aiopg_engine: Engine,
+    storage_s3_client: StorageS3Client,
+    storage_s3_bucket: str,
+    client: TestClient,
+    upload_file: Path,
+    location_id: int,
+    file_uuid: FileID,
+    user_id: UserID,
+):
+    assert client.app
+
+    delete_url = (
+        client.app.router["delete_file"]
+        .url_for(
+            location_id=f"{location_id}", file_id=urllib.parse.quote(file_uuid, safe="")
+        )
+        .with_query(user_id=user_id)
+    )
+    response = await client.delete(f"{delete_url}")
+    await assert_status(response, web.HTTPNoContent)
+
+    # check the entry in db is removed
+    await assert_file_meta_data_in_db(
+        aiopg_engine,
+        file_uuid=file_uuid,
+        expected_entry_exists=False,
+        expected_file_size=None,
+        expected_upload_id=None,
+        expected_upload_expiration_date=None,
+    )
+    # check the file is gone from S3
+    with pytest.raises(botocore.exceptions.ClientError):
+        await storage_s3_client.client.head_object(
+            Bucket=storage_s3_bucket, Key=file_uuid
+        )
