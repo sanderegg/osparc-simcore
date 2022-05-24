@@ -15,7 +15,6 @@ import attr
 import botocore
 import botocore.exceptions
 import sqlalchemy as sa
-from aiobotocore.session import AioSession, get_session
 from aiohttp import web
 from aiopg.sa import Engine
 from aiopg.sa.result import ResultProxy, RowProxy
@@ -139,7 +138,6 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
     has_project_db: bool
     app: web.Application
     settings: Settings
-    session: AioSession = field(default_factory=get_session)
     datcore_tokens: dict[UserID, DatCoreApiToken] = field(default_factory=dict)
 
     def _get_datcore_tokens(
