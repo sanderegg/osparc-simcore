@@ -48,7 +48,7 @@ async def dsm_cleaner_task(app: web.Application) -> None:
             )
 
 
-def setup_dsm_cleaner_task(app: web.Application):
+def setup_dsm_cleaner(app: web.Application):
     async def _setup(app: web.Application):
         task = asyncio.create_task(
             dsm_cleaner_task(app),
