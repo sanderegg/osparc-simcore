@@ -28,12 +28,10 @@ from simcore_service_storage.s3_client import (
     UploadedPart,
     UploadID,
 )
-from tenacity import (
-    AsyncRetrying,
-    retry_if_exception_type,
-    stop_after_delay,
-    wait_fixed,
-)
+from tenacity._asyncio import AsyncRetrying
+from tenacity.retry import retry_if_exception_type
+from tenacity.stop import stop_after_delay
+from tenacity.wait import wait_fixed
 from tests.helpers.file_utils import upload_file_to_presigned_link
 from yarl import URL
 
@@ -151,17 +149,17 @@ async def assert_multipart_uploads_in_progress(
     expected_upload_ids: Optional[list[str]],
 ):
     """if None is passed, then it checks that no uploads are in progress"""
-    list_upload_ids: list[
-        UploadID
+    list_uploads: list[
+        tuple[UploadID, FileID]
     ] = await storage_s3_client.list_ongoing_multipart_uploads(
         bucket=storage_s3_bucket, file_id=file_id
     )
     if expected_upload_ids is None:
         assert (
-            not list_upload_ids
-        ), f"expected NO multipart uploads in progress, got {list_upload_ids}"
+            not list_uploads
+        ), f"expected NO multipart uploads in progress, got {list_uploads}"
     else:
-        for upload_id in list_upload_ids:
+        for upload_id, _ in list_uploads:
             assert (
                 upload_id in expected_upload_ids
             ), f"{upload_id=} is in progress but was not expected!"
