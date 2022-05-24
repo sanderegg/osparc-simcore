@@ -62,13 +62,16 @@ async def get_upload_id(conn: SAConnection, file_uuid: FileID) -> Optional[Uploa
 
 async def list_fmds(
     conn: SAConnection,
+    *,
     user_id: Optional[UserID] = None,
     project_id: Optional[ProjectID] = None,
+    upload_ids: Optional[list[UploadID]] = None,
     expired_after: Optional[datetime.datetime] = None,
 ) -> list[FileMetaData]:
     stmt = sa.select([file_meta_data]).where(
         ((file_meta_data.c.user_id == f"{user_id}") if user_id else True)
         & ((file_meta_data.c.project_id == f"{project_id}") if project_id else True)
+        & ((file_meta_data.c.upload_id.in_(upload_ids)) if upload_ids else True)
         & (
             (file_meta_data.c.upload_expires_at < expired_after)
             if expired_after

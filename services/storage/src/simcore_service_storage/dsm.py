@@ -1,3 +1,4 @@
+import asyncio
 import dataclasses
 import datetime
 import logging
@@ -1097,3 +1098,45 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
                 )
 
         return {"removed": removed}
+
+    async def clean_expired_uploads(self) -> None:
+        now = datetime.datetime.utcnow()
+        async with self.engine.acquire() as conn:
+            list_of_expired_uploads = await db_file_meta_data.list_fmds(
+                conn, expired_after=now
+            )
+        logger.debug(
+            "found following pending uploads: [%s]",
+            [fmd.file_id for fmd in list_of_expired_uploads],
+        )
+        await asyncio.gather(
+            *(
+                self.delete_file(fmd.user_id, fmd.location, fmd.file_uuid)
+                for fmd in list_of_expired_uploads
+            )
+        )
+        logger.info(
+            "pending uploads of [%s] deleted",
+            [fmd.file_id for fmd in list_of_expired_uploads],
+        )
+
+        # if the database is 100% in sync it should not happen
+        latest_initiation_date = now - datetime.timedelta(
+            self.settings.STORAGE_DEFAULT_PRESIGNED_LINK_EXPIRATION_SECONDS
+        )
+        expired_upload_ids = await get_s3_client(
+            self.app
+        ).list_ongoing_multipart_uploads(
+            self.simcore_bucket_name, initiated_before=latest_initiation_date
+        )
+        logger.debug(
+            "found following expired dangling uploads: %s", f"{expired_upload_ids=}"
+        )
+        await asyncio.gather(
+            *(
+                get_s3_client(self.app).abort_multipart_upload(
+                    self.simcore_bucket_name, file_id, upload_id
+                )
+                for file_id, upload_id in expired_upload_ids
+            )
+        )
