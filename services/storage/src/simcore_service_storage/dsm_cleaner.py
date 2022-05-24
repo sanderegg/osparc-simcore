@@ -35,6 +35,7 @@ async def dsm_cleaner_task(app: web.Application) -> None:
     logger.info("starting dsm cleaner task...")
     cfg: Settings = app[APP_CONFIG_KEY]
     dsm: DataStorageManager = app[APP_DSM_KEY]
+    assert cfg.STORAGE_CLEANER_INTERVAL_S  # nosec
     while await asyncio.sleep(cfg.STORAGE_CLEANER_INTERVAL_S, result=True):
         try:
             await dsm.clean_expired_uploads()
