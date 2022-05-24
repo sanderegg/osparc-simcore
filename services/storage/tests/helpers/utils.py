@@ -25,7 +25,6 @@ PASS = "admin"
 ACCESS_KEY = "12345678"
 SECRET_KEY = "12345678"
 
-USER_ID = "0"
 
 PG_TABLES_NEEDED_FOR_STORAGE = [
     user_to_groups,
@@ -108,3 +107,17 @@ def fill_tables_from_csv_files(url):
     finally:
         if engine is not None:
             engine.dispose()
+
+
+def parse_db(dsm_mockup_db: dict[str, FileMetaData]):
+    id_name_map = {}
+    id_file_count = {}
+    for d in dsm_mockup_db.keys():
+        md = dsm_mockup_db[d]
+        if not md.user_id in id_name_map:
+            id_name_map[md.user_id] = md.user_name
+            id_file_count[md.user_id] = 1
+        else:
+            id_file_count[md.user_id] = id_file_count[md.user_id] + 1
+
+    return id_file_count, id_name_map

@@ -324,6 +324,7 @@ async def download_file(request: web.Request):
 
     assert params["location_id"]  # nosec
     assert params["file_id"]  # nosec
+    params["file_id"] = urllib.parse.unquote(params["file_id"])
     assert query["user_id"]  # nosec
     link_type = query.get("link_type", "presigned")
 
