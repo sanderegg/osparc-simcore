@@ -1,10 +1,7 @@
-""" Database models
-
-"""
 import datetime
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional, Union
+from typing import Optional
 from uuid import UUID
 
 import attr
@@ -20,26 +17,11 @@ from simcore_postgres_database.storage_models import (
     users,
 )
 
-from .constants import DATCORE_STR, SIMCORE_S3_ID, SIMCORE_S3_STR
+from .constants import FILE_ID_RE, SIMCORE_S3_ID, SIMCORE_S3_STR
 
-_LOCATION_ID_TO_TAG_MAP = {0: SIMCORE_S3_STR, 1: DATCORE_STR}
-UNDEFINED_LOCATION_TAG: str = "undefined"
-
-# NOTE: SAFE S3 characters are found here [https://docs.aws.amazon.com/AmazonS3/latest/userguide/object-keys.html]
-_SAFE_S3_FILE_NAME_RE = r"[\w!\-_\.\*\'\(\)]"
-_FILE_ID_RE = rf"^({_SAFE_S3_FILE_NAME_RE}+?)\/({_SAFE_S3_FILE_NAME_RE}+?)\/({_SAFE_S3_FILE_NAME_RE}+?)$"
-
-FileID = constr(regex=_FILE_ID_RE)
+FileID = constr(regex=FILE_ID_RE)
 UploadID = str
 ETag = str
-
-
-def get_location_from_id(location_id: Union[str, int]) -> str:
-    try:
-        loc_id = int(location_id)
-        return _LOCATION_ID_TO_TAG_MAP[loc_id]
-    except (ValueError, KeyError):
-        return UNDEFINED_LOCATION_TAG
 
 
 @dataclass

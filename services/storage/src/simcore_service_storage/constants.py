@@ -5,6 +5,8 @@ from . import _meta
 RETRY_WAIT_SECS = 2
 RETRY_COUNT = 20
 CONNECT_TIMEOUT_SECS = 30
+MAX_CHUNK_SIZE = 1024
+MINUTE = 60
 
 ## VERSION-----------------------------
 service_version = _meta.version
@@ -16,12 +18,19 @@ DEFAULT_CONFIG = "docker-prod-config.yaml"
 APP_CONFIG_KEY = application_keys.APP_CONFIG_KEY  # app-storage-key for config object
 RSC_CONFIG_DIR_KEY = "data"  # resource folder
 
-# DSM specific constants
+# DSM locations
 SIMCORE_S3_ID = 0
 SIMCORE_S3_STR = "simcore.s3"
 
 DATCORE_ID = 1
 DATCORE_STR = "datcore"
+
+LOCATION_ID_TO_TAG_MAP = {0: SIMCORE_S3_STR, 1: DATCORE_STR}
+UNDEFINED_LOCATION_TAG: str = "undefined"
+
+# NOTE: SAFE S3 characters are found here [https://docs.aws.amazon.com/AmazonS3/latest/userguide/object-keys.html]
+_SAFE_S3_FILE_NAME_RE = r"[\w!\-_\.\*\'\(\)]"
+FILE_ID_RE = rf"^({_SAFE_S3_FILE_NAME_RE}+?)\/({_SAFE_S3_FILE_NAME_RE}+?)\/({_SAFE_S3_FILE_NAME_RE}+?)$"
 
 
 # REST API ----------------------------
