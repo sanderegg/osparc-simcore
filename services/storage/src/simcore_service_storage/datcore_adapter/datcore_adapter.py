@@ -167,7 +167,7 @@ async def list_all_files_metadatas_in_dataset(
                 created_at=d["created_at"],
                 last_modified=d["last_modified_at"],
                 display_file_path=d["name"],
-            ),  # type: ignore
+            ),
         )
         for d in all_files
     ]

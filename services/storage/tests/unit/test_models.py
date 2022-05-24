@@ -2,6 +2,8 @@ import uuid
 from pathlib import Path
 
 import pytest
+from models_library.projects import ProjectID
+from models_library.projects_nodes_io import NodeID
 from pydantic import ValidationError, parse_obj_as
 from simcore_service_storage.constants import SIMCORE_S3_ID, SIMCORE_S3_STR
 from simcore_service_storage.models import FileID, FileMetaData
@@ -32,9 +34,10 @@ def test_file_id(file_id: str):
 
 
 def test_fmd_build():
-    file_uuid = str(Path("api") / Path("abcd") / Path("xx.dat"))
-    fmd = FileMetaData()
-    fmd.simcore_from_uuid(user_id=12, file_uuid=file_uuid, bucket_name="test-bucket")
+    file_uuid = FileID(Path("api") / Path("abcd") / Path("xx.dat"))
+    fmd = FileMetaData.from_simcore_node(
+        user_id=12, file_uuid=file_uuid, bucket_name="test-bucket"
+    )
 
     assert not fmd.node_id
     assert not fmd.project_id
@@ -46,13 +49,29 @@ def test_fmd_build():
     assert fmd.bucket_name == "test-bucket"
 
     file_uuid = f"{uuid.uuid4()}/{uuid.uuid4()}/xx.dat"
-    fmd.simcore_from_uuid(user_id=12, file_uuid=file_uuid, bucket_name="test-bucket")
+    fmd = FileMetaData.from_simcore_node(
+        user_id=12, file_uuid=file_uuid, bucket_name="test-bucket"
+    )
 
-    assert fmd.node_id == file_uuid.split("/")[1]
-    assert fmd.project_id == file_uuid.split("/")[0]
+    assert fmd.node_id == NodeID(file_uuid.split("/")[1])
+    assert fmd.project_id == ProjectID(file_uuid.split("/")[0])
     assert fmd.file_name == "xx.dat"
     assert fmd.object_name == file_uuid
     assert fmd.file_uuid == file_uuid
     assert fmd.location == SIMCORE_S3_STR
     assert fmd.location_id == SIMCORE_S3_ID
     assert fmd.bucket_name == "test-bucket"
+
+
+def test_fmd_raises_if_invalid_location():
+    file_uuid = FileID(Path("api") / Path("abcd") / Path("xx.dat"))
+    fmd = FileMetaData.from_simcore_node(
+        user_id=12, file_uuid=file_uuid, bucket_name="test-bucket"
+    )
+    with pytest.raises(ValidationError):
+        FileMetaData.parse_obj(fmd.copy(update={"location_id": 456}).dict())
+
+    with pytest.raises(ValidationError):
+        FileMetaData.parse_obj(
+            fmd.copy(update={"location": "some place deep in space"}).dict()
+        )

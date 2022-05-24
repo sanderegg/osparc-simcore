@@ -54,11 +54,11 @@ async def download_to_file_or_raise(
 
 def to_meta_data_extended(row: Union[ResultProxy, RowProxy]) -> FileMetaDataEx:
     assert row  # nosec
-    meta = FileMetaData(**dict(row))  # type: ignore
+    meta = FileMetaData.from_orm(row)
     meta_extended = FileMetaDataEx(
         fmd=meta,
         parent_id=str(Path(meta.object_name).parent),
-    )  # type: ignore
+    )
     return meta_extended
 
 

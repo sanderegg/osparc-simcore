@@ -40,18 +40,18 @@
 import logging
 from dataclasses import dataclass
 from typing import Optional
-from uuid import UUID
 
 import sqlalchemy as sa
 from aiopg.sa.connection import SAConnection
 from aiopg.sa.result import ResultProxy, RowProxy
+from models_library.projects import ProjectID
+from models_library.users import GroupID, UserID
 from simcore_postgres_database.storage_models import file_meta_data, user_to_groups
 from sqlalchemy.sql import text
 
+from .models import FileID
+
 logger = logging.getLogger(__name__)
-
-
-ProjectID = str
 
 
 @dataclass
@@ -89,7 +89,7 @@ class InvalidFileIdentifier(AccessLayerError):
         return "Error in {}: {} [{}]".format(self.identifier, self.reason, self.details)
 
 
-async def _get_user_groups_ids(conn: SAConnection, user_id: int) -> list[int]:
+async def _get_user_groups_ids(conn: SAConnection, user_id: UserID) -> list[int]:
     stmt = sa.select([user_to_groups.c.gid]).where(user_to_groups.c.uid == user_id)
     rows = await (await conn.execute(stmt)).fetchall()
     user_group_ids = [g.gid for g in rows]
@@ -97,7 +97,7 @@ async def _get_user_groups_ids(conn: SAConnection, user_id: int) -> list[int]:
 
 
 def _aggregate_access_rights(
-    access_rights: dict[str, dict], group_ids: list[int]
+    access_rights: dict[str, dict], group_ids: list[GroupID]
 ) -> AccessRights:
     try:
         prj_access = {"read": False, "write": False, "delete": False}
@@ -117,7 +117,7 @@ def _aggregate_access_rights(
 
 
 async def list_projects_access_rights(
-    conn: SAConnection, user_id: int
+    conn: SAConnection, user_id: UserID
 ) -> dict[ProjectID, AccessRights]:
     """
     Returns access-rights of user (user_id) over all OWNED or SHARED projects
@@ -142,7 +142,7 @@ async def list_projects_access_rights(
 
     async for row in conn.execute(smt):
         assert isinstance(row.access_rights, dict)
-        assert isinstance(row.uuid, ProjectID)
+        assert isinstance(row.uuid, str)
 
         if row.access_rights:
             # TODO: access_rights should be direclty filtered from result in stm instead calling again user_group_ids
@@ -159,7 +159,7 @@ async def list_projects_access_rights(
 
 
 async def get_project_access_rights(
-    conn: SAConnection, user_id: int, project_id: ProjectID
+    conn: SAConnection, user_id: UserID, project_id: ProjectID
 ) -> AccessRights:
     """
     Returns access-rights of user (user_id) over a project resource (project_id)
@@ -201,7 +201,7 @@ async def get_project_access_rights(
 
 
 async def get_file_access_rights(
-    conn: SAConnection, user_id: int, file_uuid: str
+    conn: SAConnection, user_id: UserID, file_uuid: FileID
 ) -> AccessRights:
     """
     Returns access-rights of user (user_id) over data file resource (file_uuid)
@@ -213,7 +213,7 @@ async def get_file_access_rights(
     # 1. file registered in file_meta_data table
     #
     stmt = sa.select([file_meta_data.c.project_id, file_meta_data.c.user_id]).where(
-        file_meta_data.c.file_uuid == file_uuid
+        file_meta_data.c.file_uuid == f"{file_uuid}"
     )
     result: ResultProxy = await conn.execute(stmt)
     row: Optional[RowProxy] = await result.first()
@@ -257,9 +257,8 @@ async def get_file_access_rights(
                 return AccessRights.all()
 
             # otherwise assert 'parent' string corresponds to a valid UUID
-            UUID(parent)  # raises ValueError
             access_rights = await get_project_access_rights(
-                conn, user_id, project_id=parent
+                conn, user_id, project_id=ProjectID(parent)
             )
             if not access_rights:
                 logger.warning(
@@ -283,5 +282,5 @@ async def get_file_access_rights(
 
 async def get_readable_project_ids(conn: SAConnection, user_id: int) -> list[ProjectID]:
     """Returns a list of projects where user has granted read-access"""
-    projects_access_rights = await list_projects_access_rights(conn, int(user_id))
+    projects_access_rights = await list_projects_access_rights(conn, user_id)
     return [pid for pid, access in projects_access_rights.items() if access.read]

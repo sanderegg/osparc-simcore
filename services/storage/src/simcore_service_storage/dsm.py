@@ -54,13 +54,17 @@ from .models import (
     FileMetaDataEx,
     UploadLinks,
     file_meta_data,
-    get_location_from_id,
     projects,
 )
 from .s3 import get_s3_client
 from .s3_client import FileID, UploadedPart
 from .settings import Settings
-from .utils import download_to_file_or_raise, is_file_entry_valid, to_meta_data_extended
+from .utils import (
+    download_to_file_or_raise,
+    get_location_from_id,
+    is_file_entry_valid,
+    to_meta_data_extended,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -332,9 +336,11 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
                 try:
                     async with self.engine.acquire() as conn, conn.begin():
                         readable_projects_ids = await get_readable_project_ids(
-                            conn, int(user_id)
+                            conn, user_id
                         )
-                        has_read_access = projects.c.uuid.in_(readable_projects_ids)
+                        has_read_access = projects.c.uuid.in_(
+                            [f"{pid}" for pid in readable_projects_ids]
+                        )
 
                         # FIXME: this DOES NOT read from file-metadata table!!!
                         query = sa.select([projects.c.uuid, projects.c.name]).where(
@@ -483,7 +489,7 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
         """
         async with self.engine.acquire() as conn:
             can: Optional[AccessRights] = await get_file_access_rights(
-                conn, int(user_id), file_uuid
+                conn, user_id, file_uuid
             )
             if not can.write:
                 raise web.HTTPForbidden(
@@ -492,6 +498,12 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
             # in case something bad happen this needs to be rolled back
             upload_expiration_date = datetime.datetime.utcnow() + datetime.timedelta(
                 seconds=self.settings.STORAGE_DEFAULT_PRESIGNED_LINK_EXPIRATION_SECONDS
+            )
+            fmd = FileMetaData.from_simcore_node(
+                user_id=user_id,
+                file_uuid=file_uuid,
+                bucket_name=self.simcore_bucket_name,
+                upload_expires_at=upload_expiration_date,
             )
             async with conn.begin():
                 # NOTE: if this gets called successively with the same file_uuid, and
@@ -503,13 +515,7 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
                         file_id=file_uuid,
                         upload_id=upload_id,
                     )
-                await db_file_meta_data.upsert_file_metadata_for_upload(
-                    conn,
-                    user_id,
-                    self.simcore_bucket_name,
-                    file_uuid,
-                    upload_expires_at=upload_expiration_date,
-                )
+                await db_file_meta_data.upsert_file_metadata_for_upload(conn, fmd)
                 if (
                     link_type == LinkType.PRESIGNED
                     and file_size_bytes < _MULTIPART_UPLOADS_MIN_TOTAL_SIZE
@@ -528,6 +534,8 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
 
                 if link_type == LinkType.PRESIGNED:
                     assert file_size_bytes  # nosec
+
+                    # FIXME: a lock is needed here, else the dsm cleaner could remove that upload
                     multipart_presigned_links = await get_s3_client(
                         self.app
                     ).create_multipart_upload_links(
@@ -537,14 +545,8 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
                         expiration_secs=self.settings.STORAGE_DEFAULT_PRESIGNED_LINK_EXPIRATION_SECONDS,
                     )
                     # update the database so we keep the upload id
-                    await db_file_meta_data.upsert_file_metadata_for_upload(
-                        conn,
-                        user_id,
-                        self.simcore_bucket_name,
-                        file_uuid,
-                        upload_id=multipart_presigned_links.upload_id,
-                        upload_expires_at=upload_expiration_date,
-                    )
+                    fmd.upload_id = multipart_presigned_links.upload_id
+                    await db_file_meta_data.upsert_file_metadata_for_upload(conn, fmd)
                     return UploadLinks(
                         multipart_presigned_links.urls,
                         multipart_presigned_links.chunk_size,
@@ -839,8 +841,7 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
             for item in response["Contents"]:
                 if "Key" not in item:
                     continue
-                fmd = FileMetaData()
-                fmd.simcore_from_uuid(
+                fmd = FileMetaData.from_simcore_node(
                     user_id=user_id,
                     file_uuid=item["Key"],
                     bucket_name=self.simcore_bucket_name,
@@ -935,7 +936,7 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
         async with self.engine.acquire() as conn, conn.begin():
             # access layer
             can: Optional[AccessRights] = await get_project_access_rights(
-                conn, user_id, f"{project_id}"
+                conn, user_id, project_id
             )
             if not can.delete:
                 raise web.HTTPForbidden(
@@ -962,10 +963,12 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
 
         async with self.engine.acquire() as conn, conn.begin():
             # access layer
-            can_read_projects_ids = await get_readable_project_ids(conn, int(user_id))
+            can_read_projects_ids = await get_readable_project_ids(conn, user_id)
             has_read_access = (
-                file_meta_data.c.user_id == str(user_id)
-            ) | file_meta_data.c.project_id.in_(can_read_projects_ids)
+                file_meta_data.c.user_id == f"{user_id}"
+            ) | file_meta_data.c.project_id.in_(
+                [f"{pid}" for pid in can_read_projects_ids]
+            )
 
             stmt = sa.select([file_meta_data]).where(
                 file_meta_data.c.file_uuid.startswith(prefix) & has_read_access

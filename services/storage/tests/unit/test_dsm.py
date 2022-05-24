@@ -12,13 +12,13 @@ import filecmp
 import os
 import urllib.request
 from pathlib import Path
-from typing import Any, Callable, Dict, Iterator, List, Optional, Tuple
+from typing import Any, Awaitable, Callable, Iterator, Optional
+from uuid import uuid4
 
 import pytest
 from aiopg.sa.engine import Engine
 from faker import Faker
 from models_library.projects import ProjectID
-from models_library.projects_nodes_io import NodeID
 from models_library.users import UserID
 from pydantic import ByteSize, parse_obj_as
 from simcore_service_storage import db_file_meta_data
@@ -32,10 +32,64 @@ from simcore_service_storage.models import (
     FileMetaDataEx,
     file_meta_data,
 )
-from simcore_service_storage.s3_client import StorageS3Client
+from simcore_service_storage.s3_client import StorageS3Client, UploadedPart
 
 pytest_simcore_core_services_selection = ["postgres"]
 pytest_simcore_ops_services_selection = ["adminer"]
+
+
+@pytest.fixture
+def upload_file() -> Callable[..., Awaitable[FileMetaData]]:
+    async def _uploader(
+        dsm: DataStorageManager, file_metadata: FileMetaData, file_path: Path
+    ) -> FileMetaData:
+        upload_links = await dsm.create_upload_links(
+            file_metadata.user_id,
+            file_metadata.file_uuid,
+            link_type=LinkType.PRESIGNED,
+            file_size_bytes=ByteSize(0),
+        )
+        assert file_path.exists()
+        assert upload_links
+        assert upload_links.urls
+        assert len(upload_links.urls) == 1
+        with file_path.open("rb") as fp:
+            d = fp.read()
+            req = urllib.request.Request(
+                f"{upload_links.urls[0]}", data=d, method="PUT"
+            )
+            with urllib.request.urlopen(req) as _f:
+                entity_tag = _f.headers.get("ETag")
+        assert entity_tag is not None
+        file_metadata.entity_tag = entity_tag.strip('"')
+
+        await dsm.complete_upload(
+            file_metadata.file_uuid,
+            file_metadata.user_id,
+            [UploadedPart(number=1, e_tag=entity_tag)],
+        )
+        return file_metadata
+
+    return _uploader
+
+
+@pytest.fixture
+async def dsm_mockup_complete_db(
+    storage_dsm: DataStorageManager,
+    upload_file: Callable,
+    mock_files_factory: Callable[[int], list[Path]],
+    create_file_meta_for_s3: Callable[..., FileMetaData],
+    cleanup_user_projects_file_metadata: None,
+) -> tuple[FileMetaData, FileMetaData]:
+
+    tmp_file = mock_files_factory(2)
+    fmd: FileMetaData = create_file_meta_for_s3(tmp_file[0])
+    fmd = await upload_file(storage_dsm, fmd, tmp_file[0])
+
+    fmd2: FileMetaData = create_file_meta_for_s3(tmp_file[1])
+    fmd2 = await upload_file(storage_dsm, fmd2, tmp_file[1])
+
+    return (fmd, fmd2)
 
 
 async def test_listing_and_deleting_files(
@@ -85,10 +139,10 @@ async def test_listing_and_deleting_files(
     # among bobs bio files, filter by project/node, take first one
 
     uuid_filter = os.path.join(
-        bobs_biostromy_files[0].project_id, bobs_biostromy_files[0].node_id
+        bobs_biostromy_files[0].project_name, bobs_biostromy_files[0].node_name
     )
     filtered_data = await dsm.list_files(
-        user_id=bob_id, location=SIMCORE_S3_STR, uuid_filter=str(uuid_filter)
+        user_id=bob_id, location=SIMCORE_S3_STR, uuid_filter=f"{uuid_filter}"
     )
     assert filtered_data[0].fmd == bobs_biostromy_files[0]
 
@@ -110,15 +164,17 @@ async def test_listing_and_deleting_files(
 
 @pytest.fixture
 def create_file_meta_for_s3(
-    storage_s3_bucket: str, cleanup_user_projects_file_metadata: None, user_id: UserID
+    storage_s3_bucket: str,
+    cleanup_user_projects_file_metadata: None,
+    user_id: UserID,
+    project_id: ProjectID,
 ) -> Iterator[Callable[..., FileMetaData]]:
     def _creator(tmp_file: Path) -> FileMetaData:
         # create file and upload
         filename = tmp_file.name
-        project_id = "api"  # "357879cc-f65d-48b2-ad6c-074e2b9aa1c7"
         project_name = "battlestar"
         node_name = "galactica"
-        node_id = "b423b654-686d-4157-b74b-08fa9d90b36e"
+        node_id = uuid4()
         file_name = filename
         file_uuid = os.path.join(str(project_id), str(node_id), str(file_name))
         display_name = os.path.join(str(project_name), str(node_name), str(file_name))
@@ -146,44 +202,22 @@ def create_file_meta_for_s3(
             "file_size": file_size,
         }
 
-        fmd = FileMetaData(**d)
+        fmd = FileMetaData.parse_obj(d)
 
         return fmd
 
     yield _creator
 
 
-async def _upload_file(
-    dsm: DataStorageManager, file_metadata: FileMetaData, file_path: Path
-) -> FileMetaData:
-    upload_links = await dsm.create_upload_links(
-        file_metadata.user_id,
-        file_metadata.file_uuid,
-        link_type=LinkType.PRESIGNED,
-        file_size_bytes=ByteSize(0),
-    )
-    assert file_path.exists()
-    assert upload_links
-    assert upload_links.urls
-    assert len(upload_links.urls) == 1
-    with file_path.open("rb") as fp:
-        d = fp.read()
-        req = urllib.request.Request(f"{upload_links.urls[0]}", data=d, method="PUT")
-        with urllib.request.urlopen(req) as _f:
-            entity_tag = _f.headers.get("ETag")
-    assert entity_tag is not None
-    file_metadata.entity_tag = entity_tag.strip('"')
-    return file_metadata
-
-
 async def test_update_metadata_from_storage(
     mock_files_factory: Callable[[int], list[Path]],
     storage_dsm: DataStorageManager,
     create_file_meta_for_s3: Callable,
+    upload_file: Callable,
 ):
     tmp_file = mock_files_factory(1)[0]
     fmd: FileMetaData = create_file_meta_for_s3(tmp_file)
-    fmd = await _upload_file(storage_dsm, fmd, Path(tmp_file))
+    fmd = await upload_file(storage_dsm, fmd, Path(tmp_file))
 
     assert (
         await storage_dsm.try_update_database_from_storage(  # pylint: disable=protected-access
@@ -220,6 +254,7 @@ async def test_links_s3(
     mock_files_factory: Callable[[int], list[Path]],
     storage_dsm: DataStorageManager,
     create_file_meta_for_s3: Callable,
+    upload_file: Callable,
 ):
 
     tmp_file = mock_files_factory(1)[0]
@@ -227,7 +262,7 @@ async def test_links_s3(
 
     dsm = storage_dsm
 
-    fmd = await _upload_file(storage_dsm, fmd, Path(tmp_file))
+    fmd = await upload_file(storage_dsm, fmd, Path(tmp_file))
 
     # test wrong user
     assert await dsm.list_file(654654654, fmd.location, fmd.file_uuid) is None
@@ -253,83 +288,61 @@ async def test_links_s3(
         "last_modified",
         "upload_expires_at",
     ]
-    for field in FileMetaData.__attrs_attrs__:
-        if field.name not in excluded_fields:
-            if field.name == "location_id":
-                assert int(
-                    file_metadata.fmd.__getattribute__(field.name)
-                ) == fmd.__getattribute__(
-                    field.name
-                ), f"{field.name}: expected {fmd.__getattribute__(field.name)} vs {file_metadata.fmd.__getattribute__(field.name)}"
-            else:
-                assert file_metadata.fmd.__getattribute__(
-                    field.name
-                ) == fmd.__getattribute__(
-                    field.name
-                ), f"{field.name}: expected {fmd.__getattribute__(field.name)} vs {file_metadata.fmd.__getattribute__(field.name)}"
+    for field in FileMetaData.__fields__:
+        if field not in excluded_fields:
+            assert file_metadata.fmd.__getattribute__(field) == fmd.__getattribute__(
+                field
+            ), f"{field}: expected {fmd.__getattribute__(field)} vs {file_metadata.fmd.__getattribute__(field)}"
 
     tmp_file2 = f"{tmp_file}.rec"
-    user_id = 0
     down_url = await dsm.download_link_s3(
-        fmd.file_uuid, user_id, as_presigned_link=True
+        fmd.file_uuid, fmd.user_id, as_presigned_link=True
     )
     urllib.request.urlretrieve(down_url, tmp_file2)
 
     assert filecmp.cmp(tmp_file2, tmp_file)
 
 
-async def test_dsm_complete_db(
-    storage_dsm: DataStorageManager,
-    dsm_mockup_complete_db: tuple[dict[str, str], dict[str, str]],
-):
-    dsm = storage_dsm
-    _id = 21
-    dsm.has_project_db = True
-    data = await dsm.list_files(user_id=_id, location=SIMCORE_S3_STR)
-
-    assert len(data) == 2
-    for dx in data:
-        d = dx.fmd
-        assert d.display_file_path
-        assert d.node_name
-        assert d.project_name
-        assert d.raw_file_path
-
-
 async def test_delete_data_folders(
     storage_dsm: DataStorageManager,
-    dsm_mockup_complete_db: tuple[dict[str, str], dict[str, str]],
+    dsm_mockup_complete_db: tuple[FileMetaData, FileMetaData],
 ):
+    storage_dsm.has_project_db = False  # again the joke
     file_1, file_2 = dsm_mockup_complete_db
-    _id = 21
-    data = await storage_dsm.list_files(user_id=_id, location=SIMCORE_S3_STR)
+    assert file_1.project_id
+    assert file_1.node_id
+    data = await storage_dsm.list_files(user_id=file_1.user_id, location=SIMCORE_S3_STR)
     response = await storage_dsm.delete_project_simcore_s3(
-        user_id=UserID(_id),
-        project_id=ProjectID(file_1["project_id"]),
-        node_id=NodeID(file_1["node_id"]),
+        user_id=file_1.user_id,
+        project_id=file_1.project_id,
+        node_id=file_1.node_id,
     )
-    data = await storage_dsm.list_files(user_id=_id, location=SIMCORE_S3_STR)
+    data = await storage_dsm.list_files(user_id=file_1.user_id, location=SIMCORE_S3_STR)
     assert len(data) == 1
-    assert data[0].fmd.file_name == file_2["filename"]
+    assert data[0].fmd.file_name == file_2.file_name
     response = await storage_dsm.delete_project_simcore_s3(
-        user_id=UserID(_id), project_id=ProjectID(file_1["project_id"]), node_id=None
+        user_id=file_1.user_id, project_id=file_1.project_id, node_id=None
     )
-    data = await storage_dsm.list_files(user_id=_id, location=SIMCORE_S3_STR)
+    data = await storage_dsm.list_files(user_id=file_1.user_id, location=SIMCORE_S3_STR)
     assert not data
 
 
-async def test_dsm_list_datasets_s3(storage_dsm, dsm_mockup_complete_db):
+async def test_dsm_list_datasets_s3(
+    storage_dsm, dsm_mockup_complete_db: tuple[FileMetaData, FileMetaData]
+):
     storage_dsm.has_project_db = True
+    file_1, _ = dsm_mockup_complete_db
 
-    datasets = await storage_dsm.list_datasets(user_id="21", location=SIMCORE_S3_STR)
+    datasets = await storage_dsm.list_datasets(
+        user_id=file_1.user_id, location=SIMCORE_S3_STR
+    )
 
     assert len(datasets) == 1
-    assert any("Kember" in d.display_name for d in datasets)
 
 
 async def test_sync_table_meta_data(
     storage_dsm: DataStorageManager,
-    dsm_mockup_complete_db: tuple[dict[str, str], dict[str, str]],
+    dsm_mockup_complete_db: tuple[FileMetaData, FileMetaData],
     storage_s3_client: StorageS3Client,
     storage_s3_bucket: str,
 ):
@@ -345,7 +358,7 @@ async def test_sync_table_meta_data(
 
     # now remove the files
     for file_entry in dsm_mockup_complete_db:
-        s3_key = f"{file_entry['project_id']}/{file_entry['node_id']}/{file_entry['filename']}"
+        s3_key = f"{file_entry.project_id}/{file_entry.node_id}/{file_entry.file_name}"
         await storage_s3_client.client.delete_object(
             Bucket=storage_s3_bucket, Key=s3_key
         )
@@ -372,13 +385,14 @@ async def test_sync_table_meta_data(
 
 async def test_dsm_list_dataset_files_s3(
     storage_dsm: DataStorageManager,
-    dsm_mockup_complete_db: tuple[dict[str, str], dict[str, str]],
+    dsm_mockup_complete_db: tuple[FileMetaData, FileMetaData],
 ):
     storage_dsm.has_project_db = True
-
-    datasets = await storage_dsm.list_datasets(user_id=21, location=SIMCORE_S3_STR)
+    file_1, _ = dsm_mockup_complete_db
+    datasets = await storage_dsm.list_datasets(
+        user_id=file_1.user_id, location=SIMCORE_S3_STR
+    )
     assert len(datasets) == 1
-    assert any("Kember" in d.display_name for d in datasets)
     for d in datasets:
         files = await storage_dsm.list_files_dataset(
             user_id=21, location=SIMCORE_S3_STR, dataset_id=d.dataset_id

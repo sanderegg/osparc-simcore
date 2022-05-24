@@ -10,6 +10,7 @@ import attr
 import pytest
 from aiopg.sa.engine import Engine
 from models_library.users import UserID
+from pydantic import ByteSize
 from simcore_service_storage.constants import SIMCORE_S3_STR
 from simcore_service_storage.dsm import DataStorageManager
 from simcore_service_storage.models import FileMetaData, FileMetaDataEx, file_meta_data
@@ -28,16 +29,15 @@ async def output_file(
 
     # pylint: disable=no-value-for-parameter
 
-    file = FileMetaData()
-    file.simcore_from_uuid(
+    file = FileMetaData.from_simcore_node(
         user_id=user_id,
         file_uuid=f"{project_id}/{node_id}/filename.txt",
         bucket_name="master-simcore",
     )
     file.entity_tag = "df9d868b94e53d18009066ca5cd90e9f"
-    file.file_size = 12
+    file.file_size = ByteSize(12)
     file.user_name = "test"
-    file.user_id = str(user_id)
+    file.user_id = user_id
 
     async with aiopg_engine.acquire() as conn:
         stmt = (
@@ -51,8 +51,8 @@ async def output_file(
         row = await result.fetchone()
 
         # hacks defect
-        file.user_id = str(user_id)
-        file.location_id = str(file.location_id)
+        file.user_id = user_id
+        file.location_id = file.location_id
         # --
         assert file == FileMetaData(**dict(row))  # type: ignore
 
