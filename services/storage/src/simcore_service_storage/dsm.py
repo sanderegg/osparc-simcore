@@ -132,7 +132,6 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
         https://docs.minio.io/docs/minio-bucket-notification-guide.html
     """
 
-    # TODO: perhaps can be used a cache? add a lifetime?
     engine: Engine
     simcore_bucket_name: str
     has_project_db: bool
@@ -143,7 +142,6 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
     def _get_datcore_tokens(
         self, user_id: UserID
     ) -> tuple[Optional[str], Optional[str]]:
-        # pylint: disable=no-member
         token = self.datcore_tokens.get(user_id, DatCoreApiToken())
         return dataclasses.astuple(token)
 

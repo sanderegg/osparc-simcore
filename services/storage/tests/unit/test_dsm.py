@@ -10,7 +10,6 @@ import datetime
 import filecmp
 import os
 import urllib.request
-import uuid
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterator, List, Optional, Tuple
 
@@ -30,7 +29,7 @@ pytest_simcore_core_services_selection = ["postgres"]
 pytest_simcore_ops_services_selection = ["adminer"]
 
 
-async def test_dsm_s3(
+async def test_listing_and_deleting_files(
     dsm_mockup_db: dict[str, FileMetaData], dsm_fixture: DataStorageManager
 ):
     id_name_map = {}
@@ -210,7 +209,6 @@ async def test_update_metadata_from_storage(
 
 
 async def test_links_s3(
-    postgres_dsn_url: str,
     mock_files_factory: Callable[[int], list[Path]],
     dsm_fixture: DataStorageManager,
     create_file_meta_for_s3: Callable,
@@ -270,33 +268,6 @@ async def test_links_s3(
     urllib.request.urlretrieve(down_url, tmp_file2)
 
     assert filecmp.cmp(tmp_file2, tmp_file)
-
-
-def test_fmd_build():
-    file_uuid = str(Path("api") / Path("abcd") / Path("xx.dat"))
-    fmd = FileMetaData()
-    fmd.simcore_from_uuid(user_id=12, file_uuid=file_uuid, bucket_name="test-bucket")
-
-    assert not fmd.node_id
-    assert not fmd.project_id
-    assert fmd.file_name == "xx.dat"
-    assert fmd.object_name == "api/abcd/xx.dat"
-    assert fmd.file_uuid == file_uuid
-    assert fmd.location == SIMCORE_S3_STR
-    assert fmd.location_id == SIMCORE_S3_ID
-    assert fmd.bucket_name == "test-bucket"
-
-    file_uuid = f"{uuid.uuid4()}/{uuid.uuid4()}/xx.dat"
-    fmd.simcore_from_uuid(user_id=12, file_uuid=file_uuid, bucket_name="test-bucket")
-
-    assert fmd.node_id == file_uuid.split("/")[1]
-    assert fmd.project_id == file_uuid.split("/")[0]
-    assert fmd.file_name == "xx.dat"
-    assert fmd.object_name == file_uuid
-    assert fmd.file_uuid == file_uuid
-    assert fmd.location == SIMCORE_S3_STR
-    assert fmd.location_id == SIMCORE_S3_ID
-    assert fmd.bucket_name == "test-bucket"
 
 
 async def test_dsm_complete_db(
@@ -397,7 +368,7 @@ async def test_dsm_list_dataset_files_s3(
 ):
     dsm_fixture.has_project_db = True
 
-    datasets = await dsm_fixture.list_datasets(user_id="21", location=SIMCORE_S3_STR)
+    datasets = await dsm_fixture.list_datasets(user_id=21, location=SIMCORE_S3_STR)
     assert len(datasets) == 1
     assert any("Kember" in d.display_name for d in datasets)
     for d in datasets:

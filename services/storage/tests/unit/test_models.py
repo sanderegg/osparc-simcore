@@ -1,6 +1,10 @@
+import uuid
+from pathlib import Path
+
 import pytest
 from pydantic import ValidationError, parse_obj_as
-from simcore_service_storage.models import FileID
+from simcore_service_storage.constants import SIMCORE_S3_ID, SIMCORE_S3_STR
+from simcore_service_storage.models import FileID, FileMetaData
 
 
 @pytest.mark.parametrize(
@@ -25,3 +29,30 @@ def test_file_id(file_id: str):
     parsed_file_id = parse_obj_as(FileID, file_id)
     assert parsed_file_id
     assert parsed_file_id == file_id
+
+
+def test_fmd_build():
+    file_uuid = str(Path("api") / Path("abcd") / Path("xx.dat"))
+    fmd = FileMetaData()
+    fmd.simcore_from_uuid(user_id=12, file_uuid=file_uuid, bucket_name="test-bucket")
+
+    assert not fmd.node_id
+    assert not fmd.project_id
+    assert fmd.file_name == "xx.dat"
+    assert fmd.object_name == "api/abcd/xx.dat"
+    assert fmd.file_uuid == file_uuid
+    assert fmd.location == SIMCORE_S3_STR
+    assert fmd.location_id == SIMCORE_S3_ID
+    assert fmd.bucket_name == "test-bucket"
+
+    file_uuid = f"{uuid.uuid4()}/{uuid.uuid4()}/xx.dat"
+    fmd.simcore_from_uuid(user_id=12, file_uuid=file_uuid, bucket_name="test-bucket")
+
+    assert fmd.node_id == file_uuid.split("/")[1]
+    assert fmd.project_id == file_uuid.split("/")[0]
+    assert fmd.file_name == "xx.dat"
+    assert fmd.object_name == file_uuid
+    assert fmd.file_uuid == file_uuid
+    assert fmd.location == SIMCORE_S3_STR
+    assert fmd.location_id == SIMCORE_S3_ID
+    assert fmd.bucket_name == "test-bucket"
