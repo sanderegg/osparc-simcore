@@ -3,6 +3,7 @@
 # pylint: disable=unused-argument
 
 
+import os
 import urllib.parse
 
 from aiohttp.test_utils import TestClient
