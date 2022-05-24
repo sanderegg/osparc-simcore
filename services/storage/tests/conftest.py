@@ -13,6 +13,7 @@ import uuid
 from pathlib import Path
 from random import randrange
 from typing import AsyncIterator, Callable, Iterator, Optional
+from uuid import uuid4
 
 import dotenv
 import pytest
@@ -39,7 +40,7 @@ from simcore_service_storage.models import (
 from simcore_service_storage.s3 import get_s3_client
 from simcore_service_storage.s3_client import StorageS3Client
 from simcore_service_storage.settings import Settings
-from tests.helpers.utils import DATA_DIR, fill_tables_from_csv_files, insert_metadata
+from tests.helpers.utils import insert_metadata
 from types_aiobotocore_s3 import S3Client
 
 pytest_plugins = [
@@ -139,50 +140,6 @@ async def cleanup_user_projects_file_metadata(aiopg_engine: Engine):
 
 
 @pytest.fixture
-async def dsm_mockup_complete_db(
-    postgres_dsn: dict[str, str],
-    storage_s3_bucket: str,
-    storage_s3_client: StorageS3Client,
-    cleanup_user_projects_file_metadata: None,
-) -> AsyncIterator[tuple[dict[str, str], dict[str, str]]]:
-    dsn = "postgresql://{user}:{password}@{host}:{port}/{database}".format(
-        **postgres_dsn
-    )
-    fill_tables_from_csv_files(url=dsn)
-
-    file_1 = {
-        "project_id": "161b8782-b13e-5840-9ae2-e2250c231001",
-        "node_id": "ad9bda7f-1dc5-5480-ab22-5fef4fc53eac",
-        "filename": "outputController.dat",
-    }
-    f = DATA_DIR / "outputController.dat"
-    object_name = "{project_id}/{node_id}/{filename}".format(**file_1)
-    with f.open("rb") as fp:
-        response = await storage_s3_client.client.put_object(
-            Bucket=storage_s3_bucket, Key=object_name, Body=fp
-        )
-    assert response
-    assert "ETag" in response
-    assert response["ETag"]
-
-    file_2 = {
-        "project_id": "161b8782-b13e-5840-9ae2-e2250c231001",
-        "node_id": "a3941ea0-37c4-5c1d-a7b3-01b5fd8a80c8",
-        "filename": "notebooks.zip",
-    }
-    f = DATA_DIR / "notebooks.zip"
-    object_name = "{project_id}/{node_id}/{filename}".format(**file_2)
-    with f.open("rb") as fp:
-        response = await storage_s3_client.client.put_object(
-            Bucket=storage_s3_bucket, Key=object_name, Body=fp
-        )
-    assert response
-    assert "ETag" in response
-    assert response["ETag"]
-    yield (file_1, file_2)
-
-
-@pytest.fixture
 async def dsm_mockup_db(
     postgres_dsn_url,
     storage_s3_bucket: str,
@@ -194,7 +151,7 @@ async def dsm_mockup_db(
     # TODO: use pip install Faker
     users = ["alice", "bob", "chuck", "dennis"]
 
-    projects = [
+    project_names = [
         "astronomy",
         "biology",
         "chemistry",
@@ -203,9 +160,10 @@ async def dsm_mockup_db(
         "futurology",
         "geology",
     ]
+    project_ids = [uuid4() for _ in range(7)]
     location = SIMCORE_S3_STR
-
-    nodes = ["alpha", "beta", "gamma", "delta"]
+    node_names = ["alpha", "beta", "gamma", "delta"]
+    node_ids = [uuid4() for _ in range(4)]
 
     N = 100
     files = mock_files_factory(N)
@@ -216,17 +174,17 @@ async def dsm_mockup_db(
         idx = randrange(len(users))
         user_name = users[idx]
         user_id = idx + 10
-        idx = randrange(len(projects))
-        project_name = projects[idx]
-        project_id = idx + 100
-        idx = randrange(len(nodes))
-        node = nodes[idx]
-        node_id = idx + 10000
+        idx = randrange(len(project_ids))
+        project_name = project_names[idx]
+        project_id = project_ids[idx]
+        idx = randrange(len(node_ids))
+        node = node_names[idx]
+        node_id = node_ids[idx]
         file_name = str(counter)
-        object_name = Path(str(project_id), str(node_id), str(counter)).as_posix()
+        object_name = Path(str(project_name), str(node), str(counter)).as_posix()
         file_uuid = Path(object_name).as_posix()
         raw_file_path = file_uuid
-        display_file_path = str(Path(project_name) / Path(node) / Path(file_name))
+        display_file_path = f"{project_name} / {node} / {file_name}"
         created_at = str(datetime.datetime.utcnow())
         file_size = _file.stat().st_size
 
@@ -246,15 +204,15 @@ async def dsm_mockup_db(
             "location": location,
             "bucket_name": storage_s3_bucket,
             "object_name": object_name,
-            "project_id": str(project_id),
+            "project_id": project_id,
             "project_name": project_name,
-            "node_id": str(node_id),
+            "node_id": node_id,
             "node_name": node,
             "file_name": file_name,
-            "user_id": str(user_id),
+            "user_id": user_id,
             "user_name": user_name,
-            "file_id": str(uuid.uuid4()),
-            "raw_file_path": file_uuid,
+            "file_id": file_uuid,
+            "raw_file_path": raw_file_path,
             "display_file_path": display_file_path,
             "created_at": created_at,
             "last_modified": created_at,
@@ -264,7 +222,7 @@ async def dsm_mockup_db(
 
         counter = counter + 1
 
-        data[object_name] = FileMetaData(**d)
+        data[object_name] = FileMetaData.parse_obj(d)
 
         # pylint: disable=no-member
 
