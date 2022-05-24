@@ -33,14 +33,13 @@ from simcore_service_storage.models import (
     file_meta_data,
 )
 from simcore_service_storage.s3_client import StorageS3Client
-from tests.helpers.utils import USER_ID
 
 pytest_simcore_core_services_selection = ["postgres"]
 pytest_simcore_ops_services_selection = ["adminer"]
 
 
 async def test_listing_and_deleting_files(
-    dsm_mockup_db: dict[str, FileMetaData], dsm_fixture: DataStorageManager
+    dsm_mockup_db: dict[str, FileMetaData], storage_dsm: DataStorageManager
 ):
     id_name_map = {}
     id_file_count = {}
@@ -52,7 +51,7 @@ async def test_listing_and_deleting_files(
         else:
             id_file_count[md.user_id] = id_file_count[md.user_id] + 1
 
-    dsm = dsm_fixture
+    dsm = storage_dsm
     # NOTE: this one is a joke
     dsm.has_project_db = False
     # list files for every user
@@ -111,8 +110,7 @@ async def test_listing_and_deleting_files(
 
 @pytest.fixture
 def create_file_meta_for_s3(
-    storage_s3_bucket: str,
-    cleanup_user_projects_file_metadata: None,
+    storage_s3_bucket: str, cleanup_user_projects_file_metadata: None, user_id: UserID
 ) -> Iterator[Callable[..., FileMetaData]]:
     def _creator(tmp_file: Path) -> FileMetaData:
         # create file and upload
@@ -131,7 +129,7 @@ def create_file_meta_for_s3(
             "object_name": os.path.join(str(project_id), str(node_id), str(file_name)),
             "bucket_name": storage_s3_bucket,
             "file_name": filename,
-            "user_id": USER_ID,
+            "user_id": user_id,
             "user_name": "starbucks",
             "location": SIMCORE_S3_STR,
             "location_id": SIMCORE_S3_ID,
@@ -180,29 +178,29 @@ async def _upload_file(
 
 async def test_update_metadata_from_storage(
     mock_files_factory: Callable[[int], list[Path]],
-    dsm_fixture: DataStorageManager,
+    storage_dsm: DataStorageManager,
     create_file_meta_for_s3: Callable,
 ):
     tmp_file = mock_files_factory(1)[0]
     fmd: FileMetaData = create_file_meta_for_s3(tmp_file)
-    fmd = await _upload_file(dsm_fixture, fmd, Path(tmp_file))
+    fmd = await _upload_file(storage_dsm, fmd, Path(tmp_file))
 
     assert (
-        await dsm_fixture.try_update_database_from_storage(  # pylint: disable=protected-access
+        await storage_dsm.try_update_database_from_storage(  # pylint: disable=protected-access
             "some_fake_uuid", fmd.bucket_name, fmd.object_name, reraise_exceptions=False
         )
         is None
     )
 
     assert (
-        await dsm_fixture.try_update_database_from_storage(  # pylint: disable=protected-access
+        await storage_dsm.try_update_database_from_storage(  # pylint: disable=protected-access
             fmd.file_uuid, "some_fake_bucket", fmd.object_name, reraise_exceptions=False
         )
         is None
     )
 
     assert (
-        await dsm_fixture.try_update_database_from_storage(  # pylint: disable=protected-access
+        await storage_dsm.try_update_database_from_storage(  # pylint: disable=protected-access
             fmd.file_uuid, fmd.bucket_name, "some_fake_object", reraise_exceptions=False
         )
         is None
@@ -210,7 +208,7 @@ async def test_update_metadata_from_storage(
 
     file_metadata: Optional[
         FileMetaDataEx
-    ] = await dsm_fixture.try_update_database_from_storage(  # pylint: disable=protected-access
+    ] = await storage_dsm.try_update_database_from_storage(  # pylint: disable=protected-access
         fmd.file_uuid, fmd.bucket_name, fmd.object_name, reraise_exceptions=False
     )
     assert file_metadata is not None
@@ -220,16 +218,16 @@ async def test_update_metadata_from_storage(
 
 async def test_links_s3(
     mock_files_factory: Callable[[int], list[Path]],
-    dsm_fixture: DataStorageManager,
+    storage_dsm: DataStorageManager,
     create_file_meta_for_s3: Callable,
 ):
 
     tmp_file = mock_files_factory(1)[0]
     fmd: FileMetaData = create_file_meta_for_s3(tmp_file)
 
-    dsm = dsm_fixture
+    dsm = storage_dsm
 
-    fmd = await _upload_file(dsm_fixture, fmd, Path(tmp_file))
+    fmd = await _upload_file(storage_dsm, fmd, Path(tmp_file))
 
     # test wrong user
     assert await dsm.list_file(654654654, fmd.location, fmd.file_uuid) is None
@@ -281,10 +279,10 @@ async def test_links_s3(
 
 
 async def test_dsm_complete_db(
-    dsm_fixture: DataStorageManager,
+    storage_dsm: DataStorageManager,
     dsm_mockup_complete_db: tuple[dict[str, str], dict[str, str]],
 ):
-    dsm = dsm_fixture
+    dsm = storage_dsm
     _id = 21
     dsm.has_project_db = True
     data = await dsm.list_files(user_id=_id, location=SIMCORE_S3_STR)
@@ -299,47 +297,47 @@ async def test_dsm_complete_db(
 
 
 async def test_delete_data_folders(
-    dsm_fixture: DataStorageManager,
+    storage_dsm: DataStorageManager,
     dsm_mockup_complete_db: tuple[dict[str, str], dict[str, str]],
 ):
     file_1, file_2 = dsm_mockup_complete_db
     _id = 21
-    data = await dsm_fixture.list_files(user_id=_id, location=SIMCORE_S3_STR)
-    response = await dsm_fixture.delete_project_simcore_s3(
+    data = await storage_dsm.list_files(user_id=_id, location=SIMCORE_S3_STR)
+    response = await storage_dsm.delete_project_simcore_s3(
         user_id=UserID(_id),
         project_id=ProjectID(file_1["project_id"]),
         node_id=NodeID(file_1["node_id"]),
     )
-    data = await dsm_fixture.list_files(user_id=_id, location=SIMCORE_S3_STR)
+    data = await storage_dsm.list_files(user_id=_id, location=SIMCORE_S3_STR)
     assert len(data) == 1
     assert data[0].fmd.file_name == file_2["filename"]
-    response = await dsm_fixture.delete_project_simcore_s3(
+    response = await storage_dsm.delete_project_simcore_s3(
         user_id=UserID(_id), project_id=ProjectID(file_1["project_id"]), node_id=None
     )
-    data = await dsm_fixture.list_files(user_id=_id, location=SIMCORE_S3_STR)
+    data = await storage_dsm.list_files(user_id=_id, location=SIMCORE_S3_STR)
     assert not data
 
 
-async def test_dsm_list_datasets_s3(dsm_fixture, dsm_mockup_complete_db):
-    dsm_fixture.has_project_db = True
+async def test_dsm_list_datasets_s3(storage_dsm, dsm_mockup_complete_db):
+    storage_dsm.has_project_db = True
 
-    datasets = await dsm_fixture.list_datasets(user_id="21", location=SIMCORE_S3_STR)
+    datasets = await storage_dsm.list_datasets(user_id="21", location=SIMCORE_S3_STR)
 
     assert len(datasets) == 1
     assert any("Kember" in d.display_name for d in datasets)
 
 
 async def test_sync_table_meta_data(
-    dsm_fixture: DataStorageManager,
+    storage_dsm: DataStorageManager,
     dsm_mockup_complete_db: tuple[dict[str, str], dict[str, str]],
     storage_s3_client: StorageS3Client,
     storage_s3_bucket: str,
 ):
-    dsm_fixture.has_project_db = True
+    storage_dsm.has_project_db = True
 
     expected_removed_files = []
     # the list should be empty on start
-    list_changes: dict[str, Any] = await dsm_fixture.synchronise_meta_data_table(
+    list_changes: dict[str, Any] = await storage_dsm.synchronise_meta_data_table(
         location=SIMCORE_S3_STR, dry_run=True
     )
     assert "removed" in list_changes
@@ -354,18 +352,18 @@ async def test_sync_table_meta_data(
         expected_removed_files.append(s3_key)
 
         # the list should now contain the removed entries
-        list_changes: dict[str, Any] = await dsm_fixture.synchronise_meta_data_table(
+        list_changes: dict[str, Any] = await storage_dsm.synchronise_meta_data_table(
             location=SIMCORE_S3_STR, dry_run=True
         )
         assert "removed" in list_changes
         assert list_changes["removed"] == expected_removed_files
 
     # now effectively call the function should really remove the files
-    list_changes: dict[str, Any] = await dsm_fixture.synchronise_meta_data_table(
+    list_changes: dict[str, Any] = await storage_dsm.synchronise_meta_data_table(
         location=SIMCORE_S3_STR, dry_run=False
     )
     # listing again will show an empty list again
-    list_changes: dict[str, Any] = await dsm_fixture.synchronise_meta_data_table(
+    list_changes: dict[str, Any] = await storage_dsm.synchronise_meta_data_table(
         location=SIMCORE_S3_STR, dry_run=True
     )
     assert "removed" in list_changes
@@ -373,16 +371,16 @@ async def test_sync_table_meta_data(
 
 
 async def test_dsm_list_dataset_files_s3(
-    dsm_fixture: DataStorageManager,
+    storage_dsm: DataStorageManager,
     dsm_mockup_complete_db: tuple[dict[str, str], dict[str, str]],
 ):
-    dsm_fixture.has_project_db = True
+    storage_dsm.has_project_db = True
 
-    datasets = await dsm_fixture.list_datasets(user_id=21, location=SIMCORE_S3_STR)
+    datasets = await storage_dsm.list_datasets(user_id=21, location=SIMCORE_S3_STR)
     assert len(datasets) == 1
     assert any("Kember" in d.display_name for d in datasets)
     for d in datasets:
-        files = await dsm_fixture.list_files_dataset(
+        files = await storage_dsm.list_files_dataset(
             user_id=21, location=SIMCORE_S3_STR, dataset_id=d.dataset_id
         )
         if "Kember" in d.display_name:
@@ -391,7 +389,7 @@ async def test_dsm_list_dataset_files_s3(
             assert len(files) == 0
 
         if files:
-            found = await dsm_fixture.search_files_starting_with(
+            found = await storage_dsm.search_files_starting_with(
                 user_id=21, prefix=files[0].fmd.file_uuid
             )
             assert found
@@ -407,7 +405,7 @@ async def test_dsm_list_dataset_files_s3(
 async def test_clean_expired_uploads_cleans_dangling_multipart_uploads(
     storage_s3_client: StorageS3Client,
     storage_s3_bucket: str,
-    dsm_fixture: DataStorageManager,
+    storage_dsm: DataStorageManager,
     faker: Faker,
 ):
     file_id = faker.file_name()
@@ -426,7 +424,7 @@ async def test_clean_expired_uploads_cleans_dangling_multipart_uploads(
     assert ongoing_file_id == file_id
 
     # now run the cleaner
-    await dsm_fixture.clean_expired_uploads()
+    await storage_dsm.clean_expired_uploads()
 
     # since there is no entry in the db, this upload shall be cleaned up
     assert not await storage_s3_client.list_ongoing_multipart_uploads(storage_s3_bucket)
@@ -439,7 +437,7 @@ async def test_clean_expired_uploads_cleans_dangling_multipart_uploads(
 @pytest.mark.parametrize("link_type", [LinkType.S3, LinkType.PRESIGNED])
 async def test_clean_expired_uploads_cleans_expired_pending_uploads(
     aiopg_engine: Engine,
-    dsm_fixture: DataStorageManager,
+    storage_dsm: DataStorageManager,
     file_uuid: FileID,
     user_id: UserID,
     link_type: LinkType,
@@ -447,7 +445,7 @@ async def test_clean_expired_uploads_cleans_expired_pending_uploads(
     storage_s3_client: StorageS3Client,
     storage_s3_bucket: str,
 ):
-    await dsm_fixture.create_upload_links(user_id, file_uuid, link_type, file_size)
+    await storage_dsm.create_upload_links(user_id, file_uuid, link_type, file_size)
     # ensure the database is correctly set up
     async with aiopg_engine.acquire() as conn:
         fmd = await db_file_meta_data.get(conn, file_uuid)
@@ -463,7 +461,7 @@ async def test_clean_expired_uploads_cleans_expired_pending_uploads(
         assert not ongoing_uploads
 
     # now run the cleaner, nothing should happen since the expiration was set to the default of 3600
-    await dsm_fixture.clean_expired_uploads()
+    await storage_dsm.clean_expired_uploads()
     # check the entries are still the same
     async with aiopg_engine.acquire() as conn:
         fmd_after_clean = await db_file_meta_data.get(conn, file_uuid)
@@ -481,7 +479,7 @@ async def test_clean_expired_uploads_cleans_expired_pending_uploads(
             .values(upload_expires_at=datetime.datetime.utcnow())
         )
     await asyncio.sleep(1)
-    await dsm_fixture.clean_expired_uploads()
+    await storage_dsm.clean_expired_uploads()
 
     # check the entries were removed
     async with aiopg_engine.acquire() as conn:

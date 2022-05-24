@@ -78,7 +78,7 @@ def create_resource_uuid(*resource_name_parts) -> uuid.UUID:
 
 
 async def test_create_soft_link(
-    dsm_fixture: DataStorageManager, user_id: int, output_file: FileMetaData
+    storage_dsm: DataStorageManager, user_id: int, output_file: FileMetaData
 ):
 
     api_file_id = create_resource_uuid(
@@ -86,7 +86,7 @@ async def test_create_soft_link(
     )
     file_name = output_file.file_name
 
-    link_file: FileMetaDataEx = await dsm_fixture.create_soft_link(
+    link_file: FileMetaDataEx = await storage_dsm.create_soft_link(
         user_id, output_file.file_uuid, f"api/{api_file_id}/{file_name}"
     )
     assert isinstance(link_file, FileMetaDataEx)
@@ -127,14 +127,14 @@ async def test_create_soft_link(
     # assert output_file.last_modified < link_file.fmd.last_modified
 
     # can find
-    files_list = await dsm_fixture.search_files_starting_with(
+    files_list = await storage_dsm.search_files_starting_with(
         user_id, f"api/{api_file_id}/{file_name}"
     )
     assert len(files_list) == 1
     assert files_list[0] == link_file
 
     # can get
-    got_file = await dsm_fixture.list_file(
+    got_file = await storage_dsm.list_file(
         user_id, SIMCORE_S3_STR, f"api/{api_file_id}/{file_name}"
     )
 

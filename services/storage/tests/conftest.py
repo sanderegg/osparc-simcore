@@ -278,7 +278,7 @@ async def dsm_mockup_db(
 
 
 @pytest.fixture(scope="function")
-def dsm_fixture(client) -> DataStorageManager:
+def storage_dsm(client) -> DataStorageManager:
     return client.app[APP_DSM_KEY]
 
 
