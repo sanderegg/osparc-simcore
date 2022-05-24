@@ -182,31 +182,3 @@ async def test_create_and_delete_folders_from_project_burst(
             for _ in range(100)
         ]
     )
-
-
-async def test_s3_datasets_metadata(client: TestClient):
-    assert client.app
-    url = (
-        client.app.router["get_datasets_metadata"]
-        .url_for(location_id=str(SIMCORE_S3_ID))
-        .with_query(user_id="21")
-    )
-    resp = await client.get(f"{url}")
-    payload = await resp.json()
-    assert resp.status == 200, str(payload)
-    data, error = tuple(payload.get(k) for k in ("data", "error"))
-    assert not error
-
-
-async def test_s3_files_datasets_metadata(client: TestClient):
-    assert client.app
-    url = (
-        client.app.router["get_files_metadata_dataset"]
-        .url_for(location_id=str(SIMCORE_S3_ID), dataset_id="aa")
-        .with_query(user_id="21")
-    )
-    resp = await client.get(f"{url}")
-    payload = await resp.json()
-    assert resp.status == 200, str(payload)
-    data, error = tuple(payload.get(k) for k in ("data", "error"))
-    assert not error
