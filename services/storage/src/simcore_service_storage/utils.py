@@ -7,16 +7,18 @@ from aiohttp import ClientSession
 from aiohttp.typedefs import StrOrURL
 from aiopg.sa.result import ResultProxy, RowProxy
 
+from .constants import LOCATION_ID_TO_TAG_MAP, MAX_CHUNK_SIZE, UNDEFINED_LOCATION_TAG
 from .models import FileMetaData, FileMetaDataEx
 
 logger = logging.getLogger(__name__)
 
 
-MAX_CHUNK_SIZE = 1024
-RETRY_WAIT_SECS = 2
-RETRY_COUNT = 20
-CONNECT_TIMEOUT_SECS = 30
-MINUTE = 60
+def get_location_from_id(location_id: Union[str, int]) -> str:
+    try:
+        loc_id = int(location_id)
+        return LOCATION_ID_TO_TAG_MAP[loc_id]
+    except (ValueError, KeyError):
+        return UNDEFINED_LOCATION_TAG
 
 
 async def download_to_file_or_raise(
