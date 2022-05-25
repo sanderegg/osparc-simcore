@@ -12,8 +12,12 @@ from models_library.projects import ProjectID
 from models_library.projects_nodes import NodeID
 from models_library.users import UserID
 from models_library.utils.fastapi_encoders import jsonable_encoder
-from pydantic import AnyUrl, ByteSize, ValidationError, parse_obj_as
+from pydantic import AnyUrl, ValidationError, parse_obj_as
 from servicelib.aiohttp.application_keys import APP_CONFIG_KEY
+from servicelib.aiohttp.requests_validation import (
+    parse_request_path_parameters_as,
+    parse_request_query_parameters_as,
+)
 from servicelib.aiohttp.rest_utils import extract_and_validate
 from settings_library.s3 import S3Settings
 from simcore_service_storage.exceptions import FileMetaDataNotFoundError
@@ -24,8 +28,8 @@ from ._meta import api_vtag
 from .access_layer import InvalidFileIdentifier
 from .constants import APP_DSM_KEY, DATCORE_STR, SIMCORE_S3_ID, SIMCORE_S3_STR
 from .db_tokens import get_api_token_and_secret
-from .dsm import DataStorageManager, DatCoreApiToken, LinkType, UploadLinks
-from .models import FileID, FileMetaDataEx
+from .dsm import DataStorageManager, DatCoreApiToken, UploadLinks
+from .models import FileID, FileMetaDataEx, FilePathParams, FileUploadQueryParams
 from .s3_client import UploadedPart
 from .settings import Settings
 
@@ -351,34 +355,31 @@ async def download_file(request: web.Request):
 
 @routes.put(f"/{api_vtag}/locations/{{location_id}}/files/{{file_id}}")  # type: ignore
 async def upload_file(request: web.Request):
-    params, query, body = await extract_and_validate(request)
-    log.debug("received call to upload_file with %s", f"{params=}, {query=}, {body=}")
-    assert params, f"{params}"  # nosec
-    assert "file_id" in params  # nosec
-    params["file_id"] = urllib.parse.unquote(params["file_id"])
+    query_params = parse_request_query_parameters_as(FileUploadQueryParams, request)
+    path_params = parse_request_path_parameters_as(FilePathParams, request)
 
-    assert query, f"{query}"  # nosec
-    assert not body, f"{body}"  # nosec
-    link_type: str = query.get("link_type", "presigned")
+    log.debug(
+        "received call to upload_file with %s",
+        f"{path_params=}, {query_params=}",
+    )
 
     with handle_storage_errors():
-        user_id = parse_obj_as(UserID, query["user_id"])
-        file_uuid = parse_obj_as(FileID, params["file_id"])
-
-        dsm = await _prepare_storage_manager(params, query, request)
+        dsm = await _prepare_storage_manager(
+            jsonable_encoder(path_params), jsonable_encoder(query_params), request
+        )
 
         links: UploadLinks = await dsm.create_upload_links(
-            user_id=UserID(user_id),
-            file_uuid=file_uuid,
-            link_type=LinkType(link_type.upper()),
-            file_size_bytes=parse_obj_as(ByteSize, query.get("file_size", 0)),
+            user_id=query_params.user_id,
+            file_uuid=path_params.file_id,
+            link_type=query_params.link_type,
+            file_size_bytes=query_params.file_size,
         )
 
         abort_url = request.url.with_path(f"{request.url.path}").with_query(
-            user_id=user_id
+            user_id=query_params.user_id
         )
         complete_url = request.url.with_path(f"{request.url.path}:complete").with_query(
-            user_id=user_id
+            user_id=query_params.user_id
         )
         response = FileUploadSchema(
             chunk_size=links.chunk_size,
