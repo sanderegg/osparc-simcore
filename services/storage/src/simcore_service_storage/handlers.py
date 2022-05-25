@@ -362,8 +362,8 @@ async def upload_file(request: web.Request):
     link_type: str = query.get("link_type", "presigned")
 
     with handle_storage_errors():
-        user_id = query["user_id"]
-        file_uuid = params["file_id"]
+        user_id = parse_obj_as(UserID, query["user_id"])
+        file_uuid = parse_obj_as(FileID, params["file_id"])
 
         dsm = await _prepare_storage_manager(params, query, request)
 
