@@ -15,6 +15,7 @@ from models_library.utils.fastapi_encoders import jsonable_encoder
 from pydantic import AnyUrl, ValidationError, parse_obj_as
 from servicelib.aiohttp.application_keys import APP_CONFIG_KEY
 from servicelib.aiohttp.requests_validation import (
+    parse_request_body_as,
     parse_request_path_parameters_as,
     parse_request_query_parameters_as,
 )
@@ -29,9 +30,15 @@ from .access_layer import InvalidFileIdentifier
 from .constants import APP_DSM_KEY, DATCORE_STR, SIMCORE_S3_ID, SIMCORE_S3_STR
 from .db_tokens import get_api_token_and_secret
 from .dsm import DataStorageManager, DatCoreApiToken, UploadLinks
-from .models import FileID, FileMetaDataEx, FilePathParams, FileUploadQueryParams
-from .s3_client import UploadedPart
+from .models import (
+    FileMetaDataEx,
+    FilePathParams,
+    FileQueryParamsBase,
+    FileUploadCompletionBody,
+    FileUploadQueryParams,
+)
 from .settings import Settings
+from .utils import create_upload_completion_task_name
 
 log = logging.getLogger(__name__)
 
@@ -396,32 +403,21 @@ async def upload_file(request: web.Request):
     return {"data": json.loads(response.json(by_alias=True))}
 
 
-def _create_upload_completion_task_name(user_id: UserID, file_id: FileID) -> str:
-    return f"upload_complete_task_{user_id}_{urllib.parse.quote(file_id, safe='')}"
-
-
 @routes.post(f"/{api_vtag}/locations/{{location_id}}/files/{{file_id}}:complete")  # type: ignore
 async def complete_upload_file(request: web.Request):
-    params, query, body = await extract_and_validate(request)
+    query_params = parse_request_query_parameters_as(FileQueryParamsBase, request)
+    path_params = parse_request_path_parameters_as(FilePathParams, request)
+    body = await parse_request_body_as(FileUploadCompletionBody, request)
+
     log.debug(
-        "received call to complete upload_file with %s", f"{params=}, {query=}, {body=}"
+        "received call to upload_file with %s",
+        f"{path_params=}, {query_params=}",
     )
-    assert params, f"{params}"  # nosec
-    assert "file_id" in params  # nosec
-    assert "location_id" in params  # nosec
-    assert query, f"{query}"  # nosec
-    body = await request.json()
-    assert body  # nosec
 
     with handle_storage_errors():
-        user_id = query["user_id"]
-        file_id = urllib.parse.unquote(params["file_id"])
-        parts = body.get("parts", {})
-        if not parts:
-            raise web.HTTPUnprocessableEntity(reason="missing parts to complete upload")
-        parts = parse_obj_as(list[UploadedPart], parts)
-
-        dsm = await _prepare_storage_manager(params, query, request)
+        dsm = await _prepare_storage_manager(
+            jsonable_encoder(path_params), jsonable_encoder(query_params), request
+        )
         # NOTE: completing a multipart upload on AWS can take up to several minutes
         # therefore we wait a bit to see if it completes fast and return a 204
         # if it returns slow we return a 202 - Accepted, the client will have to check later
@@ -429,20 +425,20 @@ async def complete_upload_file(request: web.Request):
 
         # TODO: check BacgroundTask in fastapi
         task = asyncio.create_task(
-            dsm.complete_upload(
-                file_uuid=file_id, user_id=user_id, uploaded_parts=parts
+            dsm.complete_upload(path_params.file_id, query_params.user_id, body.parts),
+            name=create_upload_completion_task_name(
+                query_params.user_id, path_params.file_id
             ),
-            name=_create_upload_completion_task_name(user_id, file_id),
         )
         request.app[UPLOAD_TASKS_KEY][task.get_name()] = task
         complete_task_state_url = request.url.join(
             request.app.router["is_completed_upload_file"]
             .url_for(
-                location_id=params["location_id"],
-                file_id=params["file_id"],
+                location_id=f"{path_params.location_id}",
+                file_id=f"{path_params.file_id}",
                 future_id=task.get_name(),
             )
-            .with_query(user_id=user_id)
+            .with_query(user_id=query_params.user_id)
         )
         return web.json_response(
             status=web.HTTPAccepted.status_code,
@@ -467,7 +463,7 @@ async def is_completed_upload_file(request: web.Request):
         # for completeness
         user_id = query["user_id"]
         file_id = urllib.parse.unquote(params["file_id"])
-        task_name = _create_upload_completion_task_name(user_id, file_id)
+        task_name = create_upload_completion_task_name(user_id, file_id)
         assert task_name == params["future_id"]  # nosec
         # first check if the task is in the app
         if task := request.app[UPLOAD_TASKS_KEY].get(task_name):
