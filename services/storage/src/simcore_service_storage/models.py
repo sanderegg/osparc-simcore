@@ -1,8 +1,10 @@
 import datetime
+import urllib.parse
 from dataclasses import dataclass
 from typing import Literal, Optional
 from uuid import UUID
 
+from models_library.api_schemas_storage import LinkType
 from models_library.projects import ProjectID
 from models_library.projects_nodes import NodeID
 from models_library.users import UserID
@@ -167,6 +169,39 @@ class DatCoreApiToken:
 class UploadLinks:
     urls: list[AnyUrl]
     chunk_size: ByteSize
+
+
+class FileUploadQueryParams(BaseModel):
+    user_id: UserID
+    link_type: LinkType = LinkType.PRESIGNED
+    file_size: ByteSize = ByteSize(0)
+
+    class Config:
+        allow_population_by_field_name = True
+        extra = Extra.forbid
+
+    @validator("link_type", pre=True)
+    @classmethod
+    def convert_from_lower_case(cls, v):
+        if v is not None:
+            return f"{v}".upper()
+        return v
+
+
+class FilePathParams(BaseModel):
+    location_id: int
+    file_id: FileID
+
+    class Config:
+        allow_population_by_field_name = True
+        extra = Extra.forbid
+
+    @validator("file_id", pre=True)
+    @classmethod
+    def unquote(cls, v):
+        if v is not None:
+            return urllib.parse.unquote(f"{v}")
+        return v
 
 
 __all__ = (
