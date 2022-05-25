@@ -10,25 +10,14 @@ from aiobotocore.session import AioSession, get_session
 from botocore.client import Config
 from models_library.projects import ProjectID
 from models_library.projects_nodes_io import NodeID
-from pydantic import AnyUrl, BaseModel, ByteSize, PositiveInt, parse_obj_as
+from pydantic import AnyUrl, ByteSize, parse_obj_as
 from settings_library.s3 import S3Settings
 from types_aiobotocore_s3 import S3Client
 
-from .models import ETag, FileID, UploadID
+from .models import ETag, FileID, MultiPartUploadLinks, UploadedPart, UploadID
 from .s3_utils import compute_num_file_chunks
 
 log = logging.getLogger(__name__)
-
-
-class MultiPartUploadLinks(BaseModel):
-    upload_id: UploadID
-    chunk_size: ByteSize
-    urls: list[AnyUrl]
-
-
-class UploadedPart(BaseModel):
-    number: PositiveInt
-    e_tag: ETag
 
 
 @dataclass
