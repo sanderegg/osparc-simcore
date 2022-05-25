@@ -4,7 +4,8 @@ from typing import Optional
 
 import pytest
 from aiohttp import ClientSession
-from simcore_service_storage.models import FileMetaData
+from pydantic import ByteSize, parse_obj_as
+from simcore_service_storage.models import ETag, FileID, FileMetaData
 from simcore_service_storage.utils import (
     MAX_CHUNK_SIZE,
     download_to_file_or_raise,
@@ -40,7 +41,12 @@ async def test_download_files(tmpdir):
     ],
 )
 def test_file_entry_valid(
-    file_size: Optional[int], entity_tag: Optional[str], expected_validity: bool
+    file_size: int, entity_tag: Optional[ETag], expected_validity: bool
 ):
-    file_meta_data = FileMetaData(file_size=file_size, entity_tag=entity_tag)
-    assert is_file_entry_valid(file_meta_data) == expected_validity
+    file_uuid = FileID(Path("api") / Path("abcd") / Path("xx.dat"))
+    fmd = FileMetaData.from_simcore_node(
+        user_id=12, file_uuid=file_uuid, bucket_name="test-bucket"
+    )
+    fmd.file_size = parse_obj_as(ByteSize, file_size)
+    fmd.entity_tag = entity_tag
+    assert is_file_entry_valid(fmd) == expected_validity
