@@ -30,11 +30,9 @@ async def test_download_files(tmpdir):
 @pytest.mark.parametrize(
     "file_size, entity_tag, expected_validity",
     [
-        (None, None, False),
         (-1, None, False),
         (0, None, False),
         (random.randint(1, 1000000), None, False),
-        (None, "some_valid_entity_tag", False),
         (-1, "some_valid_entity_tag", False),
         (0, "some_valid_entity_tag", False),
         (random.randint(1, 1000000), "some_valid_entity_tag", True),
