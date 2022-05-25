@@ -14,6 +14,7 @@ from pydantic import (
     ByteSize,
     Extra,
     Field,
+    PositiveInt,
     constr,
     parse_obj_as,
     validate_arguments,
@@ -171,8 +172,11 @@ class UploadLinks:
     chunk_size: ByteSize
 
 
-class FileUploadQueryParams(BaseModel):
+class FileQueryParamsBase(BaseModel):
     user_id: UserID
+
+
+class FileUploadQueryParams(FileQueryParamsBase):
     link_type: LinkType = LinkType.PRESIGNED
     file_size: ByteSize = ByteSize(0)
 
@@ -202,6 +206,21 @@ class FilePathParams(BaseModel):
         if v is not None:
             return urllib.parse.unquote(f"{v}")
         return v
+
+
+class UploadedPart(BaseModel):
+    number: PositiveInt
+    e_tag: ETag
+
+
+class FileUploadCompletionBody(BaseModel):
+    parts: list[UploadedPart]
+
+
+class MultiPartUploadLinks(BaseModel):
+    upload_id: UploadID
+    chunk_size: ByteSize
+    urls: list[AnyUrl]
 
 
 __all__ = (
