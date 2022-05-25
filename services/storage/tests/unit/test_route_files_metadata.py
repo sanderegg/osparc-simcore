@@ -83,6 +83,7 @@ async def test_s3_datasets_metadata(client: TestClient):
     assert resp.status == 200, str(payload)
     data, error = tuple(payload.get(k) for k in ("data", "error"))
     assert not error
+    assert data
 
 
 async def test_s3_files_datasets_metadata(client: TestClient):
@@ -97,3 +98,4 @@ async def test_s3_files_datasets_metadata(client: TestClient):
     assert resp.status == 200, str(payload)
     data, error = tuple(payload.get(k) for k in ("data", "error"))
     assert not error
+    assert data
