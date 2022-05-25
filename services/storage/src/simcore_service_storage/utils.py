@@ -1,4 +1,5 @@
 import logging
+import urllib.parse
 from pathlib import Path
 from typing import Union
 
@@ -6,9 +7,10 @@ import aiofiles
 from aiohttp import ClientSession
 from aiohttp.typedefs import StrOrURL
 from aiopg.sa.result import ResultProxy, RowProxy
+from models_library.users import UserID
 
 from .constants import LOCATION_ID_TO_TAG_MAP, MAX_CHUNK_SIZE, UNDEFINED_LOCATION_TAG
-from .models import FileMetaData, FileMetaDataEx
+from .models import FileID, FileMetaData, FileMetaDataEx
 
 logger = logging.getLogger(__name__)
 
@@ -68,3 +70,7 @@ def is_file_entry_valid(file_metadata: FileMetaData) -> bool:
         and file_metadata.file_size is not None
         and file_metadata.file_size > 0
     )
+
+
+def create_upload_completion_task_name(user_id: UserID, file_id: FileID) -> str:
+    return f"upload_complete_task_{user_id}_{urllib.parse.quote(file_id, safe='')}"
