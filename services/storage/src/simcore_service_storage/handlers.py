@@ -368,7 +368,7 @@ async def upload_file(request: web.Request):
         dsm = await _prepare_storage_manager(params, query, request)
 
         links: UploadLinks = await dsm.create_upload_links(
-            user_id=user_id,
+            user_id=UserID(user_id),
             file_uuid=file_uuid,
             link_type=LinkType(link_type.upper()),
             file_size_bytes=parse_obj_as(ByteSize, query.get("file_size", 0)),

@@ -19,6 +19,7 @@ from aiohttp.test_utils import TestClient
 from aiopg.sa import Engine
 from faker import Faker
 from models_library.api_schemas_storage import FileUploadSchema
+from models_library.projects import ProjectID
 from models_library.users import UserID
 from models_library.utils.fastapi_encoders import jsonable_encoder
 from pydantic import ByteSize, parse_obj_as
@@ -54,14 +55,12 @@ _HTTP_PRESIGNED_LINK_QUERY_KEYS = [
 
 @pytest.fixture
 async def create_upload_file_link(
-    client: TestClient,
+    client: TestClient, user_id: UserID, project_id: ProjectID, location_id: int
 ) -> AsyncIterator[Callable[..., Awaitable[FileUploadSchema]]]:
 
     file_params: list[tuple[UserID, int, FileID]] = []
 
-    async def _link_creator(
-        user_id: UserID, location_id: int, file_uuid: FileID, **query_kwargs
-    ) -> FileUploadSchema:
+    async def _link_creator(file_uuid: FileID, **query_kwargs) -> FileUploadSchema:
         assert client.app
         url = (
             client.app.router["upload_file"]
@@ -197,8 +196,6 @@ async def assert_multipart_uploads_in_progress(
 async def test_create_upload_file_default_returns_single_link(
     storage_s3_client,
     storage_s3_bucket: str,
-    user_id: UserID,
-    location_id: int,
     file_uuid: str,
     url_query: dict[str, str],
     expected_link_scheme: str,
@@ -209,9 +206,7 @@ async def test_create_upload_file_default_returns_single_link(
     cleanup_user_projects_file_metadata: None,
 ):
     # create upload file link
-    received_file_upload = await create_upload_file_link(
-        user_id, location_id, file_uuid, **url_query
-    )
+    received_file_upload = await create_upload_file_link(file_uuid, **url_query)
     # check links, there should be only 1
     assert len(received_file_upload.urls) == 1
     assert received_file_upload.urls[0].scheme == expected_link_scheme
@@ -315,8 +310,6 @@ class MultiPartParam:
 async def test_create_upload_file_presigned_with_file_size_returns_multipart_links_if_bigger_than_99MiB(
     storage_s3_client: StorageS3Client,
     storage_s3_bucket: str,
-    user_id: UserID,
-    location_id: int,
     file_uuid: str,
     test_param: MultiPartParam,
     aiopg_engine: Engine,
@@ -325,8 +318,6 @@ async def test_create_upload_file_presigned_with_file_size_returns_multipart_lin
 ):
     # create upload file link
     received_file_upload = await create_upload_file_link(
-        user_id,
-        location_id,
         file_uuid,
         link_type=test_param.link_type,
         file_size=f"{test_param.file_size}",
@@ -371,8 +362,6 @@ async def test_delete_unuploaded_file_correctly_cleans_up_db_and_s3(
     client: TestClient,
     storage_s3_client: StorageS3Client,
     storage_s3_bucket: str,
-    user_id: UserID,
-    location_id: int,
     file_uuid: str,
     link_type: str,
     file_size: ByteSize,
@@ -381,7 +370,7 @@ async def test_delete_unuploaded_file_correctly_cleans_up_db_and_s3(
     assert client.app
     # create upload file link
     upload_link = await create_upload_file_link(
-        user_id, location_id, file_uuid, link_type=link_type, file_size=file_size
+        file_uuid, link_type=link_type, file_size=file_size
     )
     expect_upload_id = bool(
         file_size > _MULTIPART_UPLOADS_MIN_TOTAL_SIZE and link_type == "presigned"
@@ -441,8 +430,6 @@ async def test_upload_same_file_uuid_aborts_previous_upload(
     client: TestClient,
     storage_s3_client: StorageS3Client,
     storage_s3_bucket: str,
-    user_id: UserID,
-    location_id: int,
     file_uuid: str,
     link_type: str,
     file_size: ByteSize,
@@ -451,7 +438,7 @@ async def test_upload_same_file_uuid_aborts_previous_upload(
     assert client.app
     # create upload file link
     file_upload_link = await create_upload_file_link(
-        user_id, location_id, file_uuid, link_type=link_type, file_size=file_size
+        file_uuid, link_type=link_type, file_size=file_size
     )
     expect_upload_id = bool(
         file_size > _MULTIPART_UPLOADS_MIN_TOTAL_SIZE and link_type == "presigned"
@@ -477,7 +464,7 @@ async def test_upload_same_file_uuid_aborts_previous_upload(
     # now we create a new upload, incase it was a multipart, we should abort the previous upload
     # to prevent unwanted costs
     new_file_upload_link = await create_upload_file_link(
-        user_id, location_id, file_uuid, link_type=link_type, file_size=file_size
+        file_uuid, link_type=link_type, file_size=file_size
     )
     if expect_upload_id:
         assert file_upload_link != new_file_upload_link
@@ -514,8 +501,6 @@ async def upload_file(
     client: TestClient,
     create_upload_file_link: Callable[..., Awaitable[FileUploadSchema]],
     create_file_of_size: Callable[[ByteSize], Path],
-    user_id: UserID,
-    location_id: int,
     file_uuid: str,
     file_size: ByteSize,
 ) -> Path:
@@ -524,7 +509,7 @@ async def upload_file(
     file = create_file_of_size(file_size)
     # get an upload link
     file_upload_link = await create_upload_file_link(
-        user_id, location_id, file_uuid, link_type="presigned", file_size=file_size
+        file_uuid, link_type="presigned", file_size=file_size
     )
 
     # upload the file
