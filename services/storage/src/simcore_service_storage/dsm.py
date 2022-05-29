@@ -709,16 +709,16 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
 
         Lastly, the meta data db is kept in sync
         """
-        source_folder = source_project["uuid"]
-        dest_folder = destination_project["uuid"]
+        source_folder = ProjectID(source_project["uuid"])
+        dest_folder = ProjectID(destination_project["uuid"])
 
         # access layer
         async with self.engine.acquire() as conn, conn.begin():
             source_access_rights = await get_project_access_rights(
-                conn, int(user_id), project_id=source_folder
+                conn, user_id, project_id=source_folder
             )
             dest_access_rights = await get_project_access_rights(
-                conn, int(user_id), project_id=dest_folder
+                conn, user_id, project_id=dest_folder
             )
         if not source_access_rights.read:
             raise web.HTTPForbidden(
@@ -778,7 +778,9 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
             new_node_id = node_mapping.get(old_node_id)
             if new_node_id is not None:
                 old_filename = source_object_parts[2]
-                dest_object_name = str(Path(dest_folder) / new_node_id / old_filename)
+                dest_object_name = str(
+                    Path(f"{dest_folder}") / new_node_id / old_filename
+                )
 
                 copy_kwargs = dict(
                     CopySource={
@@ -801,7 +803,7 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
                 source = output["path"]
 
                 if output.get("store") == DATCORE_ID:
-                    destination_folder = str(Path(dest_folder) / node_id)
+                    destination_folder = str(Path(f"{dest_folder}") / node_id)
                     logger.info("Copying %s to %s", source, destination_folder)
 
                     destination = await self.copy_file_datcore_s3(
@@ -816,7 +818,9 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
                     output["path"] = destination
 
                 elif output.get("store") == SIMCORE_S3_ID:
-                    destination = str(Path(dest_folder) / node_id / Path(source).name)
+                    destination = str(
+                        Path(f"{dest_folder}") / node_id / Path(source).name
+                    )
                     output["store"] = SIMCORE_S3_ID
                     output["path"] = destination
 
