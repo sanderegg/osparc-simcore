@@ -60,8 +60,8 @@ def is_uuid(value: str) -> bool:
 
 class FileMetaData(BaseModel):
     file_uuid: FileID
-    location_id: Literal[SIMCORE_S3_ID, DATCORE_ID]
-    location: Literal[SIMCORE_S3_STR, DATCORE_STR]
+    location_id: Literal[SIMCORE_S3_ID, DATCORE_ID]  # type: ignore
+    location: Literal[SIMCORE_S3_STR, DATCORE_STR]  # type: ignore
     bucket_name: str
     object_name: FileID
     project_id: Optional[ProjectID]

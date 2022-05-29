@@ -10,7 +10,7 @@ from collections import deque
 from contextlib import suppress
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Final, Optional, Union
+from typing import Any, Final, Optional
 
 import botocore
 import botocore.exceptions
@@ -215,7 +215,7 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
                         )
 
                         async for row in conn.execute(query):
-                            proj_data = dict(row.items())
+                            proj_data = dict(row.items())  # type: ignore
 
                             uuid_name_dict[proj_data["uuid"]] = proj_data["name"]
                             wb = proj_data["workbench"]
@@ -292,7 +292,7 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
 
     async def list_files_dataset(
         self, user_id: UserID, location: str, dataset_id: str
-    ) -> Union[list[FileMetaData], list[FileMetaDataEx]]:
+    ) -> list[FileMetaDataEx]:
         # this is a cheap shot, needs fixing once storage/db is in sync
         data = []
         if location == SIMCORE_S3_STR:
@@ -339,8 +339,8 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
                         )
                         async for row in conn.execute(query):
                             dmd = DatasetMetaData(
-                                dataset_id=row.uuid,
-                                display_name=row.name,
+                                dataset_id=row.uuid,  # type: ignore
+                                display_name=row.name,  # type: ignore
                             )
                             data.append(dmd)
                 except DBAPIError as _err:
@@ -782,19 +782,23 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
                     Path(f"{dest_folder}") / new_node_id / old_filename
                 )
 
-                copy_kwargs = dict(
+                logger.debug(
+                    "Copying %s to %s...", source_object_name, dest_object_name
+                )
+
+                # FIXME: if 5GB, it must use multipart upload Upload Part - Copy API
+                # SEE https://botocore.amazonaws.com/v1/documentation/api/latest/reference/services/s3.html#S3.Client.copy_object
+                await get_s3_client(self.app).client.copy_object(
+                    Bucket=self.simcore_bucket_name,
+                    Key=dest_object_name,
                     CopySource={
                         "Bucket": self.simcore_bucket_name,
                         "Key": source_object_name,
                     },
-                    Bucket=self.simcore_bucket_name,
-                    Key=dest_object_name,
                 )
-                logger.debug("Copying %s ...", copy_kwargs)
-
-                # FIXME: if 5GB, it must use multipart upload Upload Part - Copy API
-                # SEE https://botocore.amazonaws.com/v1/documentation/api/latest/reference/services/s3.html#S3.Client.copy_object
-                await get_s3_client(self.app).client.copy_object(**copy_kwargs)
+                logger.debug(
+                    "Copying %s to %s completed", source_object_name, dest_object_name
+                )
 
         # Step 2: list all references in outputs that point to datcore and copy over
         for node_id, node in destination_project["workbench"].items():
@@ -845,13 +849,15 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
                 fmd.node_name = uuid_name_dict.get(fmd.node_id, "Untitled")
                 fmd.raw_file_path = fmd.file_uuid
                 fmd.display_file_path = str(
-                    Path(fmd.project_name) / fmd.node_name / fmd.file_name
+                    Path(fmd.project_name or "Untitled")
+                    / (fmd.node_name or "Untitled")
+                    / fmd.file_name
                 )
                 fmd.user_id = user_id
                 assert "Size" in item  # nosec
-                fmd.file_size = item["Size"]
+                fmd.file_size = ByteSize(item["Size"])
                 assert "LastModified" in item  # nosec
-                fmd.last_modified = str(item["LastModified"])
+                fmd.last_modified = item["LastModified"]
                 fmds.append(fmd)
 
         # step 4 sync db
