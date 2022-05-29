@@ -5,16 +5,23 @@ import sqlalchemy as sa
 from aiohttp import web
 from aiopg.sa.engine import Engine
 from psycopg2 import Error as DbApiError
-from servicelib.aiohttp.aiopg_utils import PostgresRetryPolicyUponOperation
 from tenacity import retry
+from tenacity.before_sleep import before_sleep_log
+from tenacity.stop import stop_after_delay
+from tenacity.wait import wait_fixed
 
-from .constants import APP_CONFIG_KEY, APP_DB_ENGINE_KEY
+from .constants import APP_CONFIG_KEY, APP_DB_ENGINE_KEY, MINUTE, RETRY_WAIT_SECS
 from .models import tokens
 
 log = logging.getLogger(__name__)
 
 
-@retry(**PostgresRetryPolicyUponOperation(log).kwargs)
+@retry(
+    wait=wait_fixed(RETRY_WAIT_SECS),
+    stop=stop_after_delay(1 * MINUTE),
+    before_sleep=before_sleep_log(log, logging.INFO),
+    reraise=True,
+)
 async def _get_tokens_from_db(engine: Engine, userid: int) -> dict[str, Any]:
     async with engine.acquire() as conn:
         result = await conn.execute(
