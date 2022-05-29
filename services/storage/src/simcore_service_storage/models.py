@@ -176,6 +176,21 @@ class FileQueryParamsBase(BaseModel):
     user_id: UserID
 
 
+class FileDownloadQueryParams(FileQueryParamsBase):
+    link_type: LinkType = LinkType.PRESIGNED
+
+    class Config:
+        allow_population_by_field_name = True
+        extra = Extra.forbid
+
+    @validator("link_type", pre=True)
+    @classmethod
+    def convert_from_lower_case(cls, v):
+        if v is not None:
+            return f"{v}".upper()
+        return v
+
+
 class FileUploadQueryParams(FileQueryParamsBase):
     link_type: LinkType = LinkType.PRESIGNED
     file_size: ByteSize = ByteSize(0)
@@ -206,6 +221,10 @@ class FilePathParams(BaseModel):
         if v is not None:
             return urllib.parse.unquote(f"{v}")
         return v
+
+
+class FilePathIsUploadCompletedGetParams(FilePathParams):
+    future_id: str
 
 
 class UploadedPart(BaseModel):

@@ -7,7 +7,11 @@ from typing import Any, Optional
 
 from aiohttp import web
 from aiohttp.web import RouteTableDef
-from models_library.api_schemas_storage import FileUploadLinks, FileUploadSchema
+from models_library.api_schemas_storage import (
+    FileUploadLinks,
+    FileUploadSchema,
+    LinkType,
+)
 from models_library.projects import ProjectID
 from models_library.projects_nodes import NodeID
 from models_library.users import UserID
@@ -31,14 +35,16 @@ from .constants import APP_DSM_KEY, DATCORE_STR, SIMCORE_S3_ID, SIMCORE_S3_STR
 from .db_tokens import get_api_token_and_secret
 from .dsm import DataStorageManager, DatCoreApiToken, UploadLinks
 from .models import (
+    FileDownloadQueryParams,
     FileMetaDataEx,
+    FilePathIsUploadCompletedGetParams,
     FilePathParams,
     FileQueryParamsBase,
     FileUploadCompletionBody,
     FileUploadQueryParams,
 )
 from .settings import Settings
-from .utils import create_upload_completion_task_name
+from .utils import create_upload_completion_task_name, get_location_from_id
 
 log = logging.getLogger(__name__)
 
@@ -60,7 +66,7 @@ async def _prepare_storage_manager(
     user_id = query.get("user_id")
     location_id = params.get("location_id")
     location = (
-        dsm.location_from_id(location_id) if location_id is not None else INIT_STR
+        get_location_from_id(location_id) if location_id is not None else INIT_STR
     )
 
     if user_id and location in (INIT_STR, DATCORE_STR):
@@ -139,7 +145,7 @@ async def get_datasets_metadata(request: web.Request):
 
         dsm = await _prepare_storage_manager(params, query, request)
 
-        location = dsm.location_from_id(location_id)
+        location = get_location_from_id(location_id)
         # To implement
         data = await dsm.list_datasets(user_id, location)
 
@@ -165,7 +171,7 @@ async def get_files_metadata(request: web.Request):
         uuid_filter = query.get("uuid_filter", "")
 
         dsm = await _prepare_storage_manager(params, query, request)
-        location = dsm.location_from_id(location_id)
+        location = get_location_from_id(location_id)
 
         log.debug("list files %s %s %s", user_id, location, uuid_filter)
 
@@ -201,7 +207,7 @@ async def get_files_metadata_dataset(request: web.Request):
 
         dsm = await _prepare_storage_manager(params, query, request)
 
-        location = dsm.location_from_id(location_id)
+        location = get_location_from_id(location_id)
 
         log.debug("list files %s %s %s", user_id, location, dataset_id)
 
@@ -238,7 +244,7 @@ async def get_file_metadata(request: web.Request):
         file_uuid = params["file_id"]
 
         dsm = await _prepare_storage_manager(params, query, request)
-        location = dsm.location_from_id(location_id)
+        location = get_location_from_id(location_id)
 
         data = await dsm.list_file(
             user_id=user_id, location=location, file_uuid=file_uuid
@@ -267,7 +273,7 @@ async def synchronise_meta_data_table(request: web.Request):
         dry_run: bool = query["dry_run"]
 
         dsm = await _prepare_storage_manager(params, query, request)
-        location = dsm.location_from_id(location_id)
+        location = get_location_from_id(location_id)
 
         sync_results: dict[str, Any] = {
             "removed": [],
@@ -326,36 +332,35 @@ async def update_file_meta_data(request: web.Request):
 
 @routes.get(f"/{api_vtag}/locations/{{location_id}}/files/{{file_id}}")  # type: ignore
 async def download_file(request: web.Request):
-    params, query, body = await extract_and_validate(request)
+    query_params = parse_request_query_parameters_as(FileDownloadQueryParams, request)
+    path_params = parse_request_path_parameters_as(FilePathParams, request)
 
-    assert params, "params %s" % params  # nosec
-    assert query, "query %s" % query  # nosec
-    assert not body, "body %s" % body  # nosec
-
-    assert params["location_id"]  # nosec
-    assert params["file_id"]  # nosec
-    params["file_id"] = urllib.parse.unquote(params["file_id"])
-    assert query["user_id"]  # nosec
-    link_type = query.get("link_type", "presigned")
+    log.debug(
+        "received call to download_file with %s",
+        f"{path_params=}, {query_params=}",
+    )
 
     with handle_storage_errors():
-        location_id = params["location_id"]
-        user_id = query["user_id"]
-        file_uuid = params["file_id"]
-
-        if int(location_id) != SIMCORE_S3_ID:
+        if (
+            path_params.location_id != SIMCORE_S3_ID
+            and query_params.link_type == LinkType.S3
+        ):
             raise web.HTTPPreconditionFailed(
                 reason=f"Only allowed to fetch s3 link for '{SIMCORE_S3_STR}'"
             )
 
-        dsm = await _prepare_storage_manager(params, query, request)
-        location = dsm.location_from_id(location_id)
-        if location == SIMCORE_S3_STR:
+        dsm = await _prepare_storage_manager(
+            jsonable_encoder(path_params), jsonable_encoder(query_params), request
+        )
+
+        if get_location_from_id(path_params.location_id) == SIMCORE_S3_STR:
             link = await dsm.download_link_s3(
-                file_uuid, user_id, as_presigned_link=bool(link_type == "presigned")
+                path_params.file_id, query_params.user_id, query_params.link_type
             )
         else:
-            link = await dsm.download_link_datcore(user_id, file_uuid)
+            link = await dsm.download_link_datcore(
+                query_params.user_id, path_params.file_id
+            )
 
         return {"error": None, "data": {"link": link}}
 
@@ -460,22 +465,23 @@ async def complete_upload_file(request: web.Request):
 
 @routes.post(f"/{api_vtag}/locations/{{location_id}}/files/{{file_id}}:complete/futures/{{future_id}}", name="is_completed_upload_file")  # type: ignore
 async def is_completed_upload_file(request: web.Request):
-    params, query, body = await extract_and_validate(request)
-    log.debug(
-        "received call to complete upload_file with %s", f"{params=}, {query=}, {body=}"
+    query_params = parse_request_query_parameters_as(FileQueryParamsBase, request)
+    path_params = parse_request_path_parameters_as(
+        FilePathIsUploadCompletedGetParams, request
     )
-    assert params, f"{params}"  # nosec
-    assert query, f"{query}"  # nosec
-    assert not body  # nosec
+    log.debug(
+        "received call to is completed upload file with %s",
+        f"{path_params=}, {query_params=}",
+    )
     with handle_storage_errors():
         # NOTE: completing a multipart upload on AWS can take up to several minutes
         # therefore we wait a bit to see if it completes fast and return a 204
         # if it returns slow we return a 202 - Accepted, the client will have to check later
         # for completeness
-        user_id = query["user_id"]
-        file_id = urllib.parse.unquote(params["file_id"])
-        task_name = create_upload_completion_task_name(user_id, file_id)
-        assert task_name == params["future_id"]  # nosec
+        task_name = create_upload_completion_task_name(
+            query_params.user_id, path_params.file_id
+        )
+        assert task_name == path_params.future_id  # nosec
         # first check if the task is in the app
         if task := request.app[UPLOAD_TASKS_KEY].get(task_name):
             if task.done():
@@ -490,9 +496,14 @@ async def is_completed_upload_file(request: web.Request):
             )
         # there is no task, either wrong call or storage was restarted
         # we try to get the file to see if it exists in S3
-        dsm = await _prepare_storage_manager(params, query, request)
-        location = dsm.location_from_id(params["location_id"])
-        if await dsm.list_file(user_id=user_id, location=location, file_uuid=file_id):
+        dsm = await _prepare_storage_manager(
+            jsonable_encoder(path_params), jsonable_encoder(query_params), request
+        )
+        if await dsm.list_file(
+            user_id=query_params.user_id,
+            location=get_location_from_id(path_params.location_id),
+            file_uuid=path_params.file_id,
+        ):
             return web.json_response(
                 status=web.HTTPOk.status_code, data={"data": {"state": "ok"}}
             )
@@ -503,25 +514,18 @@ async def is_completed_upload_file(request: web.Request):
 
 @routes.delete(f"/{api_vtag}/locations/{{location_id}}/files/{{file_id}}")  # type: ignore
 async def delete_file(request: web.Request):
-    params, query, body = await extract_and_validate(request)
-
-    assert params, "params %s" % params  # nosec
-    assert query, "query %s" % query  # nosec
-    assert not body, "body %s" % body  # nosec
-
-    assert params["location_id"]  # nosec
-    assert params["file_id"]  # nosec
-    params["file_id"] = urllib.parse.unquote(params["file_id"])
-    assert query["user_id"]  # nosec
+    query_params = parse_request_query_parameters_as(FileQueryParamsBase, request)
+    path_params = parse_request_path_parameters_as(FilePathParams, request)
 
     with handle_storage_errors():
-        location_id = params["location_id"]
-        user_id = query["user_id"]
-        file_uuid = params["file_id"]
-
-        dsm = await _prepare_storage_manager(params, query, request)
-        location = dsm.location_from_id(location_id)
-        await dsm.delete_file(user_id=user_id, location=location, file_uuid=file_uuid)
+        dsm = await _prepare_storage_manager(
+            jsonable_encoder(path_params), jsonable_encoder(query_params), request
+        )
+        await dsm.delete_file(
+            user_id=query_params.user_id,
+            location=get_location_from_id(path_params.location_id),
+            file_uuid=path_params.file_id,
+        )
 
         return web.HTTPNoContent(content_type="application/json")
 
