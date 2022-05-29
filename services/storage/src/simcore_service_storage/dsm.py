@@ -59,12 +59,7 @@ from .models import (
 from .s3 import get_s3_client
 from .s3_client import FileID, UploadedPart
 from .settings import Settings
-from .utils import (
-    download_to_file_or_raise,
-    get_location_from_id,
-    is_file_entry_valid,
-    to_meta_data_extended,
-)
+from .utils import download_to_file_or_raise, is_file_entry_valid, to_meta_data_extended
 
 logger = logging.getLogger(__name__)
 
@@ -165,10 +160,6 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
                 locs.append(datcore)
 
         return locs
-
-    @classmethod
-    def location_from_id(cls, location_id: str):
-        return get_location_from_id(location_id)
 
     # LIST/GET ---------------------------
 
@@ -598,7 +589,7 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
         )
 
     async def download_link_s3(
-        self, file_uuid: str, user_id: UserID, as_presigned_link: bool
+        self, file_uuid: str, user_id: UserID, link_type: LinkType
     ) -> str:
 
         # access layer
@@ -621,7 +612,7 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
             AnyUrl,
             f"s3://{self.simcore_bucket_name}/{urllib.parse.quote(fmd.object_name)}",
         )
-        if as_presigned_link:
+        if link_type == LinkType.PRESIGNED:
             link = await get_s3_client(self.app).create_single_presigned_download_link(
                 self.simcore_bucket_name,
                 fmd.object_name,
