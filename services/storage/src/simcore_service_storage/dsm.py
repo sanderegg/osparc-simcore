@@ -262,7 +262,7 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
             assert api_secret  # nosec
             assert api_token  # nosec
             return await datcore_adapter.list_all_datasets_files_metadatas(
-                self.app, api_token, api_secret
+                self.app, user_id, api_token, api_secret
             )
 
         if uuid_filter:
@@ -307,7 +307,7 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
             assert api_secret  # nosec
             assert api_token  # nosec
             return await datcore_adapter.list_all_files_metadatas_in_dataset(
-                self.app, api_token, api_secret, dataset_id
+                self.app, user_id, api_token, api_secret, dataset_id
             )
 
         return data
@@ -645,9 +645,7 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
         # 2 steps: Get download link for local copy, the upload link to s3
         # TODO: This should be a redirect stream!
         # FIXME: this cannot work like that!
-        dc_link, filename = await self.download_link_datcore(
-            user_id=user_id, file_id=source_uuid
-        )
+        dc_link, filename = await self.download_link_datcore(user_id, source_uuid)
         if filename_missing:
             dest_uuid = str(Path(dest_uuid) / filename)
 

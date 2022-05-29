@@ -5,6 +5,7 @@ from typing import Any, Callable, Optional, Type, Union, cast
 
 import aiohttp
 from aiohttp import web
+from models_library.users import UserID
 from servicelib.aiohttp.application_keys import APP_CONFIG_KEY
 from servicelib.aiohttp.client_session import ClientSession, get_client_session
 from yarl import URL
@@ -126,11 +127,13 @@ async def check_user_can_connect(
 
 
 async def list_all_datasets_files_metadatas(
-    app: web.Application, api_key: str, api_secret: str
+    app: web.Application, user_id: UserID, api_key: str, api_secret: str
 ) -> list[FileMetaDataEx]:
     all_datasets: list[DatasetMetaData] = await list_datasets(app, api_key, api_secret)
     get_dataset_files_tasks = [
-        list_all_files_metadatas_in_dataset(app, api_key, api_secret, d.dataset_id)
+        list_all_files_metadatas_in_dataset(
+            app, user_id, api_key, api_secret, d.dataset_id
+        )
         for d in all_datasets
     ]
     results = await asyncio.gather(*get_dataset_files_tasks)
@@ -141,7 +144,11 @@ async def list_all_datasets_files_metadatas(
 
 
 async def list_all_files_metadatas_in_dataset(
-    app: web.Application, api_key: str, api_secret: str, dataset_id: str
+    app: web.Application,
+    user_id: UserID,
+    api_key: str,
+    api_secret: str,
+    dataset_id: str,
 ) -> list[FileMetaDataEx]:
     all_files: list[dict[str, Any]] = cast(
         list[dict[str, Any]],
@@ -167,6 +174,10 @@ async def list_all_files_metadatas_in_dataset(
                 created_at=d["created_at"],
                 last_modified=d["last_modified_at"],
                 display_file_path=d["name"],
+                project_id=None,
+                node_id=None,
+                raw_file_path=d["path"],
+                user_id=user_id,
             ),
         )
         for d in all_files
