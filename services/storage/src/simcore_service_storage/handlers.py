@@ -382,11 +382,21 @@ async def upload_file(request: web.Request):
             file_size_bytes=query_params.file_size,
         )
 
-        abort_url = request.url.with_path(f"{request.url.path}").with_query(
-            user_id=query_params.user_id
+        abort_url = request.url.join(
+            request.app.router["delete_file"]
+            .url_for(
+                location_id=f"{path_params.location_id}",
+                file_id=urllib.parse.quote(path_params.file_id, safe=""),
+            )
+            .with_query(user_id=query_params.user_id)
         )
-        complete_url = request.url.with_path(f"{request.url.path}:complete").with_query(
-            user_id=query_params.user_id
+        complete_url = request.url.join(
+            request.app.router["complete_upload_file"]
+            .url_for(
+                location_id=f"{path_params.location_id}",
+                file_id=urllib.parse.quote(path_params.file_id, safe=""),
+            )
+            .with_query(user_id=query_params.user_id)
         )
         response = FileUploadSchema(
             chunk_size=links.chunk_size,
@@ -423,7 +433,8 @@ async def complete_upload_file(request: web.Request):
         # if it returns slow we return a 202 - Accepted, the client will have to check later
         # for completeness
 
-        # TODO: check BacgroundTask in fastapi
+        # TODO: check how BackgroundTask in fastapi is done. this would be a nice addition to make this kind
+        # of constructions
         task = asyncio.create_task(
             dsm.complete_upload(path_params.file_id, query_params.user_id, body.parts),
             name=create_upload_completion_task_name(
@@ -435,7 +446,7 @@ async def complete_upload_file(request: web.Request):
             request.app.router["is_completed_upload_file"]
             .url_for(
                 location_id=f"{path_params.location_id}",
-                file_id=f"{path_params.file_id}",
+                file_id=urllib.parse.quote(path_params.file_id, safe=""),
                 future_id=task.get_name(),
             )
             .with_query(user_id=query_params.user_id)
