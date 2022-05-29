@@ -15,10 +15,9 @@ from .models import FileID, FileMetaData, FileMetaDataEx
 logger = logging.getLogger(__name__)
 
 
-def get_location_from_id(location_id: Union[str, int]) -> str:
+def get_location_from_id(location_id: int) -> str:
     try:
-        loc_id = int(location_id)
-        return LOCATION_ID_TO_TAG_MAP[loc_id]
+        return LOCATION_ID_TO_TAG_MAP[location_id]
     except (ValueError, KeyError):
         return UNDEFINED_LOCATION_TAG
 
