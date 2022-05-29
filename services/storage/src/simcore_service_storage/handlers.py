@@ -13,8 +13,6 @@ from models_library.api_schemas_storage import (
     LinkType,
 )
 from models_library.projects import ProjectID
-from models_library.projects_nodes import NodeID
-from models_library.users import UserID
 from models_library.utils.fastapi_encoders import jsonable_encoder
 from pydantic import AnyUrl, ValidationError, parse_obj_as
 from servicelib.aiohttp.application_keys import APP_CONFIG_KEY
@@ -23,7 +21,6 @@ from servicelib.aiohttp.requests_validation import (
     parse_request_path_parameters_as,
     parse_request_query_parameters_as,
 )
-from servicelib.aiohttp.rest_utils import extract_and_validate
 from settings_library.s3 import S3Settings
 from simcore_service_storage.exceptions import FileMetaDataNotFoundError
 
@@ -35,13 +32,23 @@ from .constants import APP_DSM_KEY, DATCORE_STR, SIMCORE_S3_ID, SIMCORE_S3_STR
 from .db_tokens import get_api_token_and_secret
 from .dsm import DataStorageManager, DatCoreApiToken, UploadLinks
 from .models import (
+    CopyAsSoftLinkParams,
+    DeleteFolderQueryParams,
     FileDownloadQueryParams,
     FileMetaDataEx,
-    FilePathIsUploadCompletedGetParams,
+    FilePathIsUploadCompletedParams,
     FilePathParams,
-    FileQueryParamsBase,
+    FilesMetadataDatasetPathParams,
+    FilesMetadataQueryParams,
     FileUploadCompletionBody,
     FileUploadQueryParams,
+    FoldersBody,
+    LocationPathParams,
+    SearchFilesQueryParams,
+    SimcoreS3FoldersParams,
+    SoftCopyBody,
+    StorageQueryParamsBase,
+    SyncMetadataQueryParams,
 )
 from .settings import Settings
 from .utils import create_upload_completion_task_name, get_location_from_id
@@ -106,77 +113,55 @@ def handle_storage_errors():
 
 @routes.get(f"/{api_vtag}/locations", name="get_storage_locations")  # type: ignore
 async def get_storage_locations(request: web.Request):
-    log.debug("CHECK LOCATION PATH %s %s", request.path, request.url)
-
-    params, query, body = await extract_and_validate(request)
-
-    assert not params, "params %s" % params  # nosec
-    assert query, "query %s" % query  # nosec
-    assert not body, "body %s" % body  # nosec
-
-    assert query["user_id"]  # nosec
+    query_params = parse_request_query_parameters_as(StorageQueryParamsBase, request)
+    log.debug(
+        "received call to get_storage_locations with %s",
+        f"{query_params=}",
+    )
 
     with handle_storage_errors():
-        user_id = query["user_id"]
-
-        dsm = await _prepare_storage_manager(params, query, request)
-        locs = await dsm.locations(user_id)
+        dsm = await _prepare_storage_manager(
+            {}, jsonable_encoder(query_params), request
+        )
+        locs = await dsm.locations(query_params.user_id)
 
         return {"error": None, "data": locs}
 
 
 @routes.get(f"/{api_vtag}/locations/{{location_id}}/datasets")  # type: ignore
 async def get_datasets_metadata(request: web.Request):
-    log.debug("GET METADATA DATASETS %s %s", request.path, request.url)
-
-    params, query, body = await extract_and_validate(request)
-
-    assert params, "params %s" % params  # nosec
-    assert query, "query %s" % query  # nosec
-    assert not body, "body %s" % body  # nosec
-
-    assert params["location_id"]  # nosec
-    assert query["user_id"]  # nosec
-
+    query_params = parse_request_query_parameters_as(StorageQueryParamsBase, request)
+    path_params = parse_request_path_parameters_as(LocationPathParams, request)
+    log.debug(
+        "received call to get_datasets_metadata with %s",
+        f"{path_params=}, {query_params=}",
+    )
     with handle_storage_errors():
-
-        location_id = params["location_id"]
-        user_id = query["user_id"]
-
-        dsm = await _prepare_storage_manager(params, query, request)
-
-        location = get_location_from_id(location_id)
-        # To implement
-        data = await dsm.list_datasets(user_id, location)
-
+        dsm = await _prepare_storage_manager(
+            jsonable_encoder(path_params), jsonable_encoder(query_params), request
+        )
+        data = await dsm.list_datasets(
+            query_params.user_id, get_location_from_id(path_params.location_id)
+        )
         return {"error": None, "data": data}
 
 
 @routes.get(f"/{api_vtag}/locations/{{location_id}}/files/metadata")  # type: ignore
 async def get_files_metadata(request: web.Request):
-    log.debug("GET FILES METADATA %s %s", request.path, request.url)
-
-    params, query, body = await extract_and_validate(request)
-
-    assert params, "params %s" % params  # nosec
-    assert query, "query %s" % query  # nosec
-    assert not body, "body %s" % body  # nosec
-
-    assert params["location_id"]  # nosec
-    assert query["user_id"]  # nosec
-
+    query_params = parse_request_query_parameters_as(FilesMetadataQueryParams, request)
+    path_params = parse_request_path_parameters_as(LocationPathParams, request)
+    log.debug(
+        "received call to get_files_metadata with %s",
+        f"{path_params=}, {query_params=}",
+    )
     with handle_storage_errors():
-        location_id = params["location_id"]
-        user_id = query["user_id"]
-        uuid_filter = query.get("uuid_filter", "")
-
-        dsm = await _prepare_storage_manager(params, query, request)
-        location = get_location_from_id(location_id)
-
-        log.debug("list files %s %s %s", user_id, location, uuid_filter)
-
+        dsm = await _prepare_storage_manager(
+            jsonable_encoder(path_params), jsonable_encoder(query_params), request
+        )
         data = await dsm.list_files(
-            user_id=user_id, location=location, uuid_filter=uuid_filter
+            user_id=query_params.user_id,
+            location=get_location_from_id(path_params.location_id),
+            uuid_filter=query_params.uuid_filter,
         )
         data_as_dict = []
         for d in data:
@@ -188,33 +173,23 @@ async def get_files_metadata(request: web.Request):
 
 @routes.get(f"/{api_vtag}/locations/{{location_id}}/datasets/{{dataset_id}}/metadata")  # type: ignore
 async def get_files_metadata_dataset(request: web.Request):
-    log.debug("GET FILES METADATA DATASET %s %s", request.path, request.url)
-
-    params, query, body = await extract_and_validate(request)
-
-    assert params, "params %s" % params  # nosec
-    assert query, "query %s" % query  # nosec
-    assert not body, "body %s" % body  # nosec
-
-    assert params["location_id"]  # nosec
-    assert params["dataset_id"]  # nosec
-    assert query["user_id"]  # nosec
-
+    query_params = parse_request_query_parameters_as(StorageQueryParamsBase, request)
+    path_params = parse_request_path_parameters_as(
+        FilesMetadataDatasetPathParams, request
+    )
+    log.debug(
+        "received call to get_files_metadata_dataset with %s",
+        f"{path_params=}, {query_params=}",
+    )
     with handle_storage_errors():
-        location_id = params["location_id"]
-        user_id = query["user_id"]
-        dataset_id = params["dataset_id"]
-
-        dsm = await _prepare_storage_manager(params, query, request)
-
-        location = get_location_from_id(location_id)
-
-        log.debug("list files %s %s %s", user_id, location, dataset_id)
-
-        data = await dsm.list_files_dataset(
-            user_id=user_id, location=location, dataset_id=dataset_id
+        dsm = await _prepare_storage_manager(
+            jsonable_encoder(path_params), jsonable_encoder(query_params), request
         )
-
+        data = await dsm.list_files_dataset(
+            user_id=query_params.user_id,
+            location=get_location_from_id(path_params.location_id),
+            dataset_id=path_params.dataset_id,
+        )
         data_as_dict = []
         for d in data:
             log.info("DATA %s", jsonable_encoder(d.fmd))
@@ -228,26 +203,20 @@ async def get_files_metadata_dataset(request: web.Request):
     name="get_file_metadata",
 )  # type: ignore
 async def get_file_metadata(request: web.Request):
-    params, query, body = await extract_and_validate(request)
-
-    assert params, "params %s" % params  # nosec
-    assert query, "query %s" % query  # nosec
-    assert not body, "body %s" % body  # nosec
-
-    assert params["location_id"]  # nosec
-    assert params["file_id"]  # nosec
-    assert query["user_id"]  # nosec
-
+    query_params = parse_request_query_parameters_as(StorageQueryParamsBase, request)
+    path_params = parse_request_path_parameters_as(FilePathParams, request)
+    log.debug(
+        "received call to get_files_metadata_dataset with %s",
+        f"{path_params=}, {query_params=}",
+    )
     with handle_storage_errors():
-        location_id = params["location_id"]
-        user_id = query["user_id"]
-        file_uuid = params["file_id"]
-
-        dsm = await _prepare_storage_manager(params, query, request)
-        location = get_location_from_id(location_id)
-
+        dsm = await _prepare_storage_manager(
+            jsonable_encoder(path_params), jsonable_encoder(query_params), request
+        )
         data = await dsm.list_file(
-            user_id=user_id, location=location, file_uuid=file_uuid
+            user_id=query_params.user_id,
+            location=get_location_from_id(path_params.location_id),
+            file_uuid=path_params.file_id,
         )
         # when no metadata is found
         if data is None:
@@ -263,24 +232,24 @@ async def get_file_metadata(request: web.Request):
 
 @routes.post(f"/{api_vtag}/locations/{{location_id}}:sync")  # type: ignore
 async def synchronise_meta_data_table(request: web.Request):
-    params, query, *_ = await extract_and_validate(request)
-    assert query["dry_run"] is not None  # nosec
-    assert params["location_id"]  # nosec
-
+    query_params = parse_request_query_parameters_as(SyncMetadataQueryParams, request)
+    path_params = parse_request_path_parameters_as(LocationPathParams, request)
+    log.debug(
+        "received call to synchronise_meta_data_table with %s",
+        f"{path_params=}, {query_params=}",
+    )
     with handle_storage_errors():
-        location_id: str = params["location_id"]
-        fire_and_forget: bool = query["fire_and_forget"]
-        dry_run: bool = query["dry_run"]
-
-        dsm = await _prepare_storage_manager(params, query, request)
-        location = get_location_from_id(location_id)
-
+        dsm = await _prepare_storage_manager(
+            jsonable_encoder(path_params), jsonable_encoder(query_params), request
+        )
         sync_results: dict[str, Any] = {
             "removed": [],
         }
-        sync_coro = dsm.synchronise_meta_data_table(location, dry_run)
+        sync_coro = dsm.synchronise_meta_data_table(
+            get_location_from_id(path_params.location_id), query_params.dry_run
+        )
 
-        if fire_and_forget:
+        if query_params.fire_and_forget:
             settings: Settings = request.app[APP_CONFIG_KEY]
 
             async def _go():
@@ -298,31 +267,32 @@ async def synchronise_meta_data_table(request: web.Request):
         else:
             sync_results = await sync_coro
 
-        sync_results["fire_and_forget"] = fire_and_forget
-        sync_results["dry_run"] = dry_run
+        sync_results["fire_and_forget"] = query_params.fire_and_forget
+        sync_results["dry_run"] = query_params.dry_run
 
         return {"error": None, "data": sync_results}
 
 
 @routes.patch(f"/{api_vtag}/locations/{{location_id}}/files/{{file_id}}/metadata")  # type: ignore
 async def update_file_meta_data(request: web.Request):
-    params, query, body = await extract_and_validate(request)
-
-    assert params, "params %s" % params  # nosec
-    assert query, "query %s" % query  # nosec
-    assert not body, "body %s" % body  # nosec
-
+    query_params = parse_request_query_parameters_as(StorageQueryParamsBase, request)
+    path_params = parse_request_path_parameters_as(FilePathParams, request)
+    log.debug(
+        "received call to update_file_meta_data with %s",
+        f"{path_params=}, {query_params=}",
+    )
     with handle_storage_errors():
-        file_uuid = urllib.parse.unquote_plus(params["file_id"])
-        user_id = query["user_id"]
-
-        dsm = await _prepare_storage_manager(params, query, request)
+        dsm = await _prepare_storage_manager(
+            jsonable_encoder(path_params), jsonable_encoder(query_params), request
+        )
 
         data: Optional[FileMetaDataEx] = await dsm.update_metadata(
-            file_uuid=file_uuid, user_id=user_id
+            file_uuid=path_params.file_id, user_id=query_params.user_id
         )
         if data is None:
-            raise web.HTTPNotFound(reason=f"Could not update metadata for {file_uuid}")
+            raise web.HTTPNotFound(
+                reason=f"Could not update metadata for {path_params.file_id}"
+            )
 
         return {
             "error": None,
@@ -334,7 +304,6 @@ async def update_file_meta_data(request: web.Request):
 async def download_file(request: web.Request):
     query_params = parse_request_query_parameters_as(FileDownloadQueryParams, request)
     path_params = parse_request_path_parameters_as(FilePathParams, request)
-
     log.debug(
         "received call to download_file with %s",
         f"{path_params=}, {query_params=}",
@@ -420,15 +389,13 @@ async def upload_file(request: web.Request):
 
 @routes.post(f"/{api_vtag}/locations/{{location_id}}/files/{{file_id}}:complete")  # type: ignore
 async def complete_upload_file(request: web.Request):
-    query_params = parse_request_query_parameters_as(FileQueryParamsBase, request)
+    query_params = parse_request_query_parameters_as(StorageQueryParamsBase, request)
     path_params = parse_request_path_parameters_as(FilePathParams, request)
     body = await parse_request_body_as(FileUploadCompletionBody, request)
-
     log.debug(
         "received call to upload_file with %s",
         f"{path_params=}, {query_params=}",
     )
-
     with handle_storage_errors():
         dsm = await _prepare_storage_manager(
             jsonable_encoder(path_params), jsonable_encoder(query_params), request
@@ -465,9 +432,9 @@ async def complete_upload_file(request: web.Request):
 
 @routes.post(f"/{api_vtag}/locations/{{location_id}}/files/{{file_id}}:complete/futures/{{future_id}}", name="is_completed_upload_file")  # type: ignore
 async def is_completed_upload_file(request: web.Request):
-    query_params = parse_request_query_parameters_as(FileQueryParamsBase, request)
+    query_params = parse_request_query_parameters_as(StorageQueryParamsBase, request)
     path_params = parse_request_path_parameters_as(
-        FilePathIsUploadCompletedGetParams, request
+        FilePathIsUploadCompletedParams, request
     )
     log.debug(
         "received call to is completed upload file with %s",
@@ -514,9 +481,12 @@ async def is_completed_upload_file(request: web.Request):
 
 @routes.delete(f"/{api_vtag}/locations/{{location_id}}/files/{{file_id}}")  # type: ignore
 async def delete_file(request: web.Request):
-    query_params = parse_request_query_parameters_as(FileQueryParamsBase, request)
+    query_params = parse_request_query_parameters_as(StorageQueryParamsBase, request)
     path_params = parse_request_path_parameters_as(FilePathParams, request)
-
+    log.debug(
+        "received call to delete_file with %s",
+        f"{path_params=}, {query_params=}",
+    )
     with handle_storage_errors():
         dsm = await _prepare_storage_manager(
             jsonable_encoder(path_params), jsonable_encoder(query_params), request
@@ -532,60 +502,66 @@ async def delete_file(request: web.Request):
 
 @routes.post(f"/{api_vtag}/simcore-s3:access")  # type: ignore
 async def get_or_create_temporary_s3_access(request: web.Request):
-    user_id = UserID(request.query["user_id"])
+    query_params = parse_request_query_parameters_as(StorageQueryParamsBase, request)
+    log.debug(
+        "received call to get_or_create_temporary_s3_access with %s",
+        f"{query_params=}",
+    )
     with handle_storage_errors():
         s3_settings: S3Settings = await sts.get_or_create_temporary_token_for_user(
-            request.app, user_id
+            request.app, query_params.user_id
         )
         return {"data": s3_settings.dict()}
 
 
 @routes.post(f"/{api_vtag}/simcore-s3/folders", name="copy_folders_from_project")  # type: ignore
 async def create_folders_from_project(request: web.Request):
-    # FIXME: Update openapi-core. Fails with additionalProperties https://github.com/p1c2u/openapi-core/issues/124. Fails with project
-    # params, query, body = await extract_and_validate(request)
-    user_id = request.query["user_id"]
+    query_params = parse_request_query_parameters_as(StorageQueryParamsBase, request)
+    body = await parse_request_body_as(FoldersBody, request)
+    log.debug(
+        "received call to create_folders_from_project with %s",
+        f"{body=}, {query_params=}",
+    )
 
-    body = await request.json()
-    source_project = body.get("source", {})
-    destination_project = body.get("destination", {})
-    nodes_map = body.get("nodes_map", {})
-
-    assert set(nodes_map.keys()) == set(source_project["workbench"].keys())  # nosec
-    assert set(nodes_map.values()) == set(  # nosec
-        destination_project["workbench"].keys()  # nosec
+    assert set(body.nodes_map.keys()) == set(body.source["workbench"].keys())  # nosec
+    assert set(body.nodes_map.values()) == set(
+        body.destination["workbench"].keys()
     )  # nosec
 
     # TODO: validate project with jsonschema instead??
     with handle_storage_errors():
         dsm = await _prepare_storage_manager(
             params={"location_id": SIMCORE_S3_ID},
-            query={"user_id": user_id},
+            query=jsonable_encoder(query_params),
             request=request,
         )
         await dsm.deep_copy_project_simcore_s3(
-            user_id, source_project, destination_project, nodes_map
+            query_params.user_id, body.source, body.destination, body.nodes_map
         )
 
     raise web.HTTPCreated(
-        text=json.dumps(destination_project), content_type="application/json"
+        text=json.dumps(body.destination), content_type="application/json"
     )
 
 
 @routes.delete(f"/{api_vtag}/simcore-s3/folders/{{folder_id}}")  # type: ignore
 async def delete_folders_of_project(request: web.Request):
-    folder_id = request.match_info["folder_id"]
-    user_id = request.query["user_id"]
-    node_id = request.query.get("node_id", None)
-
+    query_params = parse_request_query_parameters_as(DeleteFolderQueryParams, request)
+    path_params = parse_request_path_parameters_as(SimcoreS3FoldersParams, request)
+    log.debug(
+        "received call to delete_folders_of_project with %s",
+        f"{path_params=}, {query_params=}",
+    )
     with handle_storage_errors():
         dsm = await _prepare_storage_manager(
             params={"location_id": SIMCORE_S3_ID},
-            query={"user_id": user_id},
+            query=jsonable_encoder(query_params),
             request=request,
         )
         await dsm.delete_project_simcore_s3(
-            UserID(user_id), ProjectID(folder_id), NodeID(node_id) if node_id else None
+            query_params.user_id,
+            ProjectID(path_params.folder_id),
+            query_params.node_id,
         )
 
     raise web.HTTPNoContent(content_type="application/json")
@@ -593,48 +569,46 @@ async def delete_folders_of_project(request: web.Request):
 
 @routes.post(f"/{api_vtag}/simcore-s3/files/metadata:search")  # type: ignore
 async def search_files_starting_with(request: web.Request):
-    params, query, body = await extract_and_validate(request)
-    assert not params, "params %s" % params  # nosec
-    assert query, "query %s" % query  # nosec
-    assert not body, "body %s" % body  # nosec
-
-    assert query["user_id"]  # nosec
-    assert query["startswith"]  # nosec
-
+    query_params = parse_request_query_parameters_as(SearchFilesQueryParams, request)
+    log.debug(
+        "received call to search_files_starting_with with %s",
+        f"{query_params=}",
+    )
     with handle_storage_errors():
-
-        user_id = int(query["user_id"])
-        startswith = query["startswith"]
-
         dsm = await _prepare_storage_manager(
-            {"location_id": SIMCORE_S3_ID}, {"user_id": user_id}, request
+            params={"location_id": SIMCORE_S3_ID},
+            query=jsonable_encoder(query_params),
+            request=request,
         )
 
-        data = await dsm.search_files_starting_with(int(user_id), prefix=startswith)
-        log.debug("Found %d files starting with '%s'", len(data), startswith)
+        data = await dsm.search_files_starting_with(
+            query_params.user_id, prefix=query_params.startswith
+        )
+        log.debug(
+            "Found %d files starting with '%s'", len(data), query_params.startswith
+        )
 
         return [{**jsonable_encoder(d.fmd), "parent_id": d.parent_id} for d in data]
 
 
 @routes.post(f"/{api_vtag}/files/{{file_id}}:soft-copy", name="copy_as_soft_link")  # type: ignore
 async def copy_as_soft_link(request: web.Request):
-    # TODO: error handling
-    params, query, body = await extract_and_validate(request)
-
-    assert params, "params %s" % params  # nosec
-    assert query, "query %s" % query  # nosec
-    assert body, "body %s" % body  # nosec
-
+    query_params = parse_request_query_parameters_as(StorageQueryParamsBase, request)
+    path_params = parse_request_path_parameters_as(CopyAsSoftLinkParams, request)
+    body = await parse_request_body_as(SoftCopyBody, request)
+    log.debug(
+        "received call to upload_file with %s",
+        f"{path_params=}, {query_params=}, {body=}",
+    )
     with handle_storage_errors():
-        target_uuid = params["file_id"]
-        user_id = int(query["user_id"])
-        link_uuid = body.link_id
-
         dsm = await _prepare_storage_manager(
-            {"location_id": SIMCORE_S3_ID}, {"user_id": user_id}, request
+            params={"location_id": SIMCORE_S3_ID},
+            query=jsonable_encoder(query_params),
+            request=request,
         )
-
-        file_link = await dsm.create_soft_link(user_id, target_uuid, link_uuid)
+        file_link = await dsm.create_soft_link(
+            query_params.user_id, path_params.file_id, body.link_id
+        )
 
         data = {**jsonable_encoder(file_link.fmd), "parent_id": file_link.parent_id}
         return data

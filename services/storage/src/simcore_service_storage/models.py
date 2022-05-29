@@ -1,7 +1,7 @@
 import datetime
 import urllib.parse
 from dataclasses import dataclass
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 from uuid import UUID
 
 from models_library.api_schemas_storage import LinkType
@@ -172,16 +172,25 @@ class UploadLinks:
     chunk_size: ByteSize
 
 
-class FileQueryParamsBase(BaseModel):
+class StorageQueryParamsBase(BaseModel):
     user_id: UserID
-
-
-class FileDownloadQueryParams(FileQueryParamsBase):
-    link_type: LinkType = LinkType.PRESIGNED
 
     class Config:
         allow_population_by_field_name = True
         extra = Extra.forbid
+
+
+class FilesMetadataQueryParams(StorageQueryParamsBase):
+    uuid_filter: str = ""
+
+
+class SyncMetadataQueryParams(StorageQueryParamsBase):
+    dry_run: bool = False
+    fire_and_forget: bool = False
+
+
+class FileDownloadQueryParams(StorageQueryParamsBase):
+    link_type: LinkType = LinkType.PRESIGNED
 
     @validator("link_type", pre=True)
     @classmethod
@@ -191,14 +200,10 @@ class FileDownloadQueryParams(FileQueryParamsBase):
         return v
 
 
-class FileUploadQueryParams(FileQueryParamsBase):
+class FileUploadQueryParams(StorageQueryParamsBase):
     link_type: LinkType = LinkType.PRESIGNED
     file_size: ByteSize = ByteSize(0)
 
-    class Config:
-        allow_population_by_field_name = True
-        extra = Extra.forbid
-
     @validator("link_type", pre=True)
     @classmethod
     def convert_from_lower_case(cls, v):
@@ -207,13 +212,28 @@ class FileUploadQueryParams(FileQueryParamsBase):
         return v
 
 
-class FilePathParams(BaseModel):
+class DeleteFolderQueryParams(StorageQueryParamsBase):
+    node_id: Optional[NodeID] = None
+
+
+class SearchFilesQueryParams(StorageQueryParamsBase):
+    startswith: str = ""
+
+
+class LocationPathParams(BaseModel):
     location_id: int
-    file_id: FileID
 
     class Config:
         allow_population_by_field_name = True
         extra = Extra.forbid
+
+
+class FilesMetadataDatasetPathParams(LocationPathParams):
+    dataset_id: str
+
+
+class FilePathParams(LocationPathParams):
+    file_id: FileID
 
     @validator("file_id", pre=True)
     @classmethod
@@ -223,8 +243,23 @@ class FilePathParams(BaseModel):
         return v
 
 
-class FilePathIsUploadCompletedGetParams(FilePathParams):
+class FilePathIsUploadCompletedParams(FilePathParams):
     future_id: str
+
+
+class SimcoreS3FoldersParams(BaseModel):
+    folder_id: str
+
+
+class CopyAsSoftLinkParams(BaseModel):
+    file_id: FileID
+
+    @validator("file_id", pre=True)
+    @classmethod
+    def unquote(cls, v):
+        if v is not None:
+            return urllib.parse.unquote(f"{v}")
+        return v
 
 
 class UploadedPart(BaseModel):
@@ -240,6 +275,16 @@ class MultiPartUploadLinks(BaseModel):
     upload_id: UploadID
     chunk_size: ByteSize
     urls: list[AnyUrl]
+
+
+class FoldersBody(BaseModel):
+    source: dict[str, Any] = Field(default_factory=dict)
+    destination: dict[str, Any] = Field(default_factory=dict)
+    nodes_map: dict[str, str] = Field(default_factory=dict)
+
+
+class SoftCopyBody(BaseModel):
+    link_id: str
 
 
 __all__ = (
