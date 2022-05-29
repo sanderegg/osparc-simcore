@@ -1,7 +1,9 @@
 import logging
+from typing import Any
 
 import sqlalchemy as sa
 from aiohttp import web
+from aiopg.sa.engine import Engine
 from psycopg2 import Error as DbApiError
 from servicelib.aiohttp.aiopg_utils import PostgresRetryPolicyUponOperation
 from tenacity import retry
@@ -13,7 +15,7 @@ log = logging.getLogger(__name__)
 
 
 @retry(**PostgresRetryPolicyUponOperation(log).kwargs)
-async def _get_tokens_from_db(engine: sa.engine.Engine, userid: int):
+async def _get_tokens_from_db(engine: Engine, userid: int) -> dict[str, Any]:
     async with engine.acquire() as conn:
         result = await conn.execute(
             sa.select(
