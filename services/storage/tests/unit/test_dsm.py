@@ -296,7 +296,7 @@ async def test_links_s3(
 
     tmp_file2 = f"{tmp_file}.rec"
     down_url = await dsm.download_link_s3(
-        fmd.file_uuid, fmd.user_id, as_presigned_link=True
+        fmd.file_uuid, fmd.user_id, link_type=LinkType.PRESIGNED
     )
     urllib.request.urlretrieve(down_url, tmp_file2)
 
