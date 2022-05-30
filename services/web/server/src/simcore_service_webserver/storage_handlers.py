@@ -8,6 +8,7 @@ import urllib.parse
 from typing import Any, Dict, List, Optional, Tuple, Union, cast
 
 from aiohttp import ClientResponse, web
+from models_library.api_schemas_storage import FileUploadSchema
 from servicelib.aiohttp.client_session import get_client_session
 from servicelib.aiohttp.rest_responses import unwrap_envelope
 from servicelib.aiohttp.rest_utils import extract_and_validate
@@ -242,4 +243,6 @@ async def get_file_upload_url(
     params = dict(user_id=user_id)
     async with session.put(url, ssl=False, params=params) as resp:
         data, _ = await safe_unwrap(resp)
-        return extract_link(data)
+    file_upload_schema = FileUploadSchema.parse_obj(data)
+    assert file_upload_schema.urls  # nosec
+    return file_upload_schema.urls[0]
