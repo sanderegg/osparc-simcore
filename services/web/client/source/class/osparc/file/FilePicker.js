@@ -622,7 +622,5 @@ qx.Class.define("osparc.file.FilePicker", {
       const abort_url = presignedLinkData.presignedLink.links.abort_url;
       const xhr = new XMLHttpRequest();
       xhr.open("DELETE", abort_url, true);
-    },
-    __checkForCompletedUpload: function()
-  }
+    }
 });
