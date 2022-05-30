@@ -12,15 +12,23 @@ from uuid import UUID
 
 import aiofiles
 from aiohttp import ClientSession, ClientTimeout, web
+from models_library.api_schemas_storage import UploadedPart
 from models_library.projects import AccessRights, Project
 from models_library.projects_nodes_io import BaseFileLink, NodeID
 from models_library.utils.nodes import compute_node_hash, project_node_io_payload_cb
+from tenacity import (
+    AsyncRetrying,
+    retry_if_exception_type,
+    stop_after_delay,
+    wait_fixed,
+)
 
 from ...director_v2_api import create_or_update_pipeline
 from ...projects.projects_api import get_project_for_user, submit_delete_project_task
 from ...projects.projects_db import APP_PROJECT_DBAPI
 from ...projects.projects_exceptions import ProjectsException
 from ...storage_handlers import (
+    complete_file_upload,
     get_file_download_url,
     get_file_upload_url,
     get_project_files_metadata,
@@ -165,6 +173,7 @@ async def generate_directory_contents(
 ETag = str
 
 
+# NOTE: this is currently not going to work over 5GB!!
 async def upload_file_to_storage(
     app: web.Application,
     link_and_path: LinkAndPath2,
@@ -174,8 +183,8 @@ async def upload_file_to_storage(
     try:
         upload_url = await get_file_upload_url(
             app=app,
-            location_id=str(link_and_path.storage_type),
-            file_id=str(link_and_path.relative_path_to_file),
+            location_id=f"{link_and_path.storage_type}",
+            file_id=f"{link_and_path.relative_path_to_file}",
             user_id=user_id,
         )
     except Exception as e:
@@ -201,11 +210,35 @@ async def upload_file_to_storage(
             raise ExporterException(
                 f"Client replied with status={resp.status} and body '{upload_result}'"
             )
-        e_tag = json.loads(resp.headers.get("Etag", None))
+        e_tag = json.loads(resp.headers.get("Etag", "NoETag-Error"))
         log.debug(
             "Upload status=%s, result: '%s', Etag %s", resp.status, upload_result, e_tag
         )
-        return (link_and_path, e_tag)
+    state_url = await complete_file_upload(
+        app=app,
+        location_id=f"{link_and_path.storage_type}",
+        file_id=f"{link_and_path.relative_path_to_file}",
+        user_id=user_id,
+        parts=[UploadedPart(number=1, e_tag=e_tag)],
+    )
+    async for attempt in AsyncRetrying(
+        reraise=True,
+        wait=wait_fixed(1),
+        stop=stop_after_delay(120),
+        retry=retry_if_exception_type(ValueError),
+    ):
+        with attempt:
+
+            async with session.post(state_url) as resp:
+                if resp.status != 200:
+                    raise ExporterException(
+                        f"Client could not complete upload of {link_and_path.storage_path_to_file}"
+                    )
+                data = await resp.json()
+                if data.get("state", None) != "ok":
+                    raise ValueError("Upload status is not ok")
+
+    return (link_and_path, e_tag)
 
 
 async def add_new_project(app: web.Application, project: Project, user_id: int):

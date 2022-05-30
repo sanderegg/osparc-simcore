@@ -8,6 +8,7 @@ from typing import Any, Optional
 from aiohttp import web
 from aiohttp.web import RouteTableDef
 from models_library.api_schemas_storage import (
+    FileUploadCompletionBody,
     FileUploadLinks,
     FileUploadSchema,
     LinkType,
@@ -41,7 +42,6 @@ from .models import (
     FilePathParams,
     FilesMetadataDatasetPathParams,
     FilesMetadataQueryParams,
-    FileUploadCompletionBody,
     FileUploadQueryParams,
     FoldersBody,
     LocationPathParams,
