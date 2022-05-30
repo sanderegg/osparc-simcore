@@ -2,7 +2,7 @@ from enum import Enum
 from functools import wraps
 from json import JSONDecodeError
 from typing import Any, Callable, Dict
-from urllib.parse import quote, quote_plus
+from urllib.parse import quote
 
 from aiohttp import ClientSession, web
 from aiohttp.client_exceptions import ClientConnectionError, ClientResponseError
@@ -198,7 +198,7 @@ async def delete_file(
 async def update_file_meta_data(
     session: ClientSession, s3_object: str, user_id: UserID
 ) -> ETag:
-    url = f"{_base_url()}/locations/0/files/{quote_plus(s3_object)}/metadata"
+    url = f"{_base_url()}/locations/0/files/{quote(s3_object, safe='')}/metadata"
     result = await session.patch(url, params=dict(user_id=user_id))
     if result.status != web.HTTPOk.status_code:
         raise exceptions.StorageInvalidCall(
