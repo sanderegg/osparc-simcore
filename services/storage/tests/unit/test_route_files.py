@@ -20,6 +20,7 @@ from aiopg.sa import Engine
 from faker import Faker
 from models_library.api_schemas_storage import FileUploadSchema
 from models_library.projects import ProjectID
+from models_library.projects_nodes import NodeID
 from models_library.users import UserID
 from models_library.utils.fastapi_encoders import jsonable_encoder
 from pydantic import ByteSize, parse_obj_as
@@ -491,6 +492,17 @@ async def test_upload_same_file_uuid_aborts_previous_upload(
         file_uuid,
         expected_upload_ids=([new_upload_id] if new_upload_id else None),
     )
+
+
+# /v0/locations/0/files/9d27c276-6cfd-48c3-9eea-5b56972683f9%2Faf7ecd7b-5e5d-4f5f-93c3-a234171cabe2%2Fsome%20funky%20name.txt?user_id=1&link_type=presigned
+
+
+# "öä$äö2-34 name without extension"
+
+
+@pytest.fixture
+def file_uuid(project_id: ProjectID, node_id: NodeID, faker: Faker) -> FileID:
+    return f"{project_id}/{node_id}/öä$äö2-34 name in to add complexity {faker.file_name()}"
 
 
 @pytest.fixture
