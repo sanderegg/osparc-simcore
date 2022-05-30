@@ -344,7 +344,6 @@ paths:
                         minimum: 1
                       e_tag:
                         type: string
-
       responses:
         "202":
           description: Completion of upload is accepted
@@ -380,7 +379,6 @@ paths:
             enum:
               - presigned
               - s3
-
       responses:
         "200":
           description: "Returns presigned link"
