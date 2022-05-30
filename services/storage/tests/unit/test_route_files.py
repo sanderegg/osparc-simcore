@@ -85,14 +85,14 @@ async def create_upload_file_link(
     # cleanup
     assert client.app
     clean_tasks = []
-    for user_id, location_id, file_uuid in file_params:
+    for u_id, loc_id, file_uuid in file_params:
         url = (
             client.app.router["delete_file"]
             .url_for(
-                location_id=f"{location_id}",
+                location_id=f"{loc_id}",
                 file_id=urllib.parse.quote(file_uuid, safe=""),
             )
-            .with_query(user_id=user_id)
+            .with_query(user_id=u_id)
         )
         clean_tasks.append(client.delete(f"{url}"))
     await asyncio.gather(*clean_tasks)
