@@ -212,7 +212,9 @@ async def test_create_upload_file_default_returns_single_link(
     assert len(received_file_upload.urls) == 1
     assert received_file_upload.urls[0].scheme == expected_link_scheme
     assert received_file_upload.urls[0].path
-    assert received_file_upload.urls[0].path.endswith(f"{file_uuid}")
+    assert received_file_upload.urls[0].path.endswith(
+        f"{urllib.parse.quote(file_uuid, safe='')}"
+    )
     # the chunk_size
     assert received_file_upload.chunk_size == expected_chunk_size
     if expected_link_query_keys:
