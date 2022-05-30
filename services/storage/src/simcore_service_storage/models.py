@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import Any, Literal, Optional
 from uuid import UUID
 
-from models_library.api_schemas_storage import LinkType
+from models_library.api_schemas_storage import ETag, LinkType
 from models_library.projects import ProjectID
 from models_library.projects_nodes import NodeID
 from models_library.users import UserID
@@ -14,7 +14,6 @@ from pydantic import (
     ByteSize,
     Extra,
     Field,
-    PositiveInt,
     constr,
     parse_obj_as,
     validate_arguments,
@@ -40,7 +39,6 @@ from .constants import (
 
 FileID = constr(regex=FILE_ID_RE)
 UploadID = str
-ETag = str
 
 
 @dataclass
@@ -261,15 +259,6 @@ class CopyAsSoftLinkParams(BaseModel):
         if v is not None:
             return urllib.parse.unquote(f"{v}")
         return v
-
-
-class UploadedPart(BaseModel):
-    number: PositiveInt
-    e_tag: ETag
-
-
-class FileUploadCompletionBody(BaseModel):
-    parts: list[UploadedPart]
 
 
 class MultiPartUploadLinks(BaseModel):
