@@ -4,9 +4,10 @@
 """
 import logging
 import urllib
+import urllib.parse
 from typing import Any, Dict, List, Optional, Tuple, Union, cast
 
-from aiohttp import web
+from aiohttp import ClientResponse, web
 from servicelib.aiohttp.client_session import get_client_session
 from servicelib.aiohttp.rest_responses import unwrap_envelope
 from servicelib.aiohttp.rest_utils import extract_and_validate
@@ -64,7 +65,7 @@ async def _request_storage(request: web.Request, method: str, **kwargs):
 
 
 async def safe_unwrap(
-    resp: web.Response,
+    resp: ClientResponse,
 ) -> Tuple[Optional[Union[Dict[str, Any], List[Dict[str, Any]]]], Optional[Dict]]:
     if resp.status != 200:
         body = await resp.text()
@@ -143,6 +144,20 @@ async def download_file(request: web.Request):
 @permission_required("storage.files.*")
 async def upload_file(request: web.Request):
     payload = await _request_storage(request, "PUT")
+    return payload
+
+
+@login_required
+@permission_required("storage.files.*")
+async def complete_upload_file(request: web.Request):
+    payload = await _request_storage(request, "POST")
+    return payload
+
+
+@login_required
+@permission_required("storage.files.*")
+async def is_completed_upload_file(request: web.Request):
+    payload = await _request_storage(request, "POST")
     return payload
 
 
