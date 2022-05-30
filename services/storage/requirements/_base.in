@@ -19,6 +19,8 @@ aiohttp-swagger[performance]
 
 # s3 storage
 aiobotocore
+# dependencies due to type annotations
+boto3==1.21.21
 types-aiobotocore[s3]
 
 # i/o + db

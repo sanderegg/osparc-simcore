@@ -5,7 +5,7 @@
 --constraint ../../../requirements/constraints.txt
 --constraint _base.txt
 
-boto3==1.21.21
+
 codecov
 coverage
 coveralls
