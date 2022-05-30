@@ -553,9 +553,16 @@ qx.Class.define("osparc.file.FilePicker", {
       const dataStore = osparc.store.Data.getInstance();
       dataStore.getPresignedLink(download, locationId, fileUuid)
         .then(presignedLinkData => {
-          if (presignedLinkData.presignedLink) {
-            this.__uploadFile(file, presignedLinkData);
+          if (presignedLinkData.presignedLink.urls) {
+            this.__uploadFile(file, presignedLinkData)
+            this.__completeUpload(presignedLinkData);
+            console.info("completed upload.");
           }
+        })
+        .catch(err => {
+          console.error(err);
+          this.__abortUpload(presignedLinkData);
+          reject(err);
         });
     },
 
@@ -563,7 +570,7 @@ qx.Class.define("osparc.file.FilePicker", {
     __uploadFile: function(file, presignedLinkData) {
       const location = presignedLinkData.locationId;
       const path = presignedLinkData.fileUuid;
-      const url = presignedLinkData.presignedLink.link;
+      const url = presignedLinkData.presignedLink.urls[0];
 
       // From https://github.com/minio/cookbook/blob/master/docs/presigned-put-upload-via-browser.md
       const xhr = new XMLHttpRequest();
@@ -597,6 +604,18 @@ qx.Class.define("osparc.file.FilePicker", {
       xhr.open("PUT", url, true);
       this.getNode().getStatus().setProgress(0);
       xhr.send(file);
-    }
+    },
+
+    // Use XMLHttpRequest to complete the upload to S3
+    __completeUpload: function(presignedLinkData) {
+      const url = presignedLinkData.presignedLink.links.complete_url;
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", complete_url, true);
+    },
+    __abortUpload: function(presignedLinkData) {
+      const url = presignedLinkData.presignedLink.links.abort_url;
+      const xhr = new XMLHttpRequest();
+      xhr.open("DELETE", complete_url, true);
+    },
   }
 });

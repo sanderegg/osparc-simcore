@@ -222,7 +222,7 @@ qx.Class.define("osparc.store.Data", {
         }
 
         // GET: Returns download link for requested file
-        // POST: Returns upload link or performs copy operation to datcore
+        // PUT: Returns upload object link(s)
         const params = {
           url: {
             locationId,
