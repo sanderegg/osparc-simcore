@@ -584,21 +584,13 @@ qx.Class.define("osparc.file.FilePicker", {
       }, false);
       xhr.onload = () => {
         if (xhr.status == 200) {
-          console.log("Uploaded", file.name);
+          console.log("Completed upload", file.name);
           this.getNode().getStatus().setProgress(100);
-          const fileMetadata = {
-            location,
-            dataset: this.getNode().getStudy().getUuid(),
-            path: path,
-            name: file.name
-          };
-          if ("location" in fileMetadata && "dataset" in fileMetadata && "path" in fileMetadata && "name" in fileMetadata) {
-            this.setOutputValueFromStore(fileMetadata["location"], fileMetadata["dataset"], fileMetadata["path"], fileMetadata["name"]);
-          }
-          this.fireEvent("fileUploaded");
+          this.__completeUpload(presignedLinkData, xhr.response);
         } else {
           console.log(xhr.response);
           this.getNode().getStatus().setProgress(0);
+          this.__abortUpload(presignedLinkData);
         }
       };
       xhr.open("PUT", url, true);
@@ -607,15 +599,30 @@ qx.Class.define("osparc.file.FilePicker", {
     },
 
     // Use XMLHttpRequest to complete the upload to S3
-    __completeUpload: function(presignedLinkData) {
+    __completeUpload: function(presignedLinkData, uploadResponse) {
       const complete_url = presignedLinkData.presignedLink.links.complete_url;
       const xhr = new XMLHttpRequest();
+      xhr.onloadend = () => {
+        // we need to poll the received new location
+        const fileMetadata = {
+          location,
+          dataset: this.getNode().getStudy().getUuid(),
+          path: path,
+          name: file.name
+        };
+        if ("location" in fileMetadata && "dataset" in fileMetadata && "path" in fileMetadata && "name" in fileMetadata) {
+          this.setOutputValueFromStore(fileMetadata["location"], fileMetadata["dataset"], fileMetadata["path"], fileMetadata["name"]);
+        }
+        this.fireEvent("fileUploaded");
+      };
       xhr.open("POST", complete_url, true);
+      xhr.send({parts: [{1:uploadResponse["ETag"]}]});
     },
     __abortUpload: function(presignedLinkData) {
       const abort_url = presignedLinkData.presignedLink.links.abort_url;
       const xhr = new XMLHttpRequest();
       xhr.open("DELETE", abort_url, true);
-    }
+    },
+    __checkForCompletedUpload: function()
   }
 });
