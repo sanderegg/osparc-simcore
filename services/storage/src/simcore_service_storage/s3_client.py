@@ -181,7 +181,7 @@ class StorageS3Client:
         if objects_to_delete := [
             f["Key"] for f in response.get("Contents", []) if "Key" in f
         ]:
-            response = await self.client.delete_objects(
+            await self.client.delete_objects(
                 Bucket=bucket,
                 Delete={"Objects": [{"Key": key} for key in objects_to_delete]},
             )
