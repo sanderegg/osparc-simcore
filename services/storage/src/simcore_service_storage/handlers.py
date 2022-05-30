@@ -21,6 +21,7 @@ from servicelib.aiohttp.requests_validation import (
     parse_request_path_parameters_as,
     parse_request_query_parameters_as,
 )
+from servicelib.mimetype_constants import MIMETYPE_APPLICATION_JSON
 from settings_library.s3 import S3Settings
 from simcore_service_storage.exceptions import FileMetaDataNotFoundError
 
@@ -393,7 +394,7 @@ async def complete_upload_file(request: web.Request):
     path_params = parse_request_path_parameters_as(FilePathParams, request)
     body = await parse_request_body_as(FileUploadCompletionBody, request)
     log.debug(
-        "received call to upload_file with %s",
+        "received call to complete_upload_file with %s",
         f"{path_params=}, {query_params=}",
     )
     with handle_storage_errors():
@@ -497,7 +498,7 @@ async def delete_file(request: web.Request):
             file_uuid=path_params.file_id,
         )
 
-        return web.HTTPNoContent(content_type="application/json")
+        return web.HTTPNoContent(content_type=MIMETYPE_APPLICATION_JSON)
 
 
 @routes.post(f"/{api_vtag}/simcore-s3:access")  # type: ignore
@@ -540,7 +541,7 @@ async def create_folders_from_project(request: web.Request):
         )
 
     raise web.HTTPCreated(
-        text=json.dumps(body.destination), content_type="application/json"
+        text=json.dumps(body.destination), content_type=MIMETYPE_APPLICATION_JSON
     )
 
 
@@ -564,7 +565,7 @@ async def delete_folders_of_project(request: web.Request):
             query_params.node_id,
         )
 
-    raise web.HTTPNoContent(content_type="application/json")
+    raise web.HTTPNoContent(content_type=MIMETYPE_APPLICATION_JSON)
 
 
 @routes.post(f"/{api_vtag}/simcore-s3/files/metadata:search")  # type: ignore
@@ -597,7 +598,7 @@ async def copy_as_soft_link(request: web.Request):
     path_params = parse_request_path_parameters_as(CopyAsSoftLinkParams, request)
     body = await parse_request_body_as(SoftCopyBody, request)
     log.debug(
-        "received call to upload_file with %s",
+        "received call to copy_as_soft_link with %s",
         f"{path_params=}, {query_params=}, {body=}",
     )
     with handle_storage_errors():
