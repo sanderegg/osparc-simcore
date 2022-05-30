@@ -56,8 +56,13 @@ attrs==20.3.0
     #   aiohttp
     #   jsonschema
     #   openapi-core
+boto3==1.21.21
+    # via -r requirements/_base.in
 botocore==1.24.21
-    # via aiobotocore
+    # via
+    #   aiobotocore
+    #   boto3
+    #   s3transfer
 botocore-stubs==1.26.3
     # via types-aiobotocore
 charset-normalizer==2.0.12
@@ -90,7 +95,9 @@ jinja2==3.1.1
     #   -c requirements/../../../requirements/constraints.txt
     #   aiohttp-swagger
 jmespath==1.0.0
-    # via botocore
+    # via
+    #   boto3
+    #   botocore
 jsonschema==3.2.0
     # via
     #   -c requirements/../../../packages/service-library/requirements/././constraints.txt
@@ -159,6 +166,8 @@ pyyaml==5.4.1
     #   -r requirements/../../../packages/service-library/requirements/_base.in
     #   aiohttp-swagger
     #   openapi-spec-validator
+s3transfer==0.5.2
+    # via boto3
 semantic-version==2.9.0
     # via -r requirements/_base.in
 six==1.16.0
