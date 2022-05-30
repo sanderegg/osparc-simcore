@@ -554,16 +554,16 @@ qx.Class.define("osparc.file.FilePicker", {
       dataStore.getPresignedLink(download, locationId, fileUuid)
         .then(presignedLinkData => {
           if (presignedLinkData.presignedLink.urls) {
-            this.__uploadFile(file, presignedLinkData)
-            this.__completeUpload(presignedLinkData);
-            console.info("completed upload.");
+            try {
+              this.__uploadFile(file, presignedLinkData);
+              this.__completeUpload(presignedLinkData);
+              console.info("completed upload.");
+            } catch (error) {
+              console.error(err);
+              this.__abortUpload(presignedLinkData);
+            }
           }
         })
-        .catch(err => {
-          console.error(err);
-          this.__abortUpload(presignedLinkData);
-          reject(err);
-        });
     },
 
     // Use XMLHttpRequest to upload the file to S3.
@@ -608,14 +608,14 @@ qx.Class.define("osparc.file.FilePicker", {
 
     // Use XMLHttpRequest to complete the upload to S3
     __completeUpload: function(presignedLinkData) {
-      const url = presignedLinkData.presignedLink.links.complete_url;
+      const complete_url = presignedLinkData.presignedLink.links.complete_url;
       const xhr = new XMLHttpRequest();
       xhr.open("POST", complete_url, true);
     },
     __abortUpload: function(presignedLinkData) {
-      const url = presignedLinkData.presignedLink.links.abort_url;
+      const abort_url = presignedLinkData.presignedLink.links.abort_url;
       const xhr = new XMLHttpRequest();
-      xhr.open("DELETE", complete_url, true);
-    },
+      xhr.open("DELETE", abort_url, true);
+    }
   }
 });
