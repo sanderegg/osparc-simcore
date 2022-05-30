@@ -29,7 +29,7 @@ LOCATION_ID_TO_TAG_MAP = {0: SIMCORE_S3_STR, 1: DATCORE_STR}
 UNDEFINED_LOCATION_TAG: str = "undefined"
 
 # NOTE: SAFE S3 characters are found here [https://docs.aws.amazon.com/AmazonS3/latest/userguide/object-keys.html]
-_SAFE_S3_FILE_NAME_RE = r"[\w!\-_\.\*\'\(\)]"
+_SAFE_S3_FILE_NAME_RE = r"[\w!\-_\.\*\'\(\)\% ]"
 FILE_ID_RE = rf"^({_SAFE_S3_FILE_NAME_RE}+?)\/({_SAFE_S3_FILE_NAME_RE}+?)\/({_SAFE_S3_FILE_NAME_RE}+?)$"
 
 

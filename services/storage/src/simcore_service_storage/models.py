@@ -240,7 +240,7 @@ class FilePathParams(LocationPathParams):
     def unquote(cls, v):
         if v is not None:
             # we do want the / correctly unquoted, but the rest shall still be
-            return urllib.parse.quote(urllib.parse.unquote(f"{v}"))
+            return urllib.parse.unquote(f"{v}")
         return v
 
 
