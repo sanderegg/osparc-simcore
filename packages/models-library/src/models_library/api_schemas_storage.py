@@ -11,7 +11,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Union
 from uuid import UUID
 
-from pydantic import BaseModel, ByteSize, Field, constr
+from pydantic import BaseModel, ByteSize, Field, PositiveInt, constr
 from pydantic.networks import AnyUrl
 
 from .basic_regex import UUID_RE
@@ -259,3 +259,15 @@ class Error(BaseModel):
     logs: Optional[List[LogMessage]] = Field(description="Log messages")
     errors: Optional[List[ErrorItem]] = Field(description="Errors metadata")
     status: Optional[int] = Field(description="HTTP error code")
+
+
+ETag = str
+
+
+class UploadedPart(BaseModel):
+    number: PositiveInt
+    e_tag: ETag
+
+
+class FileUploadCompletionBody(BaseModel):
+    parts: list[UploadedPart]

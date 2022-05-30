@@ -8,7 +8,14 @@ import urllib.parse
 from typing import Any, Dict, List, Optional, Tuple, Union, cast
 
 from aiohttp import ClientResponse, web
-from models_library.api_schemas_storage import FileUploadSchema
+from models_library.api_schemas_storage import (
+    FileUploadCompletionBody,
+    FileUploadSchema,
+    UploadedPart,
+)
+from models_library.users import UserID
+from models_library.utils.fastapi_encoders import jsonable_encoder
+from pydantic import AnyUrl, parse_obj_as
 from servicelib.aiohttp.client_session import get_client_session
 from servicelib.aiohttp.rest_responses import unwrap_envelope
 from servicelib.aiohttp.rest_utils import extract_and_validate
@@ -145,7 +152,23 @@ async def download_file(request: web.Request):
 @permission_required("storage.files.*")
 async def upload_file(request: web.Request):
     payload = await _request_storage(request, "PUT")
-    return payload
+    file_upload_schema = FileUploadSchema.parse_obj(
+        safe_unwrap(payload.get("data", {}))
+    )
+    file_upload_schema.links.complete_upload = parse_obj_as(
+        AnyUrl,
+        URL(file_upload_schema.links.complete_upload).with_path(
+            f"/storage/{file_upload_schema.links.complete_upload.path}"
+        ),
+    )
+    file_upload_schema.links.abort_upload = parse_obj_as(
+        AnyUrl,
+        URL(file_upload_schema.links.abort_upload).with_path(
+            f"/storage/{file_upload_schema.links.abort_upload.path}"
+        ),
+    )
+
+    return {"data": jsonable_encoder(file_upload_schema)}
 
 
 @login_required
@@ -246,3 +269,31 @@ async def get_file_upload_url(
     file_upload_schema = FileUploadSchema.parse_obj(data)
     assert file_upload_schema.urls  # nosec
     return file_upload_schema.urls[0]
+
+
+async def complete_file_upload(
+    app: web.Application,
+    location_id: str,
+    file_id: str,
+    user_id: UserID,
+    parts: list[UploadedPart],
+) -> AnyUrl:
+    session = get_client_session(app)
+
+    url: URL = (
+        _get_base_storage_url(app)
+        / "locations"
+        / location_id
+        / "files"
+        / f"{urllib.parse.quote(file_id, safe='')}:complete"
+    )
+    params = dict(user_id=user_id)
+    async with session.post(
+        url,
+        ssl=False,
+        params=params,
+        json=FileUploadCompletionBody.construct(parts=parts),
+    ) as resp:
+        data, _ = await safe_unwrap(resp)
+    state_url = parse_obj_as(AnyUrl, data.get("links", {}).get("state", None))
+    return state_url
