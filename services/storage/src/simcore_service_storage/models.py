@@ -184,7 +184,7 @@ class FilesMetadataQueryParams(StorageQueryParamsBase):
     uuid_filter: str = ""
 
 
-class SyncMetadataQueryParams(StorageQueryParamsBase):
+class SyncMetadataQueryParams(BaseModel):
     dry_run: bool = False
     fire_and_forget: bool = False
 
