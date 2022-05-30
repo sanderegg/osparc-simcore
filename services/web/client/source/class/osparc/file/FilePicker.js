@@ -623,4 +623,5 @@ qx.Class.define("osparc.file.FilePicker", {
       const xhr = new XMLHttpRequest();
       xhr.open("DELETE", abort_url, true);
     }
+  }
 });
