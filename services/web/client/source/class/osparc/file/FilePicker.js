@@ -603,7 +603,12 @@ qx.Class.define("osparc.file.FilePicker", {
       const path = presignedLinkData.fileUuid;
       const xhr = new XMLHttpRequest();
       xhr.onloadend = () => {
-        // we need to poll the received new location
+        if (xhr.status == 202) {
+          console.log("waiting for completion", file.name);
+          // we need to poll the received new location
+        }
+
+
         const fileMetadata = {
           location,
           dataset: this.getNode().getStudy().getUuid(),
@@ -619,9 +624,9 @@ qx.Class.define("osparc.file.FilePicker", {
       xhr.send({parts: [{1:uploadResponse["ETag"]}]});
     },
     __abortUpload: function(presignedLinkData) {
-      const abort_url = presignedLinkData.presignedLink.links.abort_url;
+      const abortUrl = presignedLinkData.presignedLink.links.abort_url;
       const xhr = new XMLHttpRequest();
-      xhr.open("POST", abort_url, true);
+      xhr.open("POST", abortUrl, true);
     }
   }
 });
