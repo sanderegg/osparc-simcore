@@ -418,13 +418,9 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
         reraise_exceptions: bool,
     ) -> Optional[FileMetaDataEx]:
         try:
-            response = await get_s3_client(self.app).client.head_object(
-                Bucket=bucket, Key=key
-            )
-
-            file_size = response["ContentLength"]
-            last_modified = response["LastModified"]
-            entity_tag = response["ETag"].strip('"')
+            file_size, last_modified, entity_tag = await get_s3_client(
+                self.app
+            ).get_file_metadata(bucket, key)
 
             async with self.engine.acquire() as conn:
                 result: ResultProxy = await conn.execute(
@@ -578,9 +574,10 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
                 file.object_name,
                 reraise_exceptions=True,
             )
-        except botocore.exceptions.ClientError as exc:
+        except botocore.exceptions.ClientError:
             # the file does not exist, so we delete the entry
-            await self.delete_file(user_id, SIMCORE_S3_STR, file_uuid)
+            async with self.engine.acquire() as conn:
+                await db_file_meta_data.delete(conn, file_uuid)
 
     async def complete_upload(
         self,

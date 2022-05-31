@@ -194,6 +194,16 @@ class StorageS3Client:
                 Delete={"Objects": [{"Key": key} for key in objects_to_delete]},
             )
 
+    async def get_file_metadata(
+        self, bucket: S3BucketName, file_id: FileID
+    ) -> tuple[int, datetime.datetime, ETag]:
+        response = await self.client.head_object(Bucket=bucket, Key=file_id)
+        return (
+            response["ContentLength"],
+            response["LastModified"],
+            response["ETag"].strip('"'),
+        )
+
     @staticmethod
     def compute_s3_url(bucket: S3BucketName, file_id: FileID) -> AnyUrl:
         return parse_obj_as(AnyUrl, f"s3://{bucket}/{urllib.parse.quote(file_id)}")

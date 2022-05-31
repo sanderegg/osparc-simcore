@@ -165,11 +165,12 @@ async def test_create_single_presigned_upload_link(
     )
 
     # check it is there
-    response = await storage_s3_client.client.head_object(
-        Bucket=storage_s3_bucket, Key=file_uuid
+    file_size, last_modified, e_tag = await storage_s3_client.get_file_metadata(
+        storage_s3_bucket, file_uuid
     )
-    assert response
-    assert response["ContentLength"] == file.stat().st_size
+    assert file_size == file.stat().st_size
+    assert last_modified
+    assert e_tag
 
 
 @pytest.mark.parametrize(
@@ -207,12 +208,12 @@ async def test_create_multipart_presigned_upload_link(
     assert "Uploads" not in response
 
     # check the object is complete
-    response = await storage_s3_client.client.head_object(
-        Bucket=storage_s3_bucket, Key=file_id
+    s3_file_size, s3_last_modifed, s3_etag = await storage_s3_client.get_file_metadata(
+        storage_s3_bucket, file_id
     )
-    assert response
-    assert response["ContentLength"] == file_size
-    assert response["ETag"] == f"{received_e_tag}"
+    assert s3_file_size == file_size
+    assert s3_last_modifed
+    assert s3_etag == f"{received_e_tag}"
 
 
 async def test_abort_multipart_upload(
@@ -244,9 +245,7 @@ async def test_abort_multipart_upload(
 
     # check it is not available
     with pytest.raises(botocore.exceptions.ClientError):
-        await storage_s3_client.client.head_object(
-            Bucket=storage_s3_bucket, Key=file_id
-        )
+        await storage_s3_client.get_file_metadata(storage_s3_bucket, file_id)
 
 
 async def test_multiple_completion_of_multipart_upload(
@@ -317,11 +316,12 @@ async def test_break_completion_of_multipart_upload(
     assert "Uploads" not in response
 
     # check the object is complete
-    response = await storage_s3_client.client.head_object(
-        Bucket=storage_s3_bucket, Key=file_id
+    s3_file_size, s3_last_modified, s3_etag = await storage_s3_client.get_file_metadata(
+        storage_s3_bucket, file_id
     )
-    assert response
-    assert response["ContentLength"] == file_size
+    assert s3_file_size == file_size
+    assert s3_last_modified
+    assert s3_etag
 
 
 @pytest.fixture
@@ -350,11 +350,10 @@ def upload_file_single_presigned_link(
         )
 
         # check the object is complete
-        response = await storage_s3_client.client.head_object(
-            Bucket=storage_s3_bucket, Key=file_id
+        s3_file_size, *_ = await storage_s3_client.get_file_metadata(
+            storage_s3_bucket, file_id
         )
-        assert response
-        assert response["ContentLength"] == file.stat().st_size
+        assert s3_file_size == file.stat().st_size
         return file_id
 
     return _uploader
@@ -383,9 +382,7 @@ def upload_file_multipart_presigned_link_without_completion(
 
         # check there is no file yet
         with pytest.raises(botocore.exceptions.ClientError):
-            await storage_s3_client.client.head_object(
-                Bucket=storage_s3_bucket, Key=file.name
-            )
+            await storage_s3_client.get_file_metadata(storage_s3_bucket, file.name)
 
         # check we have the multipart upload initialized and listed
         response = await storage_s3_client.client.list_multipart_uploads(
@@ -406,9 +403,7 @@ def upload_file_multipart_presigned_link_without_completion(
 
         # check there is no file yet
         with pytest.raises(botocore.exceptions.ClientError):
-            await storage_s3_client.client.head_object(
-                Bucket=storage_s3_bucket, Key=file.name
-            )
+            await storage_s3_client.get_file_metadata(storage_s3_bucket, file.name)
 
         # check we have the multipart upload initialized and listed
         response = await storage_s3_client.client.list_multipart_uploads(
@@ -441,9 +436,7 @@ async def test_delete_file(
 
     # check it is not available
     with pytest.raises(botocore.exceptions.ClientError):
-        await storage_s3_client.client.head_object(
-            Bucket=storage_s3_bucket, Key=file_id
-        )
+        await storage_s3_client.get_file_metadata(storage_s3_bucket, file_id)
 
 
 async def test_delete_files_in_project_node(
@@ -490,15 +483,14 @@ async def test_delete_files_in_project_node(
         for file_id in uploaded_file_ids:
             if file_id.startswith(deleted_ids):
                 with pytest.raises(botocore.exceptions.ClientError):
-                    await storage_s3_client.client.head_object(
-                        Bucket=storage_s3_bucket, Key=file_id
+                    await storage_s3_client.get_file_metadata(
+                        storage_s3_bucket, file_id
                     )
             else:
-                response = await storage_s3_client.client.head_object(
-                    Bucket=storage_s3_bucket, Key=file_id
+                _, _, e_tag = await storage_s3_client.get_file_metadata(
+                    storage_s3_bucket, file_id
                 )
-                assert response
-                assert response["ETag"]
+                assert e_tag
 
     # now let's delete some files and check they are correctly deleted
     await storage_s3_client.delete_files_in_project_node(
@@ -553,9 +545,9 @@ async def test_create_single_presigned_download_link(
             fp.write(await response.read())
     assert dest_file.exists()
 
-    response = await storage_s3_client.client.head_object(
-        Bucket=storage_s3_bucket, Key=file_id
+    s3_file_size, s3_last_modified, s3_etag = await storage_s3_client.get_file_metadata(
+        storage_s3_bucket, file_id
     )
-    assert response
-    assert response["ETag"]
-    assert dest_file.stat().st_size == response["ContentLength"]
+    assert s3_etag
+    assert s3_last_modified
+    assert dest_file.stat().st_size == s3_file_size

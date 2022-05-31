@@ -33,6 +33,7 @@ from simcore_service_storage.dsm import DataStorageManager
 from simcore_service_storage.models import (
     FileID,
     FileMetaData,
+    S3BucketName,
     file_meta_data,
     projects,
     users,
