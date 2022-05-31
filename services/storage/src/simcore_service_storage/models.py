@@ -33,9 +33,13 @@ from .constants import (
     DATCORE_ID,
     DATCORE_STR,
     FILE_ID_RE,
+    S3_BUCKET_NAME_RE,
     SIMCORE_S3_ID,
     SIMCORE_S3_STR,
 )
+
+S3BucketName = constr(regex=S3_BUCKET_NAME_RE)
+S3FileID = constr(regex=FILE_ID_RE)
 
 FileID = constr(regex=FILE_ID_RE)
 UploadID = str
