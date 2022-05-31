@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union, cast
 
 from aiohttp import ClientResponse, web
 from models_library.api_schemas_storage import (
+    FileUploadCompleteResponse,
     FileUploadCompletionBody,
     FileUploadSchema,
     UploadedPart,
@@ -17,7 +18,7 @@ from models_library.users import UserID
 from models_library.utils.fastapi_encoders import jsonable_encoder
 from pydantic import AnyUrl, parse_obj_as
 from servicelib.aiohttp.client_session import get_client_session
-from servicelib.aiohttp.rest_responses import unwrap_envelope
+from servicelib.aiohttp.rest_responses import create_data_response, unwrap_envelope
 from servicelib.aiohttp.rest_utils import extract_and_validate
 from servicelib.request_keys import RQT_USERID_KEY
 from yarl import URL
@@ -167,15 +168,23 @@ async def upload_file(request: web.Request):
             f"/storage/{file_upload_schema.links.abort_upload.path}"
         ),
     )
-
-    return {"data": jsonable_encoder(file_upload_schema)}
+    return create_data_response(jsonable_encoder(file_upload_schema))
 
 
 @login_required
 @permission_required("storage.files.*")
 async def complete_upload_file(request: web.Request):
     payload = await _request_storage(request, "POST")
-    return payload
+    file_upload_complete = FileUploadCompleteResponse.parse_obj(
+        safe_unwrap(payload.get("data", {}))
+    )
+    file_upload_complete.links.state = parse_obj_as(
+        AnyUrl,
+        URL(file_upload_complete.links.state).with_path(
+            f"/storage/{file_upload_complete.links.state}"
+        ),
+    )
+    return create_data_response(jsonable_encoder(file_upload_complete))
 
 
 @login_required

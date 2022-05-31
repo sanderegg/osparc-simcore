@@ -1422,7 +1422,18 @@ paths:
                   - error
                 properties:
                   data:
-                    $ref: '#/paths/~1storage~1locations~1%7Blocation_id%7D~1files~1%7Bfile_id%7D%3Acomplete/post/responses/202/content/application~1json/schema/properties/data'
+                    type: object
+                    required:
+                      - state
+                    properties:
+                      state:
+                        type: string
+                        enum:
+                          - ok
+                          - nok
+                      e_tag:
+                        type: string
+                        nullable: true
                   error:
                     nullable: true
                     default: null
