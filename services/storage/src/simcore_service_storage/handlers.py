@@ -8,6 +8,10 @@ from typing import Any, Optional
 from aiohttp import web
 from aiohttp.web import RouteTableDef
 from models_library.api_schemas_storage import (
+    FileUploadCompleteFutureResponse,
+    FileUploadCompleteLinks,
+    FileUploadCompleteResponse,
+    FileUploadCompleteState,
     FileUploadCompletionBody,
     FileUploadLinks,
     FileUploadSchema,
@@ -385,7 +389,7 @@ async def upload_file(request: web.Request):
             ),
         )
 
-    return {"data": json.loads(response.json(by_alias=True))}
+    return {"data": jsonable_encoder(response, by_alias=True)}
 
 
 @routes.post(f"/{api_vtag}/locations/{{location_id}}/files/{{file_id}}:abort", name="abort_upload_file")  # type: ignore
@@ -440,11 +444,14 @@ async def complete_upload_file(request: web.Request):
             )
             .with_query(user_id=query_params.user_id)
         )
-
+        response = FileUploadCompleteResponse(
+            links=FileUploadCompleteLinks(
+                state=parse_obj_as(AnyUrl, f"{complete_task_state_url}")
+            )
+        )
         return web.json_response(
             status=web.HTTPAccepted.status_code,
-            headers={"Content-Location": f"{complete_task_state_url}"},
-            data={"data": {"links": {"state": f"{complete_task_state_url}"}}},
+            data={"data": jsonable_encoder(response, by_alias=True)},
         )
 
 
@@ -472,13 +479,17 @@ async def is_completed_upload_file(request: web.Request):
             if task.done():
                 new_fmd: FileMetaDataEx = task.result()
                 request.app[UPLOAD_TASKS_KEY].pop(task_name)
-                return web.json_response(
-                    status=web.HTTPOk.status_code,
-                    data={"data": {"state": "ok", "e_tag": new_fmd.fmd.entity_tag}},
+                response = FileUploadCompleteFutureResponse(
+                    state=FileUploadCompleteState.OK, e_tag=new_fmd.fmd.entity_tag
                 )
-            # the task is still running
+            else:
+                # the task is still running
+                response = FileUploadCompleteFutureResponse(
+                    state=FileUploadCompleteState.NOK
+                )
             return web.json_response(
-                status=web.HTTPOk.status_code, data={"data": {"state": "nok"}}
+                status=web.HTTPOk.status_code,
+                data={"data": jsonable_encoder(response, by_alias=True)},
             )
         # there is no task, either wrong call or storage was restarted
         # we try to get the file to see if it exists in S3
@@ -490,9 +501,12 @@ async def is_completed_upload_file(request: web.Request):
             location=get_location_from_id(path_params.location_id),
             file_uuid=path_params.file_id,
         ):
+            response = FileUploadCompleteFutureResponse(
+                state=FileUploadCompleteState.OK, e_tag=fmd.fmd.entity_tag
+            )
             return web.json_response(
                 status=web.HTTPOk.status_code,
-                data={"data": {"state": "ok", "e_tag": fmd.fmd.entity_tag}},
+                data={"data": jsonable_encoder(response, by_alias=True)},
             )
     raise web.HTTPNotFound(
         reason="Not found. Upload could not be completed. Please try again and contact support if it fails again."

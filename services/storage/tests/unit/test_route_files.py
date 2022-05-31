@@ -14,13 +14,17 @@ from typing import AsyncIterator, Awaitable, Callable, Optional, Type
 
 import botocore
 import botocore.exceptions
-import faker
 import pytest
 from aiohttp import ClientSession, web
 from aiohttp.test_utils import TestClient
 from aiopg.sa import Engine
 from faker import Faker
-from models_library.api_schemas_storage import FileUploadSchema
+from models_library.api_schemas_storage import (
+    FileUploadCompleteFutureResponse,
+    FileUploadCompleteResponse,
+    FileUploadCompleteState,
+    FileUploadSchema,
+)
 from models_library.projects import ProjectID
 from models_library.users import UserID
 from models_library.utils.fastapi_encoders import jsonable_encoder
@@ -531,9 +535,8 @@ def upload_file(
         data, error = await assert_status(response, web.HTTPAccepted)
         assert not error
         assert data
-        assert "links" in data
-        assert "state" in data["links"]
-        state_url = URL(data["links"]["state"]).relative()
+        file_upload_complete_response = FileUploadCompleteResponse.parse_obj(data)
+        state_url = URL(file_upload_complete_response.links.state).relative()
 
         completion_etag = None
         async for attempt in AsyncRetrying(
@@ -551,13 +554,12 @@ def upload_file(
                 data, error = await assert_status(response, web.HTTPOk)
                 assert not error
                 assert data
-                assert "state" in data
-                if data["state"] != "ok":
+                future = FileUploadCompleteFutureResponse.parse_obj(data)
+                if future.state == FileUploadCompleteState.NOK:
                     raise ValueError(f"{data=}")
-                assert data["state"] == "ok"
-                assert "e_tag" in data
-                assert data["e_tag"]
-                completion_etag = data["e_tag"]
+                assert future.state == FileUploadCompleteState.OK
+                assert future.e_tag is not None
+                completion_etag = future.e_tag
                 print(
                     f"--> done waiting, data is completely uploaded [{attempt.retry_state.retry_object.statistics}]"
                 )
@@ -655,9 +657,8 @@ async def test_upload_real_file_with_s3_client(
     data, error = await assert_status(response, web.HTTPAccepted)
     assert not error
     assert data
-    assert "links" in data
-    assert "state" in data["links"]
-    state_url = URL(data["links"]["state"]).relative()
+    file_upload_complete_response = FileUploadCompleteResponse.parse_obj(data)
+    state_url = URL(file_upload_complete_response.links.state).relative()
     completion_etag = None
     async for attempt in AsyncRetrying(
         reraise=True,
@@ -674,13 +675,12 @@ async def test_upload_real_file_with_s3_client(
             data, error = await assert_status(response, web.HTTPOk)
             assert not error
             assert data
-            assert "state" in data
-            if data["state"] != "ok":
+            future = FileUploadCompleteFutureResponse.parse_obj(data)
+            if future.state != FileUploadCompleteState.OK:
                 raise ValueError(f"{data=}")
-            assert data["state"] == "ok"
-            assert "e_tag" in data
-            assert data["e_tag"]
-            completion_etag = data["e_tag"]
+            assert future.state == FileUploadCompleteState.OK
+            assert future.e_tag is not None
+            completion_etag = future.e_tag
             print(
                 f"--> done waiting, data is completely uploaded [{attempt.retry_state.retry_object.statistics}]"
             )
