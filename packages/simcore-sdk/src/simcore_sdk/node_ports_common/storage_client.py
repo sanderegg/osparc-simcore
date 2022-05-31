@@ -116,6 +116,11 @@ async def get_upload_file_links(
     user_id: UserID,
     link_type: LinkType,
 ) -> FileUploadSchema:
+    """
+    :raises exceptions.StorageInvalidCall: _description_
+    :raises exceptions.StorageServerIssue: _description_
+    :raises ClientResponseError
+    """
     if (
         not isinstance(file_id, str)
         or not isinstance(location_id, str)

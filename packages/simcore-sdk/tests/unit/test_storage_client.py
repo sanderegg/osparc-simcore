@@ -11,7 +11,7 @@ from aioresponses import aioresponses as AioResponsesMock
 from models_library.api_schemas_storage import (
     FileLocationArray,
     FileMetaData,
-    PresignedLinksArray,
+    FileUploadSchema,
 )
 from models_library.users import UserID
 from pydantic.networks import AnyUrl
@@ -96,7 +96,7 @@ async def test_get_upload_file_links(
         links = await get_upload_file_links(
             session, file_id, location_id, user_id, link_type
         )
-    assert isinstance(links, PresignedLinksArray)
+    assert isinstance(links, FileUploadSchema)
     assert len(links.urls) == 1
     assert links.urls[0].scheme in expected_scheme
 

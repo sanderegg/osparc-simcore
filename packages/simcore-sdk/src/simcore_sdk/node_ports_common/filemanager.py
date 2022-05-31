@@ -6,26 +6,24 @@ from pathlib import Path
 from typing import Optional, Tuple
 
 import aiofiles
-from aiohttp import ClientPayloadError, ClientSession, web
+from aiohttp import ClientError, ClientPayloadError, ClientSession, web
 from models_library.api_schemas_storage import FileUploadSchema, UploadedPart
 from models_library.utils.fastapi_encoders import jsonable_encoder
+from pydantic import parse_obj_as
 from pydantic.networks import AnyUrl
 from settings_library.r_clone import RCloneSettings
-from tenacity import (
-    AsyncRetrying,
-    before_sleep_log,
-    retry_if_exception_type,
-    stop_after_delay,
-    wait_fixed,
-)
+from tenacity._asyncio import AsyncRetrying
+from tenacity.before_sleep import before_sleep_log
+from tenacity.retry import retry_if_exception_type
+from tenacity.stop import stop_after_delay
+from tenacity.wait import wait_fixed
 from tqdm import tqdm
 from yarl import URL
 
 from ..node_ports_common.client_session_manager import ClientSessionContextManager
-from ..node_ports_common.storage_client import update_file_meta_data
 from . import exceptions, storage_client
 from .constants import SIMCORE_LOCATION, ETag
-from .r_clone import is_r_clone_available, sync_local_to_s3
+from .r_clone import RCloneFailedError, is_r_clone_available, sync_local_to_s3
 
 log = logging.getLogger(__name__)
 
@@ -73,6 +71,9 @@ async def _get_upload_links(
     session: ClientSession,
     link_type: storage_client.LinkType,
 ) -> FileUploadSchema:
+    """
+    :raises exceptions.S3InvalidPathError: _description_
+    """
     links: FileUploadSchema = await storage_client.get_upload_file_links(
         session, file_id, store_id, user_id, link_type
     )
@@ -163,9 +164,9 @@ async def _upload_file_to_link(
 
 async def _complete_upload(
     session: ClientSession, upload_links: FileUploadSchema, parts: list[UploadedPart]
-) -> None:
+) -> ETag:
     async with session.post(
-        upload_links.links.complete_upload, json=jsonable_encoder(parts)
+        upload_links.links.complete_upload, json={"parts": jsonable_encoder(parts)}
     ) as resp:
         resp.raise_for_status()
         if resp.status != web.HTTPAccepted.status_code:
@@ -193,6 +194,10 @@ async def _complete_upload(
                 response = await resp.json()
                 if response["data"]["state"] != "ok":
                     raise ValueError("upload not ready yet")
+            return response["data"]["e_tag"]
+    raise exceptions.S3TransferError(
+        f"Could not complete the upload of file {upload_links=}"
+    )
 
 
 async def get_download_link_from_s3(
@@ -315,6 +320,18 @@ async def download_file_from_link(
     return local_file_path
 
 
+async def _abort_upload(
+    session: ClientSession, upload_links: FileUploadSchema, *, reraise_exceptions: bool
+) -> None:
+    try:
+        async with session.post(upload_links.links.abort_upload) as resp:
+            resp.raise_for_status()
+    except ClientError:
+        log.warning("Error while aborting upload", exc_info=True)
+        if reraise_exceptions:
+            raise
+
+
 async def upload_file(
     *,
     user_id: int,
@@ -334,56 +351,61 @@ async def upload_file(
     :return: stored id
     """
     log.debug(
-        "Trying to upload file to S3: store name %s, store id %s, s3object %s, file path %s",
-        store_name,
-        store_id,
-        s3_object,
-        local_file_path,
+        "Uploading %s to %s:%s@%s",
+        f"{local_file_path=}",
+        f"{store_id=}",
+        f"{store_name=}",
+        f"{s3_object=}",
     )
+    use_rclone = (
+        await is_r_clone_available(r_clone_settings) and store_id == SIMCORE_LOCATION
+    )
+
     async with ClientSessionContextManager(client_session) as session:
-        store_id, upload_links = await get_upload_links_from_s3(
-            user_id=user_id,
-            store_name=store_name,
-            store_id=store_id,
-            s3_object=s3_object,
-            client_session=session,
-            link_type=storage_client.LinkType.PRESIGNED,
-        )
-
-        if not upload_links:
-            raise exceptions.S3InvalidPathError(s3_object)
-
-        if (
-            await is_r_clone_available(r_clone_settings)
-            and store_id == SIMCORE_LOCATION
-        ):
-            assert r_clone_settings  # nosec
-            await sync_local_to_s3(
-                session=session,
-                r_clone_settings=r_clone_settings,
-                s3_object=s3_object,
-                local_file_path=local_file_path,
+        upload_links = None
+        try:
+            store_id, upload_links = await get_upload_links_from_s3(
                 user_id=user_id,
+                store_name=store_name,
                 store_id=store_id,
+                s3_object=s3_object,
+                client_session=session,
+                link_type=storage_client.LinkType.S3
+                if use_rclone
+                else storage_client.LinkType.PRESIGNED,
             )
-        else:
-            try:
+            e_tag = None
+            if use_rclone:
+                assert r_clone_settings  # nosec
+                await sync_local_to_s3(
+                    session=session,
+                    r_clone_settings=r_clone_settings,
+                    s3_object=s3_object,
+                    local_file_path=local_file_path,
+                    user_id=user_id,
+                    store_id=store_id,
+                )
+            else:
+                # NOTE: this uses 1 presigned link: 5Gb limit on AWS
                 e_tag = await _upload_file_to_link(
                     session, upload_links, local_file_path
                 )
-                await _complete_upload(session, upload_links, {1: e_tag})
-            except exceptions.S3TransferError as err:
-                await delete_file(
-                    user_id=user_id,
-                    store_id=store_id,
-                    s3_object=s3_object,
-                    client_session=session,
-                )
-                raise err
+            # complete the upload
+            e_tag = await _complete_upload(
+                session,
+                upload_links,
+                parse_obj_as(list[UploadedPart], [{"number": 1, "e_tag": e_tag}])
+                if e_tag
+                else [],
+            )
+        except (RCloneFailedError, exceptions.S3TransferError) as exc:
+            log.error("The upload failed with an unexpected error:", exc_info=True)
+            if upload_links:
+                # abort the upload correctly, so it can revert back to last version
+                await _abort_upload(session, upload_links, reraise_exceptions=False)
+                log.warning("Upload aborted")
+            raise exceptions.S3TransferError from exc
 
-        e_tag = await update_file_meta_data(
-            session=session, s3_object=s3_object, user_id=user_id
-        )
         return store_id, e_tag
 
 
