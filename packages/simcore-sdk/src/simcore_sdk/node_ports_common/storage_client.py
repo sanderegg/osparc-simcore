@@ -9,8 +9,8 @@ from aiohttp.client_exceptions import ClientConnectionError, ClientResponseError
 from models_library.api_schemas_storage import (
     FileLocationArray,
     FileMetaData,
+    FileUploadSchema,
     PresignedLink,
-    PresignedLinksArray,
 )
 from models_library.generics import Envelope
 from models_library.users import UserID
@@ -115,7 +115,7 @@ async def get_upload_file_links(
     location_id: str,
     user_id: UserID,
     link_type: LinkType,
-) -> PresignedLinksArray:
+) -> FileUploadSchema:
     if (
         not isinstance(file_id, str)
         or not isinstance(location_id, str)
@@ -134,12 +134,12 @@ async def get_upload_file_links(
     ) as response:
         response.raise_for_status()
 
-        presigned_links_enveloped = Envelope[PresignedLinksArray].parse_obj(
+        file_upload_links_enveloped = Envelope[FileUploadSchema].parse_obj(
             await response.json()
         )
-    if presigned_links_enveloped.data is None:
+    if file_upload_links_enveloped.data is None:
         raise exceptions.StorageServerIssue("Storage server is not reponding")
-    return presigned_links_enveloped.data
+    return file_upload_links_enveloped.data
 
 
 @handle_client_exception
