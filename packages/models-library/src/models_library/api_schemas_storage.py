@@ -190,6 +190,7 @@ class FileMetaDataArray(BaseModel):
 
 
 # /locations/{location_id}/files/{file_id}
+ETag = str
 
 
 class LinkType(str, Enum):
@@ -215,6 +216,34 @@ class FileUploadSchema(BaseModel):
     chunk_size: ByteSize
     urls: list[AnyUrl]
     links: FileUploadLinks
+
+
+# /locations/{location_id}/files/{file_id}:complete
+class UploadedPart(BaseModel):
+    number: PositiveInt
+    e_tag: ETag
+
+
+class FileUploadCompletionBody(BaseModel):
+    parts: list[UploadedPart]
+
+
+class FileUploadCompleteLinks(BaseModel):
+    state: AnyUrl
+
+
+class FileUploadCompleteResponse(BaseModel):
+    links: FileUploadCompleteLinks
+
+
+# /locations/{location_id}/files/{file_id}:complete/futures/{future_id}
+class FileUploadCompleteState(Enum):
+    OK = "ok"
+    NOK = "nok"
+
+
+class FileUploadCompleteFutureResponse(BaseModel):
+    state: FileUploadCompleteState
 
 
 # /simcore-s3/
@@ -259,15 +288,3 @@ class Error(BaseModel):
     logs: Optional[List[LogMessage]] = Field(description="Log messages")
     errors: Optional[List[ErrorItem]] = Field(description="Errors metadata")
     status: Optional[int] = Field(description="HTTP error code")
-
-
-ETag = str
-
-
-class UploadedPart(BaseModel):
-    number: PositiveInt
-    e_tag: ETag
-
-
-class FileUploadCompletionBody(BaseModel):
-    parts: list[UploadedPart]
