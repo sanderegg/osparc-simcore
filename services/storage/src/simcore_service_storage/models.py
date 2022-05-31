@@ -64,7 +64,7 @@ class FileMetaData(BaseModel):
     file_uuid: FileID
     location_id: Literal[SIMCORE_S3_ID, DATCORE_ID]  # type: ignore
     location: Literal[SIMCORE_S3_STR, DATCORE_STR]  # type: ignore
-    bucket_name: str
+    bucket_name: S3BucketName
     object_name: FileID
     project_id: Optional[ProjectID]
     project_name: Optional[str] = Field(default=None, deprecated=True)
@@ -116,7 +116,7 @@ class FileMetaData(BaseModel):
         cls,
         user_id: UserID,
         file_uuid: FileID,
-        bucket_name: str,
+        bucket: S3BucketName,
         **file_meta_data_kwargs,
     ):
 
@@ -126,7 +126,7 @@ class FileMetaData(BaseModel):
             "file_uuid": file_uuid,
             "location_id": SIMCORE_S3_ID,
             "location": SIMCORE_S3_STR,
-            "bucket_name": bucket_name,
+            "bucket_name": bucket,
             "object_name": file_uuid,
             "file_name": parts[2],
             "user_id": user_id,

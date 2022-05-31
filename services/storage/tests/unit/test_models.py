@@ -36,7 +36,7 @@ def test_file_id(file_id: str):
 def test_fmd_build():
     file_uuid = FileID(Path("api") / Path("abcd") / Path("xx.dat"))
     fmd = FileMetaData.from_simcore_node(
-        user_id=12, file_uuid=file_uuid, bucket_name="test-bucket"
+        user_id=12, file_uuid=file_uuid, bucket="test-bucket"
     )
 
     assert not fmd.node_id
@@ -50,7 +50,7 @@ def test_fmd_build():
 
     file_uuid = f"{uuid.uuid4()}/{uuid.uuid4()}/xx.dat"
     fmd = FileMetaData.from_simcore_node(
-        user_id=12, file_uuid=file_uuid, bucket_name="test-bucket"
+        user_id=12, file_uuid=file_uuid, bucket="test-bucket"
     )
 
     assert fmd.node_id == NodeID(file_uuid.split("/")[1])
@@ -66,7 +66,7 @@ def test_fmd_build():
 def test_fmd_raises_if_invalid_location():
     file_uuid = FileID(Path("api") / Path("abcd") / Path("xx.dat"))
     fmd = FileMetaData.from_simcore_node(
-        user_id=12, file_uuid=file_uuid, bucket_name="test-bucket"
+        user_id=12, file_uuid=file_uuid, bucket="test-bucket"
     )
     with pytest.raises(ValidationError):
         FileMetaData.parse_obj(fmd.copy(update={"location_id": 456}).dict())

@@ -52,6 +52,7 @@ from .models import (
     DatCoreApiToken,
     FileMetaData,
     FileMetaDataEx,
+    S3BucketName,
     UploadLinks,
     file_meta_data,
     projects,
@@ -133,7 +134,7 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
     """
 
     engine: Engine
-    simcore_bucket_name: str
+    simcore_bucket_name: S3BucketName
     has_project_db: bool
     app: web.Application
     settings: Settings
@@ -411,14 +412,14 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
     async def try_update_database_from_storage(
         self,
         file_uuid: FileID,
-        bucket_name: str,
-        object_name: FileID,
+        bucket: S3BucketName,
+        key: FileID,
         *,
         reraise_exceptions: bool,
     ) -> Optional[FileMetaDataEx]:
         try:
             response = await get_s3_client(self.app).client.head_object(
-                Bucket=bucket_name, Key=object_name
+                Bucket=bucket, Key=key
             )
 
             file_size = response["ContentLength"]
@@ -493,7 +494,7 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
             fmd = FileMetaData.from_simcore_node(
                 user_id=user_id,
                 file_uuid=file_uuid,
-                bucket_name=self.simcore_bucket_name,
+                bucket=self.simcore_bucket_name,
                 upload_expires_at=upload_expiration_date,
             )
             async with conn.begin():
@@ -872,7 +873,7 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
                 fmd = FileMetaData.from_simcore_node(
                     user_id=user_id,
                     file_uuid=item["Key"],
-                    bucket_name=self.simcore_bucket_name,
+                    bucket=self.simcore_bucket_name,
                 )
                 fmd.project_name = uuid_name_dict.get(dest_folder, "Untitled")
                 fmd.node_name = uuid_name_dict.get(fmd.node_id, "Untitled")

@@ -43,7 +43,7 @@ def test_file_entry_valid(
 ):
     file_uuid = FileID(Path("api") / Path("abcd") / Path("xx.dat"))
     fmd = FileMetaData.from_simcore_node(
-        user_id=12, file_uuid=file_uuid, bucket_name="test-bucket"
+        user_id=12, file_uuid=file_uuid, bucket="test-bucket"
     )
     fmd.file_size = parse_obj_as(ByteSize, file_size)
     fmd.entity_tag = entity_tag
