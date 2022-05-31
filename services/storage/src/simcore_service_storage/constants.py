@@ -35,7 +35,7 @@ S3_FILE_ID_RE = rf"^({_SAFE_S3_FILE_NAME_RE}+?)\/({_SAFE_S3_FILE_NAME_RE}+?)\/({
 S3_BUCKET_NAME_RE = r"(?!(^xn--|-s3alias$))^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$"
 # file IDs are either of type uuid/uuid/file_name.ext or api/uuid/file_name.ext
 _UUID_RE = r"[a-fA-F\d]{8}(?:\-[a-fA-F\d]{4}){3}\-[a-fA-F\d]{12}"
-FILE_ID_RE = rf"^(api|(.+))/((.+))/(.+)$"
+FILE_ID_RE = r"^(api|(.+))/((.+))/(.+)$"
 
 
 # REST API ----------------------------
