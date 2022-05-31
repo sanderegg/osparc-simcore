@@ -582,7 +582,7 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
         file_uuid: FileID,
         user_id: UserID,
         uploaded_parts: list[UploadedPart],
-    ) -> None:
+    ) -> FileMetaDataEx:
         async with self.engine.acquire() as conn:
             can: Optional[AccessRights] = await get_file_access_rights(
                 conn, int(user_id), file_uuid
@@ -611,9 +611,11 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
                 upload_id=upload_id,
                 uploaded_parts=uploaded_parts,
             )
-        await self.try_update_database_from_storage(
+        fmd = await self.try_update_database_from_storage(
             file_uuid, self.simcore_bucket_name, file_uuid, reraise_exceptions=True
         )
+        assert fmd  # nosec
+        return fmd
 
     async def download_link_s3(
         self, file_uuid: str, user_id: UserID, link_type: LinkType
@@ -1173,6 +1175,9 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
         current_uploads = await get_s3_client(self.app).list_ongoing_multipart_uploads(
             self.simcore_bucket_name
         )
+        if not current_uploads:
+            # nothing to do
+            return
         current_upload_ids = [u for u, _ in current_uploads]
         async with self.engine.acquire() as conn:
             list_of_valid_uploads = await db_file_meta_data.list_fmds(

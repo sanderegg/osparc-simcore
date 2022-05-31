@@ -388,7 +388,7 @@ async def upload_file(request: web.Request):
     return {"data": json.loads(response.json(by_alias=True))}
 
 
-@routes.post(f"/{api_vtag}/locations/{{location_id}}/files/{{file_id}}:abort")  # type: ignore
+@routes.post(f"/{api_vtag}/locations/{{location_id}}/files/{{file_id}}:abort", name="abort_upload_file")  # type: ignore
 async def abort_upload_file(request: web.Request):
     query_params = parse_request_query_parameters_as(StorageQueryParamsBase, request)
     path_params = parse_request_path_parameters_as(FilePathParams, request)
@@ -404,7 +404,7 @@ async def abort_upload_file(request: web.Request):
     return web.HTTPNoContent(content_type=MIMETYPE_APPLICATION_JSON)
 
 
-@routes.post(f"/{api_vtag}/locations/{{location_id}}/files/{{file_id}}:complete")  # type: ignore
+@routes.post(f"/{api_vtag}/locations/{{location_id}}/files/{{file_id}}:complete", name="complete_upload_file")  # type: ignore
 async def complete_upload_file(request: web.Request):
     query_params = parse_request_query_parameters_as(StorageQueryParamsBase, request)
     path_params = parse_request_path_parameters_as(FilePathParams, request)
@@ -470,10 +470,11 @@ async def is_completed_upload_file(request: web.Request):
         # first check if the task is in the app
         if task := request.app[UPLOAD_TASKS_KEY].get(task_name):
             if task.done():
-                task.result()
+                new_fmd: FileMetaDataEx = task.result()
                 request.app[UPLOAD_TASKS_KEY].pop(task_name)
                 return web.json_response(
-                    status=web.HTTPOk.status_code, data={"data": {"state": "ok"}}
+                    status=web.HTTPOk.status_code,
+                    data={"data": {"state": "ok", "e_tag": new_fmd.fmd.entity_tag}},
                 )
             # the task is still running
             return web.json_response(
@@ -484,13 +485,14 @@ async def is_completed_upload_file(request: web.Request):
         dsm = await _prepare_storage_manager(
             jsonable_encoder(path_params), jsonable_encoder(query_params), request
         )
-        if await dsm.list_file(
+        if fmd := await dsm.list_file(
             user_id=query_params.user_id,
             location=get_location_from_id(path_params.location_id),
             file_uuid=path_params.file_id,
         ):
             return web.json_response(
-                status=web.HTTPOk.status_code, data={"data": {"state": "ok"}}
+                status=web.HTTPOk.status_code,
+                data={"data": {"state": "ok", "e_tag": fmd.fmd.entity_tag}},
             )
     raise web.HTTPNotFound(
         reason="Not found. Upload could not be completed. Please try again and contact support if it fails again."
