@@ -556,7 +556,6 @@ qx.Class.define("osparc.file.FilePicker", {
           if (presignedLinkData.presignedLink.urls) {
             try {
               this.__uploadFile(file, presignedLinkData);
-              this.__completeUpload(presignedLinkData);
               console.info("completed upload.");
             } catch (error) {
               console.error(error);
@@ -584,6 +583,7 @@ qx.Class.define("osparc.file.FilePicker", {
         if (xhr.status == 200) {
           console.log("Completed upload", file.name);
           this.getNode().getStatus().setProgress(100);
+          // @odeimaiz here we should get the eTag at the end of the upload, no idea how to get it
           this.__completeUpload(file, presignedLinkData, xhr.response);
         } else {
           console.log(xhr.response);
@@ -598,14 +598,16 @@ qx.Class.define("osparc.file.FilePicker", {
 
     // Use XMLHttpRequest to complete the upload to S3
     __completeUpload: function(file, presignedLinkData, uploadResponse) {
-      const completeUrl = presignedLinkData.presignedLink.links.complete_url;
+      const completeUrl = presignedLinkData.presignedLink.links.complete_upload;
       const location = presignedLinkData.locationId;
       const path = presignedLinkData.fileUuid;
       const xhr = new XMLHttpRequest();
       xhr.onloadend = () => {
         if (xhr.status == 202) {
           console.log("waiting for completion", file.name);
-          // we need to poll the received new location
+          // @odeimaiz: we need to poll the received new location in the response
+          // we do have links.state -> poll that link until it says ok
+          // right now this kind of work if files are small and this happens fast
         }
 
 
@@ -621,10 +623,14 @@ qx.Class.define("osparc.file.FilePicker", {
         this.fireEvent("fileUploaded");
       };
       xhr.open("POST", completeUrl, true);
-      xhr.send({parts: [{1:uploadResponse["ETag"]}]});
+      xhr.setRequestHeader("Content-Type", "application/json");
+      // @odeimaiz: here we should pass every uploaded part (sorted by number from 1...X with their respective eTag)
+      // xhr.send({parts: [{1:uploadResponse["ETag"]}]});
+
+      xhr.send(JSON.stringify({parts: []}));
     },
     __abortUpload: function(presignedLinkData) {
-      const abortUrl = presignedLinkData.presignedLink.links.abort_url;
+      const abortUrl = presignedLinkData.presignedLink.links.abort_upload;
       const xhr = new XMLHttpRequest();
       xhr.open("POST", abortUrl, true);
     }
