@@ -25,7 +25,7 @@ from faker import Faker
 from models_library.projects import ProjectID
 from models_library.projects_nodes import NodeID
 from moto.server import ThreadedMotoServer
-from pydantic import ByteSize
+from pydantic import ByteSize, parse_obj_as
 from pytest_simcore.helpers.utils_docker import get_localhost_ip
 from simcore_service_storage.application import create
 from simcore_service_storage.constants import APP_DSM_KEY, SIMCORE_S3_STR
@@ -374,7 +374,15 @@ def node_id(faker: Faker) -> NodeID:
 
 @pytest.fixture
 def file_uuid(project_id: ProjectID, node_id: NodeID, faker: Faker) -> FileID:
-    return f"{project_id}/{node_id}/{faker.file_name()}"
+    return f"{project_id}/{node_id}/öä$äö2-34 name in to add complexity {faker.file_name()}"
+
+
+@pytest.fixture
+def create_file_uuid(project_id: ProjectID, node_id: NodeID) -> Callable[[str], FileID]:
+    def _creator(file_name: str) -> FileID:
+        return parse_obj_as(FileID, f"{project_id}/{node_id}/{file_name}")
+
+    return _creator
 
 
 @pytest.fixture
