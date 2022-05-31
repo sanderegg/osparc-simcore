@@ -12,10 +12,15 @@ import pytest
 from aiohttp import web
 from aioresponses import aioresponses as AioResponsesMock
 from aioresponses.core import CallbackResult
-from models_library.api_schemas_storage import FileMetaData
+from models_library.api_schemas_storage import (
+    FileMetaData,
+    FileUploadLinks,
+    FileUploadSchema,
+)
 from models_library.clusters import Cluster
 from models_library.projects_state import RunningState
-from pydantic import ByteSize, parse_obj_as
+from models_library.utils.fastapi_encoders import jsonable_encoder
+from pydantic import AnyUrl, ByteSize, parse_obj_as
 from yarl import URL
 
 pytest_plugins = [
@@ -345,14 +350,17 @@ def get_upload_link_cb(url: URL, **kwargs) -> CallbackResult:
     assert "link_type" in kwargs["params"]
     link_type = kwargs["params"]["link_type"]
     scheme = {"presigned": "http", "s3": "s3"}
+    upload_schema = FileUploadSchema(
+        chunk_size=parse_obj_as(ByteSize, "5GiB"),
+        urls=[parse_obj_as(AnyUrl, f"{scheme[link_type]}://{file_id}")],
+        links=FileUploadLinks(
+            abort_upload=parse_obj_as(AnyUrl, f"{url}:abort"),
+            complete_upload=parse_obj_as(AnyUrl, f"{url}:complete"),
+        ),
+    )
     return CallbackResult(
         status=web.HTTPOk.status_code,
-        payload={
-            "data": {
-                "urls": [f"{scheme[link_type]}://{file_id}"],
-                "chunk_size": int(parse_obj_as(ByteSize, "5GiB").to("b")),
-            }
-        },
+        payload={"data": jsonable_encoder(upload_schema)},
     )
 
 
