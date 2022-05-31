@@ -550,6 +550,37 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
                     [s3_link], file_size_bytes or _MAX_LINK_CHUNK_BYTE_SIZE[link_type]
                 )
 
+    async def abort_upload(self, file_uuid: FileID, user_id: UserID) -> None:
+        """aborts a current upload and reverts to the last version if any.
+        In case there are no previous version, removes the entry in the database
+        """
+        async with self.engine.acquire() as conn, conn.begin():
+            can: Optional[AccessRights] = await get_file_access_rights(
+                conn, int(user_id), file_uuid
+            )
+            if not can.delete or not can.write:
+                raise web.HTTPForbidden(
+                    reason=f"User {user_id} does not have enough access rights to delete file {file_uuid}"
+                )
+            file: FileMetaData = await db_file_meta_data.get(conn, file_uuid)
+            if file.upload_id:
+                await get_s3_client(self.app).abort_multipart_upload(
+                    bucket=file.bucket_name,
+                    file_id=file.file_uuid,
+                    upload_id=file.upload_id,
+                )
+        try:
+            # try to revert to what we have in storage
+            await self.try_update_database_from_storage(
+                file.file_uuid,
+                file.bucket_name,
+                file.object_name,
+                reraise_exceptions=True,
+            )
+        except botocore.exceptions.ClientError as exc:
+            # the file does not exist, so we delete the entry
+            await self.delete_file(user_id, SIMCORE_S3_STR, file_uuid)
+
     async def complete_upload(
         self,
         file_uuid: FileID,
