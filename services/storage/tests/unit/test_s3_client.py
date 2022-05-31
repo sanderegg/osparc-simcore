@@ -4,6 +4,7 @@
 
 
 import asyncio
+import json
 from contextlib import AsyncExitStack
 from pathlib import Path
 from typing import AsyncIterator, Awaitable, Callable, Final, Optional
@@ -213,7 +214,7 @@ async def test_create_multipart_presigned_upload_link(
     )
     assert s3_file_size == file_size
     assert s3_last_modifed
-    assert s3_etag == f"{received_e_tag}"
+    assert s3_etag == f"{json.loads(received_e_tag)}"
 
 
 async def test_abort_multipart_upload(
