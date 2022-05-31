@@ -11,9 +11,11 @@
 
 # DSM cleaner:
  - runs at an interval
- - removes the entries in the database that are expired:
-   - removes the entry
-   - aborts the multipart upload if any
+ - list the entries that are expired in the database by checking "upload_expires_at" column
+ - tries to update from S3 the database first, if that fails:
+   - removes the entries in the database that are expired:
+      - removes the entry
+      - aborts the multipart upload if any
 """
 
 import asyncio

@@ -17,7 +17,6 @@ import botocore.exceptions
 import sqlalchemy as sa
 from aiohttp import web
 from aiopg.sa import Engine
-from aiopg.sa.result import ResultProxy, RowProxy
 from models_library.api_schemas_storage import LinkType
 from models_library.projects import ProjectID
 from models_library.projects_nodes import NodeID
@@ -423,27 +422,26 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
             ).get_file_metadata(bucket, key)
 
             async with self.engine.acquire() as conn:
-                result: ResultProxy = await conn.execute(
-                    file_meta_data.update()
-                    .where(file_meta_data.c.file_uuid == file_uuid)
-                    .values(
-                        file_size=file_size,
-                        last_modified=last_modified,
-                        entity_tag=entity_tag,
-                        upload_id=None,
-                        upload_expires_at=None,
-                    )
-                    .returning(literal_column("*"))
+                fmd = await db_file_meta_data.get(conn, file_uuid)
+                fmd.file_size = parse_obj_as(ByteSize, file_size)
+                fmd.last_modified = last_modified
+                fmd.entity_tag = entity_tag
+                fmd.upload_id = None
+                fmd.upload_expires_at = None
+                new_fmd = await db_file_meta_data.upsert_file_metadata_for_upload(
+                    conn, fmd
                 )
-                if not result:
-                    return None
-                row: Optional[RowProxy] = await result.first()
-                if not row:
-                    return None
 
-                return to_meta_data_extended(row)
+                return FileMetaDataEx(fmd=new_fmd, parent_id=new_fmd.object_name)
         except botocore.exceptions.ClientError:
-            logger.warning("Error happened while trying to access %s", file_uuid)
+            logger.warning("Could not access %s in S3 backend", f"{file_uuid=}")
+            if reraise_exceptions:
+                raise
+        except FileMetaDataNotFoundError:
+            logger.warning(
+                "Could not find %s in database, but present in S3 backend. TIP: check this should not happen",
+                f"{file_uuid=}",
+            )
             if reraise_exceptions:
                 raise
 
@@ -1139,15 +1137,36 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
             "found following pending uploads: [%s]",
             [fmd.file_id for fmd in list_of_expired_uploads],
         )
+
+        # try first to upload these from S3 (conservative)
+        updated_fmds = await asyncio.gather(
+            *(
+                self.try_update_database_from_storage(
+                    fmd.file_uuid,
+                    fmd.bucket_name,
+                    fmd.object_name,
+                    reraise_exceptions=True,
+                )
+                for fmd in list_of_expired_uploads
+            ),
+            return_exceptions=True,
+        )
+        list_of_fmds_to_delete = [
+            expired_fmd
+            for expired_fmd, updated_fmd in zip(list_of_expired_uploads, updated_fmds)
+            if not isinstance(updated_fmd, FileMetaDataEx)
+        ]
+
+        # delete the remaining ones
         await asyncio.gather(
             *(
                 self.delete_file(fmd.user_id, fmd.location, fmd.file_uuid)
-                for fmd in list_of_expired_uploads
+                for fmd in list_of_fmds_to_delete
             )
         )
         logger.info(
             "pending uploads of [%s] deleted",
-            [fmd.file_id for fmd in list_of_expired_uploads],
+            [fmd.file_id for fmd in list_of_fmds_to_delete],
         )
 
         # if the database is 100% in sync it should not happen
