@@ -122,7 +122,7 @@ async def assert_file_meta_data_in_db(
             row = db_data[0]
             assert (
                 row[file_meta_data.c.file_size] == expected_file_size
-            ), "entry in file_meta_data was not initialized correctly, size should be set to -1"
+            ), f"entry in file_meta_data was not initialized correctly, size should be set to {expected_file_size}"
             if expected_upload_id:
                 assert (
                     row[file_meta_data.c.upload_id] is not None
@@ -397,7 +397,7 @@ async def test_delete_unuploaded_file_correctly_cleans_up_db_and_s3(
 
     # delete/abort file upload
     abort_url = URL(upload_link.links.abort_upload).relative()
-    response = await client.delete(f"{abort_url}")
+    response = await client.post(f"{abort_url}")
     await assert_status(response, web.HTTPNoContent)
 
     # the DB shall be cleaned up
@@ -614,7 +614,7 @@ async def test_upload_twice_and_fail_second_time_shall_keep_first_version(
     create_upload_file_link: Callable[..., Awaitable[FileUploadSchema]],
 ):
     # 1. upload a valid file
-    file_size = parse_obj_as(ByteSize, "1Mib")
+    file_size = parse_obj_as(ByteSize, "160Mib")
     file_name = faker.file_name()
     _, uploaded_file_uuid = await upload_file(file_size, file_name)
 
@@ -628,7 +628,7 @@ async def test_upload_twice_and_fail_second_time_shall_keep_first_version(
         file_uuid=uploaded_file_uuid,
         expected_entry_exists=True,
         expected_file_size=-1,
-        expected_upload_id=None,
+        expected_upload_id=True,
         expected_upload_expiration_date=True,
     )
 
@@ -647,7 +647,7 @@ async def test_upload_twice_and_fail_second_time_shall_keep_first_version(
 
     # 4. abort file upload
     abort_url = URL(upload_link.links.abort_upload).relative()
-    response = await client.delete(f"{abort_url}")
+    response = await client.post(f"{abort_url}")
     await assert_status(response, web.HTTPNoContent)
 
     # we should have the original file still in now...

@@ -358,7 +358,7 @@ async def upload_file(request: web.Request):
         )
 
         abort_url = request.url.join(
-            request.app.router["delete_file"]
+            request.app.router["abort_upload_file"]
             .url_for(
                 location_id=f"{path_params.location_id}",
                 file_id=urllib.parse.quote(path_params.file_id, safe=""),
@@ -386,6 +386,22 @@ async def upload_file(request: web.Request):
         )
 
     return {"data": json.loads(response.json(by_alias=True))}
+
+
+@routes.post(f"/{api_vtag}/locations/{{location_id}}/files/{{file_id}}:abort")  # type: ignore
+async def abort_upload_file(request: web.Request):
+    query_params = parse_request_query_parameters_as(StorageQueryParamsBase, request)
+    path_params = parse_request_path_parameters_as(FilePathParams, request)
+    log.debug(
+        "received call to abort_upload_file with %s",
+        f"{path_params=}, {query_params=}",
+    )
+    with handle_storage_errors():
+        dsm = await _prepare_storage_manager(
+            jsonable_encoder(path_params), jsonable_encoder(query_params), request
+        )
+        await dsm.abort_upload(path_params.file_id, query_params.user_id)
+    return web.HTTPNoContent(content_type=MIMETYPE_APPLICATION_JSON)
 
 
 @routes.post(f"/{api_vtag}/locations/{{location_id}}/files/{{file_id}}:complete")  # type: ignore
@@ -424,6 +440,7 @@ async def complete_upload_file(request: web.Request):
             )
             .with_query(user_id=query_params.user_id)
         )
+
         return web.json_response(
             status=web.HTTPAccepted.status_code,
             headers={"Content-Location": f"{complete_task_state_url}"},
