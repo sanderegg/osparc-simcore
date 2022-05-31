@@ -14,6 +14,7 @@ import pytest
 from aiohttp import ClientSession
 from faker import Faker
 from pydantic import ByteSize, parse_obj_as
+from simcore_service_storage.models import S3BucketName
 from simcore_service_storage.s3_client import (
     FileID,
     MultiPartUploadLinks,
@@ -45,7 +46,9 @@ async def test_storage_storage_s3_client_creation(app_settings: Settings):
         await storage_s3_client.client.list_buckets()
 
 
-async def _clean_bucket_content(storage_s3_client: StorageS3Client, bucket: str):
+async def _clean_bucket_content(
+    storage_s3_client: StorageS3Client, bucket: S3BucketName
+):
     response = await storage_s3_client.client.list_objects_v2(Bucket=bucket)
     while response["KeyCount"] > 0:
         await storage_s3_client.client.delete_objects(

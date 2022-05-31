@@ -283,7 +283,7 @@ async def mocked_s3_server_envs(
         await _remove_all_buckets(client)
 
 
-async def _clean_bucket_content(aiobotore_s3_client: S3Client, bucket: str):
+async def _clean_bucket_content(aiobotore_s3_client: S3Client, bucket: S3BucketName):
     response = await aiobotore_s3_client.list_objects_v2(Bucket=bucket)
     while response["KeyCount"] > 0:
         await aiobotore_s3_client.delete_objects(
