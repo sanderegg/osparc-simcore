@@ -202,11 +202,10 @@ async def test_create_multipart_presigned_upload_link(
     )
 
     # check that the multipart upload is not listed anymore
-    response = await storage_s3_client.client.list_multipart_uploads(
-        Bucket=storage_s3_bucket
+    list_ongoing_uploads = await storage_s3_client.list_ongoing_multipart_uploads(
+        storage_s3_bucket
     )
-    assert response
-    assert "Uploads" not in response
+    assert list_ongoing_uploads == []
 
     # check the object is complete
     s3_file_size, s3_last_modifed, s3_etag = await storage_s3_client.get_file_metadata(
@@ -238,11 +237,10 @@ async def test_abort_multipart_upload(
     )
 
     # now check that the listing is empty
-    response = await storage_s3_client.client.list_multipart_uploads(
-        Bucket=storage_s3_bucket
+    ongoing_multipart_uploads = await storage_s3_client.list_ongoing_multipart_uploads(
+        storage_s3_bucket
     )
-    assert response
-    assert "Uploads" not in response
+    assert ongoing_multipart_uploads == []
 
     # check it is not available
     with pytest.raises(botocore.exceptions.ClientError):
@@ -297,24 +295,22 @@ async def test_break_completion_of_multipart_upload(
             timeout=VERY_SHORT_TIMEOUT,
         )
     # check we have the multipart upload initialized and listed
-    response = await storage_s3_client.client.list_multipart_uploads(
-        Bucket=storage_s3_bucket
+    ongoing_multipart_uploads = await storage_s3_client.list_ongoing_multipart_uploads(
+        storage_s3_bucket
     )
-    assert response
-    assert "Uploads" in response
-    assert len(response["Uploads"]) == 1
-    assert "UploadId" in response["Uploads"][0]
-    assert response["Uploads"][0]["UploadId"] == upload_links.upload_id
+    assert ongoing_multipart_uploads
+    assert len(ongoing_multipart_uploads) == 1
+    ongoing_upload_id, ongoing_file_id = ongoing_multipart_uploads[0]
+    assert ongoing_upload_id == upload_links.upload_id
+    assert ongoing_file_id == file_id
 
     # now wait
     await asyncio.sleep(10)
 
     # check that the completion of the update completed...
-    response = await storage_s3_client.client.list_multipart_uploads(
-        Bucket=storage_s3_bucket
+    assert (
+        await storage_s3_client.list_ongoing_multipart_uploads(storage_s3_bucket) == []
     )
-    assert response
-    assert "Uploads" not in response
 
     # check the object is complete
     s3_file_size, s3_last_modified, s3_etag = await storage_s3_client.get_file_metadata(
@@ -386,14 +382,14 @@ def upload_file_multipart_presigned_link_without_completion(
             await storage_s3_client.get_file_metadata(storage_s3_bucket, file.name)
 
         # check we have the multipart upload initialized and listed
-        response = await storage_s3_client.client.list_multipart_uploads(
-            Bucket=storage_s3_bucket
+        ongoing_multipart_uploads = (
+            await storage_s3_client.list_ongoing_multipart_uploads(storage_s3_bucket)
         )
-        assert response
-        assert "Uploads" in response
-        assert len(response["Uploads"]) == 1
-        assert "UploadId" in response["Uploads"][0]
-        assert response["Uploads"][0]["UploadId"] == upload_links.upload_id
+        assert ongoing_multipart_uploads
+        assert len(ongoing_multipart_uploads) == 1
+        ongoing_upload_id, ongoing_file_id = ongoing_multipart_uploads[0]
+        assert ongoing_upload_id == upload_links.upload_id
+        assert ongoing_file_id == file_id
 
         # upload the file
         uploaded_parts: list[UploadedPart] = await upload_file_to_presigned_link(
@@ -407,14 +403,14 @@ def upload_file_multipart_presigned_link_without_completion(
             await storage_s3_client.get_file_metadata(storage_s3_bucket, file.name)
 
         # check we have the multipart upload initialized and listed
-        response = await storage_s3_client.client.list_multipart_uploads(
-            Bucket=storage_s3_bucket
+        ongoing_multipart_uploads = (
+            await storage_s3_client.list_ongoing_multipart_uploads(storage_s3_bucket)
         )
-        assert response
-        assert "Uploads" in response
-        assert len(response["Uploads"]) == 1
-        assert "UploadId" in response["Uploads"][0]
-        assert response["Uploads"][0]["UploadId"] == upload_links.upload_id
+        assert ongoing_multipart_uploads
+        assert len(ongoing_multipart_uploads) == 1
+        ongoing_upload_id, ongoing_file_id = ongoing_multipart_uploads[0]
+        assert ongoing_upload_id == upload_links.upload_id
+        assert ongoing_file_id == file_id
 
         return (
             file_id,

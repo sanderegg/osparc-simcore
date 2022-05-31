@@ -115,8 +115,6 @@ class StorageS3Client:
         self,
         bucket: S3BucketName,
         file_id: FileID = "",
-        *,
-        initiated_before: Optional[datetime.datetime] = None,
     ) -> list[tuple[UploadID, FileID]]:
         """Returns all the currently ongoing multipart uploads
 
@@ -130,17 +128,12 @@ class StorageS3Client:
             Prefix=file_id,
         )
 
-        def _filter_uploads(upload):
-            if initiated_before:
-                return upload["Initiated"] < initiated_before
-            return True
-
         return [
             (
-                upload["UploadId"],
-                upload["Key"],
+                upload.get("UploadId", "undefined-uploadid"),
+                upload.get("Key", "undefined-key"),
             )
-            for upload in filter(_filter_uploads, response.get("Uploads", []))
+            for upload in response.get("Uploads", [])
         ]
 
     async def abort_multipart_upload(
