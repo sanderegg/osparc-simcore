@@ -36,7 +36,7 @@ from tenacity._asyncio import AsyncRetrying
 from tenacity.retry import retry_if_exception_type
 from tenacity.stop import stop_after_delay
 from tenacity.wait import wait_fixed
-from tests.helpers.file_utils import upload_file_to_presigned_link
+from tests.helpers.file_utils import upload_file_part, upload_file_to_presigned_link
 from yarl import URL
 
 pytest_simcore_core_services_selection = ["postgres"]
@@ -101,7 +101,7 @@ async def create_upload_file_link(
 async def assert_file_meta_data_in_db(
     aiopg_engine: Engine,
     *,
-    file_uuid: str,
+    file_uuid: FileID,
     expected_entry_exists: bool,
     expected_file_size: Optional[int],
     expected_upload_id: Optional[bool],
@@ -112,7 +112,7 @@ async def assert_file_meta_data_in_db(
 
     async with aiopg_engine.acquire() as conn:
         result = await conn.execute(
-            file_meta_data.select().where(file_meta_data.c.file_uuid == file_uuid)
+            file_meta_data.select().where(file_meta_data.c.file_uuid == f"{file_uuid}")
         )
         db_data = await result.fetchall()
         assert db_data is not None
@@ -604,9 +604,67 @@ async def test_upload_real_file(
 
 
 async def test_upload_twice_and_fail_second_time_shall_keep_first_version(
+    aiopg_engine: Engine,
+    client: TestClient,
+    storage_s3_client: StorageS3Client,
+    storage_s3_bucket: str,
     upload_file: Callable[[ByteSize, str], Awaitable[tuple[Path, FileID]]],
+    faker: Faker,
+    create_file_of_size: Callable[[ByteSize, Optional[str]], Path],
+    create_upload_file_link: Callable[..., Awaitable[FileUploadSchema]],
 ):
-    ...
+    # 1. upload a valid file
+    file_size = parse_obj_as(ByteSize, "1Mib")
+    file_name = faker.file_name()
+    _, uploaded_file_uuid = await upload_file(file_size, file_name)
+
+    # 2. create an upload link for the second file
+    upload_link = await create_upload_file_link(
+        uploaded_file_uuid, link_type="presigned", file_size=file_size
+    )
+    # we shall have an entry in the db, waiting for upload
+    await assert_file_meta_data_in_db(
+        aiopg_engine,
+        file_uuid=uploaded_file_uuid,
+        expected_entry_exists=True,
+        expected_file_size=-1,
+        expected_upload_id=None,
+        expected_upload_expiration_date=True,
+    )
+
+    # 3. upload part of the file to simulate a network issue in the upload
+    new_file = create_file_of_size(file_size, file_name)
+    async with ClientSession() as session:
+        await upload_file_part(
+            session,
+            new_file,
+            part_index=1,
+            file_offset=0,
+            this_file_chunk_size=int(file_size / 3),
+            num_parts=1,
+            upload_url=upload_link.urls[0],
+        )
+
+    # 4. abort file upload
+    abort_url = URL(upload_link.links.abort_upload).relative()
+    response = await client.delete(f"{abort_url}")
+    await assert_status(response, web.HTTPNoContent)
+
+    # we should have the original file still in now...
+    await assert_file_meta_data_in_db(
+        aiopg_engine,
+        file_uuid=uploaded_file_uuid,
+        expected_entry_exists=True,
+        expected_file_size=file_size,
+        expected_upload_id=False,
+        expected_upload_expiration_date=False,
+    )
+    # check the file is in S3 for real
+    response = await storage_s3_client.client.head_object(
+        Bucket=storage_s3_bucket, Key=uploaded_file_uuid
+    )
+    assert response
+    assert response["ContentLength"] == file_size
 
 
 @pytest.mark.parametrize(

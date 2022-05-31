@@ -22,7 +22,7 @@ async def _file_sender(file_name: Path, *, offset: int, bytes_to_send: int):
             yield chunk
 
 
-async def _upload_file_part(
+async def upload_file_part(
     session: ClientSession,
     file: Path,
     part_index: int,
@@ -75,7 +75,7 @@ async def upload_file_to_presigned_link(
                 file_chunk_size if (index + 1) < num_urls else last_chunk_size
             )
             upload_tasks.append(
-                _upload_file_part(
+                upload_file_part(
                     session,
                     file,
                     index,
