@@ -10,16 +10,24 @@ from models_library.api_schemas_storage import FileUploadSchema
 from pydantic import AnyUrl, ByteSize, parse_obj_as
 from simcore_service_storage.s3_client import ETag, MultiPartUploadLinks, UploadedPart
 
-_SUB_CHUNKS: Final[int] = parse_obj_as(ByteSize, "16Mib")
+_SENDER_CHUNK_SIZE: Final[int] = parse_obj_as(ByteSize, "16Mib")
 
 
-async def _file_sender(file_name: Path, *, offset: int, bytes_to_send: int):
-    async with aiofiles.open(file_name, "rb") as f:
+async def _file_sender(
+    file: Path, *, offset: int, bytes_to_send: int, raise_while_uploading: bool
+):
+    chunk_size = _SENDER_CHUNK_SIZE
+    if raise_while_uploading:
+        # to ensure we can raise before it is done
+        chunk_size = min(_SENDER_CHUNK_SIZE, int(file.stat().st_size / 3))
+    async with aiofiles.open(file, "rb") as f:
         await f.seek(offset)
         num_read_bytes = 0
-        while chunk := await f.read(min(_SUB_CHUNKS, bytes_to_send - num_read_bytes)):
+        while chunk := await f.read(min(chunk_size, bytes_to_send - num_read_bytes)):
             num_read_bytes += len(chunk)
             yield chunk
+            if raise_while_uploading:
+                raise RuntimeError("we were asked to raise here!")
 
 
 async def upload_file_part(
@@ -30,6 +38,7 @@ async def upload_file_part(
     this_file_chunk_size: int,
     num_parts: int,
     upload_url: AnyUrl,
+    raise_while_uploading: bool = False,
 ) -> tuple[int, ETag]:
     print(
         f"--> uploading {this_file_chunk_size=} of {file=}, [{part_index+1}/{num_parts}]..."
@@ -40,6 +49,7 @@ async def upload_file_part(
             file,
             offset=file_offset,
             bytes_to_send=this_file_chunk_size,
+            raise_while_uploading=raise_while_uploading,
         ),
         headers={
             "Content-Length": f"{this_file_chunk_size}",

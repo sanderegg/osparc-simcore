@@ -603,18 +603,21 @@ async def test_upload_real_file(
     await upload_file(file_size, file_name)
 
 
+@pytest.mark.parametrize(
+    "file_size", [parse_obj_as(ByteSize, "160Mib"), parse_obj_as(ByteSize, "1Mib")]
+)
 async def test_upload_twice_and_fail_second_time_shall_keep_first_version(
     aiopg_engine: Engine,
     client: TestClient,
     storage_s3_client: StorageS3Client,
     storage_s3_bucket: str,
+    file_size: ByteSize,
     upload_file: Callable[[ByteSize, str], Awaitable[tuple[Path, FileID]]],
     faker: Faker,
     create_file_of_size: Callable[[ByteSize, Optional[str]], Path],
     create_upload_file_link: Callable[..., Awaitable[FileUploadSchema]],
 ):
     # 1. upload a valid file
-    file_size = parse_obj_as(ByteSize, "160Mib")
     file_name = faker.file_name()
     _, uploaded_file_uuid = await upload_file(file_size, file_name)
 
@@ -628,22 +631,24 @@ async def test_upload_twice_and_fail_second_time_shall_keep_first_version(
         file_uuid=uploaded_file_uuid,
         expected_entry_exists=True,
         expected_file_size=-1,
-        expected_upload_id=True,
+        expected_upload_id=bool(file_size > _MULTIPART_UPLOADS_MIN_TOTAL_SIZE),
         expected_upload_expiration_date=True,
     )
 
     # 3. upload part of the file to simulate a network issue in the upload
     new_file = create_file_of_size(file_size, file_name)
-    async with ClientSession() as session:
-        await upload_file_part(
-            session,
-            new_file,
-            part_index=1,
-            file_offset=0,
-            this_file_chunk_size=int(file_size / 3),
-            num_parts=1,
-            upload_url=upload_link.urls[0],
-        )
+    with pytest.raises(RuntimeError):
+        async with ClientSession() as session:
+            await upload_file_part(
+                session,
+                new_file,
+                part_index=1,
+                file_offset=0,
+                this_file_chunk_size=file_size,
+                num_parts=1,
+                upload_url=upload_link.urls[0],
+                raise_while_uploading=True,
+            )
 
     # 4. abort file upload
     abort_url = URL(upload_link.links.abort_upload).relative()
