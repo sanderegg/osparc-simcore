@@ -139,7 +139,7 @@ async def test_listing_and_deleting_files(
     # among bobs bio files, filter by project/node, take first one
 
     uuid_filter = os.path.join(
-        bobs_biostromy_files[0].project_name, bobs_biostromy_files[0].node_name
+        f"{bobs_biostromy_files[0].project_id}", f"{bobs_biostromy_files[0].node_id}"
     )
     filtered_data = await dsm.list_files(
         user_id=bob_id, location=SIMCORE_S3_STR, uuid_filter=f"{uuid_filter}"

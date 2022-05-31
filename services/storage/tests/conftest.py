@@ -182,7 +182,7 @@ async def dsm_mockup_db(
         node = node_names[idx]
         node_id = node_ids[idx]
         file_name = str(counter)
-        object_name = Path(str(project_name), str(node), str(counter)).as_posix()
+        object_name = f"{project_id}/{node_id}/{counter}"
         file_uuid = Path(object_name).as_posix()
         raw_file_path = file_uuid
         display_file_path = f"{project_name} / {node} / {file_name}"
@@ -374,16 +374,16 @@ def node_id(faker: Faker) -> NodeID:
 
 
 @pytest.fixture
-def file_uuid(project_id: ProjectID, node_id: NodeID, faker: Faker) -> FileID:
-    return f"{project_id}/{node_id}/öä$äö2-34 name in to add complexity {faker.file_name()}"
-
-
-@pytest.fixture
 def create_file_uuid(project_id: ProjectID, node_id: NodeID) -> Callable[[str], FileID]:
     def _creator(file_name: str) -> FileID:
         return parse_obj_as(FileID, f"{project_id}/{node_id}/{file_name}")
 
     return _creator
+
+
+@pytest.fixture
+def file_uuid(create_file_uuid: Callable[[str], FileID], faker: Faker) -> FileID:
+    return create_file_uuid(f"öä$äö2-34 name in to add complexity {faker.file_name()}")
 
 
 @pytest.fixture
