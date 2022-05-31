@@ -20,7 +20,6 @@ from aiopg.sa import Engine
 from faker import Faker
 from models_library.api_schemas_storage import FileUploadSchema
 from models_library.projects import ProjectID
-from models_library.projects_nodes import NodeID
 from models_library.users import UserID
 from models_library.utils.fastapi_encoders import jsonable_encoder
 from pydantic import ByteSize, parse_obj_as
@@ -213,7 +212,7 @@ async def test_create_upload_file_default_returns_single_link(
     assert received_file_upload.urls[0].scheme == expected_link_scheme
     assert received_file_upload.urls[0].path
     assert received_file_upload.urls[0].path.endswith(
-        f"{urllib.parse.quote(file_uuid, safe='')}"
+        f"{urllib.parse.quote(file_uuid, safe='/')}"
     )
     # the chunk_size
     assert received_file_upload.chunk_size == expected_chunk_size
@@ -496,98 +495,97 @@ async def test_upload_same_file_uuid_aborts_previous_upload(
     )
 
 
-# /v0/locations/0/files/9d27c276-6cfd-48c3-9eea-5b56972683f9%2Faf7ecd7b-5e5d-4f5f-93c3-a234171cabe2%2Fsome%20funky%20name.txt?user_id=1&link_type=presigned
-
-
-# "öä$äö2-34 name without extension"
-
-
 @pytest.fixture
-def file_uuid(project_id: ProjectID, node_id: NodeID, faker: Faker) -> FileID:
-    return f"{project_id}/{node_id}/öä$äö2-34 name in to add complexity {faker.file_name()}"
-
-
-@pytest.fixture
-async def upload_file(
+def upload_file(
     aiopg_engine: Engine,
     storage_s3_client: StorageS3Client,
     storage_s3_bucket: str,
     client: TestClient,
     create_upload_file_link: Callable[..., Awaitable[FileUploadSchema]],
-    create_file_of_size: Callable[[ByteSize], Path],
-    file_uuid: str,
-    file_size: ByteSize,
-) -> Path:
-    assert client.app
-    # create a file
-    file = create_file_of_size(file_size)
-    # get an upload link
-    file_upload_link = await create_upload_file_link(
-        file_uuid, link_type="presigned", file_size=file_size
-    )
+    create_file_of_size: Callable[[ByteSize, Optional[str]], Path],
+    create_file_uuid: Callable[[str], FileID],
+) -> Callable[[ByteSize, str], Awaitable[tuple[Path, FileID]]]:
+    async def _uploader(file_size: ByteSize, file_name: str) -> tuple[Path, FileID]:
+        assert client.app
+        # create a file
+        file = create_file_of_size(file_size, file_name)
+        file_uuid = create_file_uuid(file_name)
+        # get an upload link
+        file_upload_link = await create_upload_file_link(
+            file_uuid, link_type="presigned", file_size=file_size
+        )
 
-    # upload the file
-    part_to_etag: list[UploadedPart] = await upload_file_to_presigned_link(
-        file, file_upload_link
-    )
-    # complete the upload
-    complete_url = URL(file_upload_link.links.complete_upload).relative()
-    start = perf_counter()
-    print(f"--> completing upload of {file=}")
-    response = await client.post(
-        f"{complete_url}", json={"parts": jsonable_encoder(part_to_etag)}
-    )
-    response.raise_for_status()
-    data, error = await assert_status(response, web.HTTPAccepted)
-    assert not error
-    assert data
-    assert "links" in data
-    assert "state" in data["links"]
-    state_url = URL(data["links"]["state"]).relative()
+        # upload the file
+        part_to_etag: list[UploadedPart] = await upload_file_to_presigned_link(
+            file, file_upload_link
+        )
+        # complete the upload
+        complete_url = URL(file_upload_link.links.complete_upload).relative()
+        start = perf_counter()
+        print(f"--> completing upload of {file=}")
+        response = await client.post(
+            f"{complete_url}", json={"parts": jsonable_encoder(part_to_etag)}
+        )
+        response.raise_for_status()
+        data, error = await assert_status(response, web.HTTPAccepted)
+        assert not error
+        assert data
+        assert "links" in data
+        assert "state" in data["links"]
+        state_url = URL(data["links"]["state"]).relative()
 
-    async for attempt in AsyncRetrying(
-        reraise=True,
-        wait=wait_fixed(1),
-        stop=stop_after_delay(60),
-        retry=retry_if_exception_type(ValueError),
-    ):
-        with attempt:
-            print(
-                f"--> checking for upload {state_url=}, {attempt.retry_state.attempt_number}..."
-            )
-            response = await client.post(f"{state_url}")
-            response.raise_for_status()
-            data, error = await assert_status(response, web.HTTPOk)
-            assert not error
-            assert data
-            assert "state" in data
-            if data["state"] != "ok":
-                raise ValueError(f"{data=}")
-            assert data["state"] == "ok"
-            print(
-                f"--> done waiting, data is completely uploaded [{attempt.retry_state.retry_object.statistics}]"
-            )
+        async for attempt in AsyncRetrying(
+            reraise=True,
+            wait=wait_fixed(1),
+            stop=stop_after_delay(60),
+            retry=retry_if_exception_type(ValueError),
+        ):
+            with attempt:
+                print(
+                    f"--> checking for upload {state_url=}, {attempt.retry_state.attempt_number}..."
+                )
+                response = await client.post(f"{state_url}")
+                response.raise_for_status()
+                data, error = await assert_status(response, web.HTTPOk)
+                assert not error
+                assert data
+                assert "state" in data
+                if data["state"] != "ok":
+                    raise ValueError(f"{data=}")
+                assert data["state"] == "ok"
+                print(
+                    f"--> done waiting, data is completely uploaded [{attempt.retry_state.retry_object.statistics}]"
+                )
 
-    print(f"--> completed upload in {perf_counter() - start}")
+        print(f"--> completed upload in {perf_counter() - start}")
 
-    # check the entry in db now has the correct file size, and the upload id is gone
-    await assert_file_meta_data_in_db(
-        aiopg_engine,
-        file_uuid=file_uuid,
-        expected_entry_exists=True,
-        expected_file_size=file_size,
-        expected_upload_id=False,
-        expected_upload_expiration_date=False,
-    )
-    # check the file is in S3 for real
-    response = await storage_s3_client.client.head_object(
-        Bucket=storage_s3_bucket, Key=file_uuid
-    )
-    assert response
-    assert response["ContentLength"] == file_size
-    return file
+        # check the entry in db now has the correct file size, and the upload id is gone
+        await assert_file_meta_data_in_db(
+            aiopg_engine,
+            file_uuid=file_uuid,
+            expected_entry_exists=True,
+            expected_file_size=file_size,
+            expected_upload_id=False,
+            expected_upload_expiration_date=False,
+        )
+        # check the file is in S3 for real
+        response = await storage_s3_client.client.head_object(
+            Bucket=storage_s3_bucket, Key=file_uuid
+        )
+        assert response
+        assert response["ContentLength"] == file_size
+        return file, file_uuid
+
+    return _uploader
 
 
+@pytest.mark.parametrize(
+    "file_name",
+    [
+        "some file name with spaces and extension.txt",
+        "some name with special characters -_ü!öäàé++3245",
+    ],
+)
 @pytest.mark.parametrize(
     "file_size",
     [
@@ -597,7 +595,17 @@ async def upload_file(
         # pytest.param(parse_obj_as(ByteSize, "7Gib"), id="7Gib"),
     ],
 )
-async def test_upload_real_file(upload_file: Path):
+async def test_upload_real_file(
+    file_name: str,
+    file_size: ByteSize,
+    upload_file: Callable[[ByteSize, str], Awaitable[Path]],
+):
+    await upload_file(file_size, file_name)
+
+
+async def test_upload_twice_and_fail_second_time_shall_keep_first_version(
+    upload_file: Callable[[ByteSize, str], Awaitable[tuple[Path, FileID]]],
+):
     ...
 
 
@@ -610,19 +618,21 @@ async def test_upload_real_file(upload_file: Path):
 )
 async def test_download_file(
     client: TestClient,
-    upload_file: Path,
+    file_size: ByteSize,
+    upload_file: Callable[[ByteSize, str], Awaitable[tuple[Path, FileID]]],
     location_id: int,
-    file_uuid: FileID,
     user_id: UserID,
     tmp_path: Path,
     faker: Faker,
 ):
     assert client.app
+    uploaded_file, uploaded_file_uuid = await upload_file(file_size, faker.file_name())
 
     download_url = (
         client.app.router["download_file"]
         .url_for(
-            location_id=f"{location_id}", file_id=urllib.parse.quote(file_uuid, safe="")
+            location_id=f"{location_id}",
+            file_id=urllib.parse.quote(uploaded_file_uuid, safe=""),
         )
         .with_query(user_id=user_id)
     )
@@ -640,7 +650,7 @@ async def test_download_file(
             fp.write(await response.read())
     assert dest_file.exists()
     # compare files
-    assert filecmp.cmp(upload_file, dest_file)
+    assert filecmp.cmp(uploaded_file, dest_file)
 
 
 @pytest.mark.parametrize(
@@ -655,17 +665,20 @@ async def test_delete_file(
     storage_s3_client: StorageS3Client,
     storage_s3_bucket: str,
     client: TestClient,
-    upload_file: Path,
+    file_size: ByteSize,
+    upload_file: Callable[[ByteSize, str], Awaitable[tuple[Path, FileID]]],
     location_id: int,
-    file_uuid: FileID,
     user_id: UserID,
+    faker: Faker,
 ):
     assert client.app
+    uploaded_file, uploaded_file_uuid = await upload_file(file_size, faker.file_name())
 
     delete_url = (
         client.app.router["delete_file"]
         .url_for(
-            location_id=f"{location_id}", file_id=urllib.parse.quote(file_uuid, safe="")
+            location_id=f"{location_id}",
+            file_id=urllib.parse.quote(uploaded_file_uuid, safe=""),
         )
         .with_query(user_id=user_id)
     )
@@ -675,7 +688,7 @@ async def test_delete_file(
     # check the entry in db is removed
     await assert_file_meta_data_in_db(
         aiopg_engine,
-        file_uuid=file_uuid,
+        file_uuid=uploaded_file_uuid,
         expected_entry_exists=False,
         expected_file_size=None,
         expected_upload_id=None,
@@ -684,5 +697,5 @@ async def test_delete_file(
     # check the file is gone from S3
     with pytest.raises(botocore.exceptions.ClientError):
         await storage_s3_client.client.head_object(
-            Bucket=storage_s3_bucket, Key=file_uuid
+            Bucket=storage_s3_bucket, Key=uploaded_file_uuid
         )
