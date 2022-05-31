@@ -8,13 +8,14 @@ from typing import Optional
 
 from aiobotocore.session import AioSession, get_session
 from botocore.client import Config
+from models_library.api_schemas_storage import UploadedPart
 from models_library.projects import ProjectID
 from models_library.projects_nodes_io import NodeID
 from pydantic import AnyUrl, ByteSize, parse_obj_as
 from settings_library.s3 import S3Settings
 from types_aiobotocore_s3 import S3Client
 
-from .models import ETag, FileID, MultiPartUploadLinks, UploadedPart, UploadID
+from .models import ETag, FileID, MultiPartUploadLinks, UploadID
 from .s3_utils import compute_num_file_chunks
 
 log = logging.getLogger(__name__)
