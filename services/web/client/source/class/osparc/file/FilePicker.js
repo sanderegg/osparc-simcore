@@ -559,17 +559,15 @@ qx.Class.define("osparc.file.FilePicker", {
               this.__completeUpload(presignedLinkData);
               console.info("completed upload.");
             } catch (error) {
-              console.error(err);
+              console.error(error);
               this.__abortUpload(presignedLinkData);
             }
           }
-        })
+        });
     },
 
     // Use XMLHttpRequest to upload the file to S3.
     __uploadFile: function(file, presignedLinkData) {
-      const location = presignedLinkData.locationId;
-      const path = presignedLinkData.fileUuid;
       const url = presignedLinkData.presignedLink.urls[0];
 
       // From https://github.com/minio/cookbook/blob/master/docs/presigned-put-upload-via-browser.md
@@ -586,7 +584,7 @@ qx.Class.define("osparc.file.FilePicker", {
         if (xhr.status == 200) {
           console.log("Completed upload", file.name);
           this.getNode().getStatus().setProgress(100);
-          this.__completeUpload(presignedLinkData, xhr.response);
+          this.__completeUpload(file, presignedLinkData, xhr.response);
         } else {
           console.log(xhr.response);
           this.getNode().getStatus().setProgress(0);
@@ -599,8 +597,10 @@ qx.Class.define("osparc.file.FilePicker", {
     },
 
     // Use XMLHttpRequest to complete the upload to S3
-    __completeUpload: function(presignedLinkData, uploadResponse) {
-      const complete_url = presignedLinkData.presignedLink.links.complete_url;
+    __completeUpload: function(file, presignedLinkData, uploadResponse) {
+      const completeUrl = presignedLinkData.presignedLink.links.complete_url;
+      const location = presignedLinkData.locationId;
+      const path = presignedLinkData.fileUuid;
       const xhr = new XMLHttpRequest();
       xhr.onloadend = () => {
         // we need to poll the received new location
@@ -615,13 +615,13 @@ qx.Class.define("osparc.file.FilePicker", {
         }
         this.fireEvent("fileUploaded");
       };
-      xhr.open("POST", complete_url, true);
+      xhr.open("POST", completeUrl, true);
       xhr.send({parts: [{1:uploadResponse["ETag"]}]});
     },
     __abortUpload: function(presignedLinkData) {
       const abort_url = presignedLinkData.presignedLink.links.abort_url;
       const xhr = new XMLHttpRequest();
-      xhr.open("DELETE", abort_url, true);
+      xhr.open("POST", abort_url, true);
     }
   }
 });

@@ -7,7 +7,13 @@ from typing import Optional, Tuple
 
 import aiofiles
 from aiohttp import ClientError, ClientPayloadError, ClientSession, web
-from models_library.api_schemas_storage import FileUploadSchema, UploadedPart
+from models_library.api_schemas_storage import (
+    FileUploadCompleteFutureResponse,
+    FileUploadCompleteResponse,
+    FileUploadCompleteState,
+    FileUploadSchema,
+    UploadedPart,
+)
 from models_library.utils.fastapi_encoders import jsonable_encoder
 from pydantic import parse_obj_as
 from pydantic.networks import AnyUrl
@@ -176,10 +182,8 @@ async def _complete_upload(
 
         # now poll for state
         response = await resp.json()
-    assert response["data"]  # nosec
-    assert response["data"]["links"]  # nosec
-    assert response["data"]["links"]["state"]  # nosec
-    state_url = response["data"]["links"]["state"]
+    file_upload_complete_response = FileUploadCompleteResponse.parse_obj(response)
+    state_url = file_upload_complete_response.links.state
 
     async for attempt in AsyncRetrying(
         reraise=True,
@@ -192,7 +196,8 @@ async def _complete_upload(
             async with session.post(state_url) as resp:
                 resp.raise_for_status()
                 response = await resp.json()
-                if response["data"]["state"] != "ok":
+                future = FileUploadCompleteFutureResponse.parse_obj(response)
+                if future.state == FileUploadCompleteState.NOK:
                     raise ValueError("upload not ready yet")
             return response["data"]["e_tag"]
     raise exceptions.S3TransferError(

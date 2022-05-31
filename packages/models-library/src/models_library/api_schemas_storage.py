@@ -244,6 +244,7 @@ class FileUploadCompleteState(Enum):
 
 class FileUploadCompleteFutureResponse(BaseModel):
     state: FileUploadCompleteState
+    e_tag: Optional[ETag] = Field(default=None)
 
 
 # /simcore-s3/
