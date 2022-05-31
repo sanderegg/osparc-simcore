@@ -32,7 +32,7 @@ async def output_file(
     file = FileMetaData.from_simcore_node(
         user_id=user_id,
         file_uuid=f"{project_id}/{node_id}/filename.txt",
-        bucket_name="master-simcore",
+        bucket="master-simcore",
     )
     file.entity_tag = "df9d868b94e53d18009066ca5cd90e9f"
     file.file_size = ByteSize(12)

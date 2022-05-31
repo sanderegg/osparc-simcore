@@ -15,7 +15,7 @@ from pydantic import AnyUrl, ByteSize, parse_obj_as
 from settings_library.s3 import S3Settings
 from types_aiobotocore_s3 import S3Client
 
-from .models import ETag, FileID, MultiPartUploadLinks, UploadID
+from .models import ETag, FileID, MultiPartUploadLinks, S3BucketName, UploadID
 from .s3_utils import compute_num_file_chunks
 
 log = logging.getLogger(__name__)
@@ -44,7 +44,7 @@ class StorageS3Client:
         )
         return cls(session, client)
 
-    async def create_bucket(self, bucket: str) -> None:
+    async def create_bucket(self, bucket: S3BucketName) -> None:
         log.debug("Creating bucket: %s", bucket)
 
         try:
@@ -57,7 +57,7 @@ class StorageS3Client:
             )
 
     async def create_single_presigned_download_link(
-        self, bucket: str, file_id: FileID, expiration_secs: int
+        self, bucket: S3BucketName, file_id: FileID, expiration_secs: int
     ) -> AnyUrl:
         generated_link = await self.client.generate_presigned_url(
             "get_object",
@@ -67,7 +67,7 @@ class StorageS3Client:
         return parse_obj_as(AnyUrl, generated_link)
 
     async def create_single_presigned_upload_link(
-        self, bucket: str, file_id: FileID, expiration_secs: int
+        self, bucket: S3BucketName, file_id: FileID, expiration_secs: int
     ) -> AnyUrl:
         generated_link = await self.client.generate_presigned_url(
             "put_object",
@@ -77,7 +77,11 @@ class StorageS3Client:
         return parse_obj_as(AnyUrl, generated_link)
 
     async def create_multipart_upload_links(
-        self, bucket: str, file_id: FileID, file_size: ByteSize, expiration_secs: int
+        self,
+        bucket: S3BucketName,
+        file_id: FileID,
+        file_size: ByteSize,
+        expiration_secs: int,
     ) -> MultiPartUploadLinks:
         # first initiate the multipart upload
         response = await self.client.create_multipart_upload(Bucket=bucket, Key=file_id)
@@ -109,7 +113,7 @@ class StorageS3Client:
 
     async def list_ongoing_multipart_uploads(
         self,
-        bucket: str,
+        bucket: S3BucketName,
         file_id: FileID = "",
         *,
         initiated_before: Optional[datetime.datetime] = None,
@@ -140,7 +144,7 @@ class StorageS3Client:
         ]
 
     async def abort_multipart_upload(
-        self, bucket: str, file_id: FileID, upload_id: UploadID
+        self, bucket: S3BucketName, file_id: FileID, upload_id: UploadID
     ) -> None:
         await self.client.abort_multipart_upload(
             Bucket=bucket, Key=file_id, UploadId=upload_id
@@ -148,7 +152,7 @@ class StorageS3Client:
 
     async def complete_multipart_upload(
         self,
-        bucket: str,
+        bucket: S3BucketName,
         file_id: FileID,
         upload_id: UploadID,
         uploaded_parts: list[UploadedPart],
@@ -166,11 +170,14 @@ class StorageS3Client:
         )
         return response["ETag"]
 
-    async def delete_file(self, bucket: str, file_id: FileID) -> None:
+    async def delete_file(self, bucket: S3BucketName, file_id: FileID) -> None:
         await self.client.delete_object(Bucket=bucket, Key=file_id)
 
     async def delete_files_in_project_node(
-        self, bucket: str, project_id: ProjectID, node_id: Optional[NodeID] = None
+        self,
+        bucket: S3BucketName,
+        project_id: ProjectID,
+        node_id: Optional[NodeID] = None,
     ) -> None:
         # NOTE: the / at the end of the Prefix is VERY important,
         # makes the listing several order of magnitudes faster
@@ -188,5 +195,5 @@ class StorageS3Client:
             )
 
     @staticmethod
-    def compute_s3_url(bucket: str, file_id: FileID) -> AnyUrl:
+    def compute_s3_url(bucket: S3BucketName, file_id: FileID) -> AnyUrl:
         return parse_obj_as(AnyUrl, f"s3://{bucket}/{urllib.parse.quote(file_id)}")
