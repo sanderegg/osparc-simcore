@@ -37,6 +37,11 @@ def _get_base_storage_url(app: web.Application) -> URL:
     return URL(settings.base_url)
 
 
+def _get_storage_vtag(app: web.Application) -> str:
+    settings: StorageSettings = get_plugin_settings(app)
+    return settings.STORAGE_VTAG
+
+
 def _resolve_storage_url(request: web.Request) -> URL:
     """Composes a new url against storage API"""
     userid = request[RQT_USERID_KEY]
@@ -71,6 +76,15 @@ async def _request_storage(request: web.Request, method: str, **kwargs):
     ) as resp:
         payload = await resp.json()
         return payload
+
+
+def _unresolve_storage_url(request: web.Request, storage_url: AnyUrl) -> AnyUrl:
+    assert storage_url.path  # nosec
+    prefix = f"/{_get_storage_vtag(request.app)}"
+    converted_url = request.url.with_path(
+        f"/v0/storage{storage_url.path.removeprefix(prefix)}"
+    )
+    return parse_obj_as(AnyUrl, f"{converted_url}")
 
 
 async def safe_unwrap(
@@ -153,20 +167,13 @@ async def download_file(request: web.Request):
 @permission_required("storage.files.*")
 async def upload_file(request: web.Request):
     payload = await _request_storage(request, "PUT")
-    file_upload_schema = FileUploadSchema.parse_obj(
-        safe_unwrap(payload.get("data", {}))
+    data, _ = unwrap_envelope(payload)
+    file_upload_schema = FileUploadSchema.parse_obj(data)
+    file_upload_schema.links.complete_upload = _unresolve_storage_url(
+        request, file_upload_schema.links.complete_upload
     )
-    file_upload_schema.links.complete_upload = parse_obj_as(
-        AnyUrl,
-        URL(file_upload_schema.links.complete_upload).with_path(
-            f"/storage/{file_upload_schema.links.complete_upload.path}"
-        ),
-    )
-    file_upload_schema.links.abort_upload = parse_obj_as(
-        AnyUrl,
-        URL(file_upload_schema.links.abort_upload).with_path(
-            f"/storage/{file_upload_schema.links.abort_upload.path}"
-        ),
+    file_upload_schema.links.abort_upload = _unresolve_storage_url(
+        request, file_upload_schema.links.abort_upload
     )
     return create_data_response(jsonable_encoder(file_upload_schema))
 
@@ -175,16 +182,19 @@ async def upload_file(request: web.Request):
 @permission_required("storage.files.*")
 async def complete_upload_file(request: web.Request):
     payload = await _request_storage(request, "POST")
-    file_upload_complete = FileUploadCompleteResponse.parse_obj(
-        safe_unwrap(payload.get("data", {}))
-    )
-    file_upload_complete.links.state = parse_obj_as(
-        AnyUrl,
-        URL(file_upload_complete.links.state).with_path(
-            f"/storage/{file_upload_complete.links.state}"
-        ),
+    data, _ = unwrap_envelope(payload)
+    file_upload_complete = FileUploadCompleteResponse.parse_obj(data)
+    file_upload_complete.links.state = _unresolve_storage_url(
+        request, file_upload_complete.links.state
     )
     return create_data_response(jsonable_encoder(file_upload_complete))
+
+
+@login_required
+@permission_required("storages.files.*")
+async def abort_upload_file(request: web.Request):
+    payload = await _request_storage(request, "POST")
+    return payload
 
 
 @login_required

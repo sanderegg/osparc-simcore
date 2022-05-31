@@ -150,6 +150,9 @@ paths:
   /storage/locations/{location_id}/files/{file_id}:complete:
     $ref: "./openapi-storage.yaml#/paths/~1storage~1locations~1{location_id}~1files~1{file_id}:complete"
 
+  /storage/locations/{location_id}/files/{file_id}:abort:
+    $ref: "./openapi-storage.yaml#/paths/~1storage~1locations~1{location_id}~1files~1{file_id}:abort"
+
   /storage/locations/{location_id}/files/{file_id}:complete/futures/{future_id}:
     $ref: "./openapi-storage.yaml#/paths/~1storage~1locations~1{location_id}~1files~1{file_id}:complete~1futures~1{future_id}"
 
