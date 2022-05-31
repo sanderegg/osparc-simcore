@@ -5,6 +5,7 @@
 
 import asyncio
 import filecmp
+import json
 import urllib.parse
 from dataclasses import dataclass
 from pathlib import Path
@@ -13,6 +14,7 @@ from typing import AsyncIterator, Awaitable, Callable, Optional, Type
 
 import botocore
 import botocore.exceptions
+import faker
 import pytest
 from aiohttp import ClientSession, web
 from aiohttp.test_utils import TestClient
@@ -533,6 +535,7 @@ def upload_file(
         assert "state" in data["links"]
         state_url = URL(data["links"]["state"]).relative()
 
+        completion_etag = None
         async for attempt in AsyncRetrying(
             reraise=True,
             wait=wait_fixed(1),
@@ -552,6 +555,9 @@ def upload_file(
                 if data["state"] != "ok":
                     raise ValueError(f"{data=}")
                 assert data["state"] == "ok"
+                assert "e_tag" in data
+                assert data["e_tag"]
+                completion_etag = data["e_tag"]
                 print(
                     f"--> done waiting, data is completely uploaded [{attempt.retry_state.retry_object.statistics}]"
                 )
@@ -568,10 +574,14 @@ def upload_file(
             expected_upload_expiration_date=False,
         )
         # check the file is in S3 for real
-        s3_file_size, *_ = await storage_s3_client.get_file_metadata(
-            storage_s3_bucket, file_uuid
-        )
+        (
+            s3_file_size,
+            s3_last_modified,
+            s3_etag,
+        ) = await storage_s3_client.get_file_metadata(storage_s3_bucket, file_uuid)
         assert s3_file_size == file_size
+        assert s3_last_modified
+        assert s3_etag == completion_etag
         return file, file_uuid
 
     return _uploader
@@ -599,6 +609,102 @@ async def test_upload_real_file(
     upload_file: Callable[[ByteSize, str], Awaitable[Path]],
 ):
     await upload_file(file_size, file_name)
+
+
+async def test_upload_real_file_with_s3_client(
+    aiopg_engine: Engine,
+    storage_s3_client: StorageS3Client,
+    storage_s3_bucket: str,
+    client: TestClient,
+    create_upload_file_link: Callable[..., Awaitable[FileUploadSchema]],
+    create_file_of_size: Callable[[ByteSize, Optional[str]], Path],
+    create_file_uuid: Callable[[str], FileID],
+    faker: Faker,
+):
+    assert client.app
+    file_size = parse_obj_as(ByteSize, "500Mib")
+    file_name = faker.file_name()
+    # create a file
+    file = create_file_of_size(file_size, file_name)
+    file_uuid = create_file_uuid(file_name)
+    # get an S3 upload link
+    file_upload_link = await create_upload_file_link(
+        file_uuid, link_type="s3", file_size=file_size
+    )
+    # let's use the storage s3 internal client to upload
+    with file.open("rb") as fp:
+        response = await storage_s3_client.client.put_object(
+            Bucket=storage_s3_bucket, Key=file_uuid, Body=fp
+        )
+        assert "ETag" in response
+        upload_e_tag = json.loads(response["ETag"])
+    # check the file is now on S3
+    s3_file_size, s3_last_modified, s3_etag = await storage_s3_client.get_file_metadata(
+        storage_s3_bucket, file_uuid
+    )
+    assert s3_file_size == file_size
+    assert s3_last_modified
+    assert s3_etag == upload_e_tag
+
+    # complete the upload
+    complete_url = URL(file_upload_link.links.complete_upload).relative()
+    start = perf_counter()
+    print(f"--> completing upload of {file=}")
+    response = await client.post(f"{complete_url}", json={"parts": []})
+    response.raise_for_status()
+    data, error = await assert_status(response, web.HTTPAccepted)
+    assert not error
+    assert data
+    assert "links" in data
+    assert "state" in data["links"]
+    state_url = URL(data["links"]["state"]).relative()
+    completion_etag = None
+    async for attempt in AsyncRetrying(
+        reraise=True,
+        wait=wait_fixed(1),
+        stop=stop_after_delay(60),
+        retry=retry_if_exception_type(ValueError),
+    ):
+        with attempt:
+            print(
+                f"--> checking for upload {state_url=}, {attempt.retry_state.attempt_number}..."
+            )
+            response = await client.post(f"{state_url}")
+            response.raise_for_status()
+            data, error = await assert_status(response, web.HTTPOk)
+            assert not error
+            assert data
+            assert "state" in data
+            if data["state"] != "ok":
+                raise ValueError(f"{data=}")
+            assert data["state"] == "ok"
+            assert "e_tag" in data
+            assert data["e_tag"]
+            completion_etag = data["e_tag"]
+            print(
+                f"--> done waiting, data is completely uploaded [{attempt.retry_state.retry_object.statistics}]"
+            )
+
+    print(f"--> completed upload in {perf_counter() - start}")
+
+    # check the entry in db now has the correct file size, and the upload id is gone
+    await assert_file_meta_data_in_db(
+        aiopg_engine,
+        file_uuid=file_uuid,
+        expected_entry_exists=True,
+        expected_file_size=file_size,
+        expected_upload_id=False,
+        expected_upload_expiration_date=False,
+    )
+    # check the file is in S3 for real
+    (
+        s3_file_size,
+        s3_last_modified,
+        s3_etag,
+    ) = await storage_s3_client.get_file_metadata(storage_s3_bucket, file_uuid)
+    assert s3_file_size == file_size
+    assert s3_last_modified
+    assert s3_etag == completion_etag
 
 
 @pytest.mark.parametrize(
