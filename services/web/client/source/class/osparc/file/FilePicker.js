@@ -550,8 +550,9 @@ qx.Class.define("osparc.file.FilePicker", {
       const nodeId = this.getNode() ? this.getNode().getNodeId() : osparc.utils.Utils.uuidv4();
       const fileId = file.name;
       const fileUuid = studyId +"/"+ nodeId +"/"+ fileId;
+      const fileSize = file.size;
       const dataStore = osparc.store.Data.getInstance();
-      dataStore.getPresignedLink(download, locationId, fileUuid)
+      dataStore.getPresignedLink(download, locationId, fileUuid, fileSize)
         .then(presignedLinkData => {
           if (presignedLinkData.presignedLink.urls) {
             try {
@@ -583,8 +584,7 @@ qx.Class.define("osparc.file.FilePicker", {
         if (xhr.status == 200) {
           console.log("Completed upload", file.name);
           this.getNode().getStatus().setProgress(100);
-          // @odeimaiz here we should get the eTag at the end of the upload, no idea how to get it
-          this.__completeUpload(file, presignedLinkData, xhr.response);
+          this.__completeUpload(file, presignedLinkData, xhr);
         } else {
           console.log(xhr.response);
           this.getNode().getStatus().setProgress(0);
@@ -597,7 +597,8 @@ qx.Class.define("osparc.file.FilePicker", {
     },
 
     // Use XMLHttpRequest to complete the upload to S3
-    __completeUpload: function(file, presignedLinkData, uploadResponse) {
+    __completeUpload: function(file, presignedLinkData, uploadRequest) {
+      const etag = uploadRequest.getResponseHeader("etag");
       const completeUrl = presignedLinkData.presignedLink.links.complete_upload;
       const location = presignedLinkData.locationId;
       const path = presignedLinkData.fileUuid;
@@ -625,10 +626,13 @@ qx.Class.define("osparc.file.FilePicker", {
       xhr.open("POST", completeUrl, true);
       xhr.setRequestHeader("Content-Type", "application/json");
       // @odeimaiz: here we should pass every uploaded part (sorted by number from 1...X with their respective eTag)
-      // xhr.send({parts: [{1:uploadResponse["ETag"]}]});
-
-      xhr.send(JSON.stringify({parts: []}));
+      xhr.send(JSON.stringify({
+        parts: [{
+          1: etag
+        }]
+      }));
     },
+
     __abortUpload: function(presignedLinkData) {
       const abortUrl = presignedLinkData.presignedLink.links.abort_upload;
       const xhr = new XMLHttpRequest();

@@ -212,7 +212,7 @@ qx.Class.define("osparc.store.Data", {
       });
     },
 
-    getPresignedLink: function(download = true, locationId, fileUuid) {
+    getPresignedLink: function(download = true, locationId, fileUuid, fileSize) {
       return new Promise((resolve, reject) => {
         if (download && !osparc.data.Permissions.getInstance().canDo("study.node.data.pull", true)) {
           reject();
@@ -229,6 +229,11 @@ qx.Class.define("osparc.store.Data", {
             fileUuid: encodeURIComponent(fileUuid)
           }
         };
+        if (!download && fileSize) {
+          params["data"] = {
+            "file_size": fileSize
+          };
+        }
         osparc.data.Resources.fetch("storageLink", download ? "getOne" : "put", params)
           .then(data => {
             const presignedLinkData = {
