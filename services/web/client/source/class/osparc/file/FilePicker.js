@@ -585,11 +585,9 @@ qx.Class.define("osparc.file.FilePicker", {
       xhr.onload = () => {
         if (xhr.status == 200) {
           console.log("Completed upload", file.name);
-          this.getNode().getStatus().setProgress(100);
           this.__completeUpload(file, presignedLinkData, xhr);
         } else {
           console.log(xhr.response);
-          this.getNode().getStatus().setProgress(0);
           this.__abortUpload(presignedLinkData);
         }
       };
@@ -599,6 +597,7 @@ qx.Class.define("osparc.file.FilePicker", {
 
     // Use XMLHttpRequest to complete the upload to S3
     __completeUpload: function(file, presignedLinkData, uploadRequest) {
+      this.getNode().getStatus().setProgress(100);
       const etag = uploadRequest.getResponseHeader("etag");
       const completeUrl = presignedLinkData.resp.links.complete_upload;
       const location = presignedLinkData.locationId;
@@ -634,6 +633,7 @@ qx.Class.define("osparc.file.FilePicker", {
     },
 
     __abortUpload: function(presignedLinkData) {
+      this.getNode().getStatus().setProgress(0);
       const abortUrl = presignedLinkData.resp.links.abort_upload;
       const xhr = new XMLHttpRequest();
       xhr.open("POST", abortUrl, true);
