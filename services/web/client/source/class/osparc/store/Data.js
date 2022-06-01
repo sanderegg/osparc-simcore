@@ -236,8 +236,9 @@ qx.Class.define("osparc.store.Data", {
           .then(data => {
             const presignedLinkData = {
               resp: data,
-              locationId: locationId,
-              fileUuid: fileUuid
+              locationId,
+              fileUuid,
+              fileSize
             };
             resolve(presignedLinkData);
           })
