@@ -574,8 +574,8 @@ qx.Class.define("osparc.file.FilePicker", {
       this.__uploadedParts = [];
       for (let chunkIdx = 0; chunkIdx < presignedLinkData.resp.urls.length; chunkIdx++) {
         this.__uploadedParts.push({
-          number: chunkIdx+1,
-          etag: null
+          "number": chunkIdx+1,
+          "e_tag": null
         });
       }
       for (let chunkIdx = 0; chunkIdx < presignedLinkData.resp.urls.length; chunkIdx++) {
@@ -599,11 +599,11 @@ qx.Class.define("osparc.file.FilePicker", {
       xhr.onload = () => {
         if (xhr.status == 200) {
           console.log("chunk uploaded", chunkIdx);
-          const etag = xhr.getResponseHeader("etag");
-          if (etag) {
+          const eTag = xhr.getResponseHeader("etag");
+          if (eTag) {
             // remove double double quotes ""etag"" -> "etag"
-            this.__uploadedParts[chunkIdx]["etag"] = etag.slice(1, -1);
-            if (this.__uploadedParts.every(uploadedPart => uploadedPart.etag !== null)) {
+            this.__uploadedParts[chunkIdx]["e_tag"] = eTag.slice(1, -1);
+            if (this.__uploadedParts.every(uploadedPart => uploadedPart["e_tag"] !== null)) {
               this.__completeUpload(chunkBlob, presignedLinkData, xhr);
             }
           }
