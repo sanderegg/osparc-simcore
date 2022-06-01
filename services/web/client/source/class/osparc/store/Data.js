@@ -235,7 +235,7 @@ qx.Class.define("osparc.store.Data", {
         osparc.data.Resources.fetch("storageLink", download ? "getOne" : "put", params)
           .then(data => {
             const presignedLinkData = {
-              presignedLink: data,
+              resp: data,
               locationId: locationId,
               fileUuid: fileUuid
             };

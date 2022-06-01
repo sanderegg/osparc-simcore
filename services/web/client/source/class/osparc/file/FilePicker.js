@@ -554,7 +554,7 @@ qx.Class.define("osparc.file.FilePicker", {
       const dataStore = osparc.store.Data.getInstance();
       dataStore.getPresignedLink(download, locationId, fileUuid, fileSize)
         .then(presignedLinkData => {
-          if (presignedLinkData.presignedLink.urls) {
+          if (presignedLinkData.resp.urls) {
             try {
               this.__uploadFile(file, presignedLinkData);
               console.info("completed upload.");
@@ -568,7 +568,7 @@ qx.Class.define("osparc.file.FilePicker", {
 
     // Use XMLHttpRequest to upload the file to S3.
     __uploadFile: function(file, presignedLinkData) {
-      const url = presignedLinkData.presignedLink.urls[0];
+      const url = presignedLinkData.resp.urls[0];
 
       // From https://github.com/minio/cookbook/blob/master/docs/presigned-put-upload-via-browser.md
       const xhr = new XMLHttpRequest();
@@ -599,7 +599,7 @@ qx.Class.define("osparc.file.FilePicker", {
     // Use XMLHttpRequest to complete the upload to S3
     __completeUpload: function(file, presignedLinkData, uploadRequest) {
       const etag = uploadRequest.getResponseHeader("etag");
-      const completeUrl = presignedLinkData.presignedLink.links.complete_upload;
+      const completeUrl = presignedLinkData.resp.links.complete_upload;
       const location = presignedLinkData.locationId;
       const path = presignedLinkData.fileUuid;
       const xhr = new XMLHttpRequest();
@@ -634,7 +634,7 @@ qx.Class.define("osparc.file.FilePicker", {
     },
 
     __abortUpload: function(presignedLinkData) {
-      const abortUrl = presignedLinkData.presignedLink.links.abort_upload;
+      const abortUrl = presignedLinkData.resp.links.abort_upload;
       const xhr = new XMLHttpRequest();
       xhr.open("POST", abortUrl, true);
     }
