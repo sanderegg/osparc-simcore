@@ -557,7 +557,6 @@ qx.Class.define("osparc.file.FilePicker", {
           if (presignedLinkData.resp.urls) {
             try {
               this.__uploadFile(file, presignedLinkData);
-              console.info("completed upload.");
             } catch (error) {
               console.error(error);
               this.__abortUpload(presignedLinkData);
@@ -571,8 +570,23 @@ qx.Class.define("osparc.file.FilePicker", {
       this.getNode().getStatus().setProgress(0);
 
       console.log("presignedLinkData", presignedLinkData);
-      const url = presignedLinkData.resp.urls[0];
+      // create empty object, it will be filled up with etags and 1 based chunk ids when chunks get uploaded
+      this.__uploadedParts = [];
+      for (let chunkIdx = 0; chunkIdx < presignedLinkData.resp.urls.length; chunkIdx++) {
+        this.__uploadedParts.push({
+          number: chunkIdx+1,
+          etag: null
+        });
+      }
+      for (let chunkIdx = 0; chunkIdx < presignedLinkData.resp.urls.length; chunkIdx++) {
+        const chunkBlob = this.__createChunk(file, presignedLinkData.fileSize, chunkIdx, presignedLinkData.resp["chunk_size"]);
+        this.__uploadChunk(chunkBlob, presignedLinkData, chunkIdx);
+      }
+    },
+
+    __uploadChunk: function(chunkBlob, presignedLinkData, chunkIdx) {
       // From https://github.com/minio/cookbook/blob/master/docs/presigned-put-upload-via-browser.md
+      const url = presignedLinkData.resp.urls[chunkIdx];
       const xhr = new XMLHttpRequest();
       xhr.upload.addEventListener("progress", e => {
         if (e.lengthComputable) {
@@ -584,21 +598,34 @@ qx.Class.define("osparc.file.FilePicker", {
       }, false);
       xhr.onload = () => {
         if (xhr.status == 200) {
-          console.log("Completed upload", file.name);
-          this.__completeUpload(file, presignedLinkData, xhr);
+          console.log("chunk uploaded", chunkIdx);
+          const etag = xhr.getResponseHeader("etag");
+          if (etag) {
+            // remove double double quotes ""etag"" -> "etag"
+            this.__uploadedParts[chunkIdx]["etag"] = etag.slice(1, -1);
+            if (this.__uploadedParts.every(uploadedPart => uploadedPart.etag !== null)) {
+              this.__completeUpload(chunkBlob, presignedLinkData, xhr);
+            }
+          }
         } else {
           console.log(xhr.response);
           this.__abortUpload(presignedLinkData);
         }
       };
       xhr.open("PUT", url, true);
-      xhr.send(file);
+      xhr.send(chunkBlob);
+    },
+
+    __createChunk: function(file, fileSize, chunkIdx, chunkSize) {
+      const start = chunkIdx * chunkSize;
+      const chunkEnd = Math.min(start + chunkSize, fileSize);
+      const chunkBlob = file.slice(start, chunkEnd);
+      return chunkBlob;
     },
 
     // Use XMLHttpRequest to complete the upload to S3
-    __completeUpload: function(file, presignedLinkData, uploadRequest) {
+    __completeUpload: function(file, presignedLinkData) {
       this.getNode().getStatus().setProgress(100);
-      const etag = uploadRequest.getResponseHeader("etag");
       const completeUrl = presignedLinkData.resp.links.complete_upload;
       const location = presignedLinkData.locationId;
       const path = presignedLinkData.fileUuid;
@@ -624,12 +651,10 @@ qx.Class.define("osparc.file.FilePicker", {
       };
       xhr.open("POST", completeUrl, true);
       xhr.setRequestHeader("Content-Type", "application/json");
-      // @odeimaiz: here we should pass every uploaded part (sorted by number from 1...X with their respective eTag)
-      xhr.send(JSON.stringify({
-        parts: [{
-          1: etag
-        }]
-      }));
+      const body = {
+        parts: this.__uploadedParts
+      };
+      xhr.send(JSON.stringify(body));
     },
 
     __abortUpload: function(presignedLinkData) {
