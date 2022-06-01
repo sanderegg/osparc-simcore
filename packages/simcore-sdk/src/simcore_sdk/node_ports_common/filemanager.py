@@ -11,13 +11,15 @@ from models_library.api_schemas_storage import (
     FileUploadCompleteFutureResponse,
     FileUploadCompleteResponse,
     FileUploadCompleteState,
+    FileUploadCompletionBody,
     FileUploadSchema,
     UploadedPart,
 )
 from models_library.generics import Envelope
 from models_library.utils.fastapi_encoders import jsonable_encoder
-from pydantic import parse_obj_as
+from pydantic import ByteSize, parse_obj_as
 from pydantic.networks import AnyUrl
+from servicelib.utils import logged_gather
 from settings_library.r_clone import RCloneSettings
 from tenacity._asyncio import AsyncRetrying
 from tenacity.before_sleep import before_sleep_log
@@ -34,7 +36,7 @@ from .r_clone import RCloneFailedError, is_r_clone_available, sync_local_to_s3
 
 log = logging.getLogger(__name__)
 
-CHUNK_SIZE = 1 * 1024 * 1024
+CHUNK_SIZE = 16 * 1024 * 1024
 
 
 async def _get_location_id_from_location_name(
@@ -77,12 +79,13 @@ async def _get_upload_links(
     file_id: str,
     session: ClientSession,
     link_type: storage_client.LinkType,
+    file_size: Optional[ByteSize],
 ) -> FileUploadSchema:
     """
     :raises exceptions.S3InvalidPathError: _description_
     """
     links: FileUploadSchema = await storage_client.get_upload_file_links(
-        session, file_id, store_id, user_id, link_type
+        session, file_id, store_id, user_id, link_type, file_size
     )
     if not links:
         raise exceptions.S3InvalidPathError(file_id)
@@ -133,67 +136,125 @@ async def _file_sender(file_path: Path, file_size: int):
                 chunk = await f.read(CHUNK_SIZE)
 
 
-async def _upload_file_to_link(
-    session: ClientSession, upload_links: FileUploadSchema, file_path: Path
-) -> ETag:
-    log.debug("Uploading from %s to %s", f"{file_path=}", f"{upload_links=}")
-    file_size = file_path.stat().st_size
-    data_provider = _file_sender(file_path, file_size)
-    headers = {"Content-Length": f"{file_size}"}
+async def _file_part_sender(file: Path, *, offset: int, bytes_to_send: int):
+    chunk_size = CHUNK_SIZE
+    async with aiofiles.open(file, "rb") as f:
+        await f.seek(offset)
+        num_read_bytes = 0
+        while chunk := await f.read(min(chunk_size, bytes_to_send - num_read_bytes)):
+            num_read_bytes += len(chunk)
+            yield chunk
 
-    assert upload_links.urls  # nosec
-    assert len(upload_links.urls) == 1  # nosec
 
-    async with session.put(
-        upload_links.urls[0], data=data_provider, headers=headers
-    ) as resp:
-        if resp.status > 299:
-            response_text = await resp.text()
-            raise exceptions.S3TransferError(
-                "Could not upload file {}:{}".format(file_path, response_text)
-            )
-        if resp.status != 200:
-            response_text = await resp.text()
-            raise exceptions.S3TransferError(
-                "Issue when uploading file {}:{}".format(file_path, response_text)
-            )
-
-        # get the S3 etag from the headers
-        e_tag = json.loads(resp.headers.get("Etag", ""))
+async def _upload_file_part(
+    session: ClientSession,
+    file: Path,
+    part_index: int,
+    file_offset: int,
+    this_file_chunk_size: int,
+    num_parts: int,
+    upload_url: AnyUrl,
+) -> tuple[int, ETag]:
     log.debug(
-        "Uploaded %s to %s, received Etag %s",
-        file_path,
-        upload_links.urls[0],
-        e_tag,
+        "--> uploading %s of %s, [%s]...",
+        f"{this_file_chunk_size=}",
+        f"{file=}",
+        f"{part_index+1}/{num_parts}",
     )
-    return e_tag
+    response = await session.put(
+        upload_url,
+        data=_file_part_sender(
+            file,
+            offset=file_offset,
+            bytes_to_send=this_file_chunk_size,
+        ),
+        headers={
+            "Content-Length": f"{this_file_chunk_size}",
+        },
+    )
+    response.raise_for_status()
+    # NOTE: the response from minio does not contain a json body
+    assert response.status == web.HTTPOk.status_code
+    assert response.headers
+    assert "Etag" in response.headers
+    received_e_tag = json.loads(response.headers["Etag"])
+    log.info(
+        "--> completed upload %s of %s, [%s], %s",
+        f"{this_file_chunk_size=}",
+        f"{file=}",
+        f"{part_index+1}/{num_parts}",
+        f"{received_e_tag=}",
+    )
+    return (part_index, received_e_tag)
+
+
+async def _upload_file_to_presigned_links(
+    session: ClientSession, file_upload_links: FileUploadSchema, file: Path
+) -> list[UploadedPart]:
+    log.debug("Uploading from %s to %s", f"{file=}", f"{file_upload_links=}")
+    file_size = file.stat().st_size
+
+    file_chunk_size = int(file_upload_links.chunk_size)
+    num_urls = len(file_upload_links.urls)
+    last_chunk_size = file_size - file_chunk_size * (num_urls - 1)
+    upload_tasks = []
+    for index, upload_url in enumerate(file_upload_links.urls):
+        this_file_chunk_size = (
+            file_chunk_size if (index + 1) < num_urls else last_chunk_size
+        )
+        upload_tasks.append(
+            _upload_file_part(
+                session,
+                file,
+                index,
+                index * file_chunk_size,
+                this_file_chunk_size,
+                num_urls,
+                upload_url,
+            )
+        )
+    try:
+        results = await logged_gather(*upload_tasks, log=log, max_concurrency=12)
+        part_to_etag = [
+            UploadedPart(number=index + 1, e_tag=e_tag) for index, e_tag in results
+        ]
+        log.info(
+            "Uploaded %s, received %s",
+            f"{file=}",
+            f"{part_to_etag=}",
+        )
+        return part_to_etag
+    except ClientError as exc:
+        raise exceptions.S3TransferError(f"Could not upload file {file}:{exc}") from exc
 
 
 async def _complete_upload(
     session: ClientSession, upload_links: FileUploadSchema, parts: list[UploadedPart]
 ) -> ETag:
+    log.debug("completing upload of %s", f"{upload_links=} with {parts=}")
     async with session.post(
-        upload_links.links.complete_upload, json={"parts": jsonable_encoder(parts)}
+        upload_links.links.complete_upload,
+        json=jsonable_encoder(FileUploadCompletionBody(parts=parts)),
     ) as resp:
         resp.raise_for_status()
-        if resp.status != web.HTTPAccepted.status_code:
-            raise exceptions.S3TransferError(
-                f"Could not complete the upload of file {upload_links=}"
-            )
-
         # now poll for state
         file_upload_complete_response = parse_obj_as(
             Envelope[FileUploadCompleteResponse], await resp.json()
         )
         assert file_upload_complete_response.data  # nosec
     state_url = file_upload_complete_response.data.links.state
+    log.info(
+        "completed upload of %s",
+        f"{upload_links=} with {parts=}, received {file_upload_complete_response=}",
+    )
 
+    log.debug("waiting for upload completion...")
     async for attempt in AsyncRetrying(
         reraise=True,
         wait=wait_fixed(0.5),
         stop=stop_after_delay(60),
         retry=retry_if_exception_type(ValueError),
-        before_sleep=before_sleep_log(log, logging.INFO),
+        before_sleep=before_sleep_log(log, logging.DEBUG),
     ):
         with attempt:
             async with session.post(state_url) as resp:
@@ -205,6 +266,11 @@ async def _complete_upload(
                 if future_enveloped.data.state == FileUploadCompleteState.NOK:
                     raise ValueError("upload not ready yet")
             assert future_enveloped.data.e_tag  # nosec
+            log.debug(
+                "multipart upload completed in %s, received %s",
+                attempt.retry_state.retry_object.statistics,
+                f"{future_enveloped.data.e_tag=}",
+            )
             return future_enveloped.data.e_tag
     raise exceptions.S3TransferError(
         f"Could not complete the upload of file {upload_links=}"
@@ -248,6 +314,7 @@ async def get_upload_links_from_s3(
     s3_object: str,
     link_type: storage_client.LinkType,
     client_session: Optional[ClientSession] = None,
+    file_size: Optional[ByteSize] = None,
 ) -> Tuple[str, FileUploadSchema]:
     if store_name is None and store_id is None:
         raise exceptions.NodeportsException(msg="both store name and store id are None")
@@ -260,7 +327,9 @@ async def get_upload_links_from_s3(
         assert store_id is not None  # nosec
         return (
             store_id,
-            await _get_upload_links(user_id, store_id, s3_object, session, link_type),
+            await _get_upload_links(
+                user_id, store_id, s3_object, session, link_type, file_size
+            ),
         )
 
 
@@ -384,8 +453,10 @@ async def upload_file(
                 link_type=storage_client.LinkType.S3
                 if use_rclone
                 else storage_client.LinkType.PRESIGNED,
+                file_size=ByteSize(local_file_path.stat().st_size),
             )
-            e_tag = None
+            # NOTE: in case of S3 upload, there are no multipart uploads, so this remains empty
+            uploaded_parts: list[UploadedPart] = []
             if use_rclone:
                 assert r_clone_settings  # nosec
                 await sync_local_to_s3(
@@ -397,17 +468,14 @@ async def upload_file(
                     store_id=store_id,
                 )
             else:
-                # NOTE: this uses 1 presigned link: 5Gb limit on AWS
-                e_tag = await _upload_file_to_link(
+                uploaded_parts = await _upload_file_to_presigned_links(
                     session, upload_links, local_file_path
                 )
             # complete the upload
             e_tag = await _complete_upload(
                 session,
                 upload_links,
-                parse_obj_as(list[UploadedPart], [{"number": 1, "e_tag": e_tag}])
-                if e_tag
-                else [],
+                uploaded_parts,
             )
         except (RCloneFailedError, exceptions.S3TransferError) as exc:
             log.error("The upload failed with an unexpected error:", exc_info=True)

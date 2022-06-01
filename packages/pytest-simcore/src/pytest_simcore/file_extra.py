@@ -1,0 +1,21 @@
+from pathlib import Path
+from typing import Callable, Optional
+
+import pytest
+from faker import Faker
+from pydantic import ByteSize
+
+
+@pytest.fixture
+def create_file_of_size(tmp_path: Path, faker: Faker) -> Callable[[ByteSize], Path]:
+    def _creator(size: ByteSize, name: Optional[str] = None) -> Path:
+        file: Path = tmp_path / (name or faker.file_name())
+        with file.open("wb") as fp:
+            fp.write(f"I am a {size.human_readable()} file".encode())
+            fp.truncate(size)
+
+        assert file.exists()
+        assert file.stat().st_size == size
+        return file
+
+    return _creator

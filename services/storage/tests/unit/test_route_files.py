@@ -23,6 +23,7 @@ from models_library.api_schemas_storage import (
     FileUploadCompleteFutureResponse,
     FileUploadCompleteResponse,
     FileUploadCompleteState,
+    FileUploadCompletionBody,
     FileUploadSchema,
 )
 from models_library.projects import ProjectID
@@ -529,7 +530,8 @@ def upload_file(
         start = perf_counter()
         print(f"--> completing upload of {file=}")
         response = await client.post(
-            f"{complete_url}", json={"parts": jsonable_encoder(part_to_etag)}
+            f"{complete_url}",
+            json=jsonable_encoder(FileUploadCompletionBody(parts=part_to_etag)),
         )
         response.raise_for_status()
         data, error = await assert_status(response, web.HTTPAccepted)
