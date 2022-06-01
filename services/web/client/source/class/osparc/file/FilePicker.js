@@ -570,6 +570,7 @@ qx.Class.define("osparc.file.FilePicker", {
     __uploadFile: function(file, presignedLinkData) {
       this.getNode().getStatus().setProgress(0);
 
+      console.log("presignedLinkData", presignedLinkData);
       const url = presignedLinkData.resp.urls[0];
       // From https://github.com/minio/cookbook/blob/master/docs/presigned-put-upload-via-browser.md
       const xhr = new XMLHttpRequest();
@@ -610,7 +611,6 @@ qx.Class.define("osparc.file.FilePicker", {
           // we do have links.state -> poll that link until it says ok
           // right now this kind of work if files are small and this happens fast
         }
-
 
         const fileMetadata = {
           location,
