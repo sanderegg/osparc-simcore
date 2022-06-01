@@ -14,6 +14,7 @@ from models_library.api_schemas_storage import (
     FileUploadSchema,
     UploadedPart,
 )
+from models_library.generics import Envelope
 from models_library.utils.fastapi_encoders import jsonable_encoder
 from pydantic import parse_obj_as
 from pydantic.networks import AnyUrl
@@ -181,9 +182,11 @@ async def _complete_upload(
             )
 
         # now poll for state
-        response = await resp.json()
-    file_upload_complete_response = FileUploadCompleteResponse.parse_obj(response)
-    state_url = file_upload_complete_response.links.state
+        file_upload_complete_response = parse_obj_as(
+            Envelope[FileUploadCompleteResponse], await resp.json()
+        )
+        assert file_upload_complete_response.data  # nosec
+    state_url = file_upload_complete_response.data.links.state
 
     async for attempt in AsyncRetrying(
         reraise=True,
@@ -195,11 +198,14 @@ async def _complete_upload(
         with attempt:
             async with session.post(state_url) as resp:
                 resp.raise_for_status()
-                response = await resp.json()
-                future = FileUploadCompleteFutureResponse.parse_obj(response)
-                if future.state == FileUploadCompleteState.NOK:
+                future_enveloped = parse_obj_as(
+                    Envelope[FileUploadCompleteFutureResponse], await resp.json()
+                )
+                assert future_enveloped.data  # nosec
+                if future_enveloped.data.state == FileUploadCompleteState.NOK:
                     raise ValueError("upload not ready yet")
-            return response["data"]["e_tag"]
+            assert future_enveloped.data.e_tag  # nosec
+            return future_enveloped.data.e_tag
     raise exceptions.S3TransferError(
         f"Could not complete the upload of file {upload_links=}"
     )
