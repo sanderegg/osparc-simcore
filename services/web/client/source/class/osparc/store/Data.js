@@ -230,9 +230,7 @@ qx.Class.define("osparc.store.Data", {
           }
         };
         if (!download && fileSize) {
-          params["data"] = {
-            "file_size": fileSize
-          };
+          params.url["fileSize"] = fileSize;
         }
         osparc.data.Resources.fetch("storageLink", download ? "getOne" : "put", params)
           .then(data => {
