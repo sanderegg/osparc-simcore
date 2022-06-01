@@ -568,8 +568,9 @@ qx.Class.define("osparc.file.FilePicker", {
 
     // Use XMLHttpRequest to upload the file to S3.
     __uploadFile: function(file, presignedLinkData) {
-      const url = presignedLinkData.resp.urls[0];
+      this.getNode().getStatus().setProgress(0);
 
+      const url = presignedLinkData.resp.urls[0];
       // From https://github.com/minio/cookbook/blob/master/docs/presigned-put-upload-via-browser.md
       const xhr = new XMLHttpRequest();
       xhr.upload.addEventListener("progress", e => {
@@ -592,7 +593,6 @@ qx.Class.define("osparc.file.FilePicker", {
         }
       };
       xhr.open("PUT", url, true);
-      this.getNode().getStatus().setProgress(0);
       xhr.send(file);
     },
 
