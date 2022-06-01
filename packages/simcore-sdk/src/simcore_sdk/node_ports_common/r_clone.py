@@ -83,6 +83,7 @@ async def sync_local_to_s3(
         location_id=store_id,
         user_id=user_id,
         link_type=LinkType.S3,
+        file_size=None,
     )
     assert s3_links.urls  # nosec
     assert len(s3_links.urls) == 1  # nosec
