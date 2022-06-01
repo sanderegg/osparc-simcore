@@ -1,7 +1,7 @@
 from enum import Enum
 from functools import wraps
 from json import JSONDecodeError
-from typing import Any, Callable, Dict
+from typing import Any, Callable, Dict, Optional
 from urllib.parse import quote
 
 from aiohttp import ClientSession, web
@@ -14,6 +14,7 @@ from models_library.api_schemas_storage import (
 )
 from models_library.generics import Envelope
 from models_library.users import UserID
+from pydantic import ByteSize
 from pydantic.networks import AnyUrl
 
 from . import config, exceptions
@@ -115,6 +116,7 @@ async def get_upload_file_links(
     location_id: str,
     user_id: UserID,
     link_type: LinkType,
+    file_size: Optional[ByteSize],
 ) -> FileUploadSchema:
     """
     :raises exceptions.StorageInvalidCall: _description_
@@ -133,9 +135,12 @@ async def get_upload_file_links(
         raise exceptions.StorageInvalidCall(
             f"invalid call: user_id '{user_id}', location_id '{location_id}', file_id '{file_id}' are not allowed to be empty",
         )
+    query_params = {"user_id": f"{user_id}", "link_type": link_type.value}
+    if file_size:
+        query_params["file_size"] = file_size
     async with session.put(
         f"{_base_url()}/locations/{location_id}/files/{quote(file_id, safe='')}",
-        params={"user_id": f"{user_id}", "link_type": link_type.value},
+        params=query_params,
     ) as response:
         response.raise_for_status()
 

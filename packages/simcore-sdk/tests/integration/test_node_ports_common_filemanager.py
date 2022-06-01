@@ -10,6 +10,7 @@ from uuid import uuid4
 
 import np_helpers
 import pytest
+from pydantic import ByteSize, parse_obj_as
 from simcore_sdk.node_ports_common import exceptions, filemanager
 
 pytest_simcore_core_services_selection = [
@@ -21,6 +22,16 @@ pytest_simcore_core_services_selection = [
 pytest_simcore_ops_services_selection = ["minio", "adminer"]
 
 
+@pytest.mark.parametrize(
+    "file_size",
+    [
+        pytest.param(parse_obj_as(ByteSize, "10Mib"), id="single presigned link 10MB"),
+        pytest.param(
+            parse_obj_as(ByteSize, "1000Mib"), id="multipart upload of 1000MB"
+        ),
+        pytest.param(parse_obj_as(ByteSize, "7GiB"), id="multipart upload of 7GiB"),
+    ],
+)
 async def test_valid_upload_download(
     tmpdir: Path,
     bucket: str,
@@ -28,10 +39,11 @@ async def test_valid_upload_download(
     user_id: int,
     create_valid_file_uuid: Callable[[Path], str],
     s3_simcore_location: str,
+    file_size: ByteSize,
+    create_file_of_size: Callable[[ByteSize, str], Path],
+    cleanup_file_meta_data: None,
 ):
-    file_path = Path(tmpdir) / "test.test"
-    file_path.write_text("I am a test file")
-    assert file_path.exists()
+    file_path = create_file_of_size(file_size, "test.test")
 
     file_id = create_valid_file_uuid(file_path)
     store_id, e_tag = await filemanager.upload_file(
@@ -43,7 +55,6 @@ async def test_valid_upload_download(
     )
     assert store_id == s3_simcore_location
     assert e_tag
-
     get_store_id, get_e_tag = await filemanager.get_file_metadata(
         user_id=user_id, store_id=store_id, s3_object=file_id
     )
