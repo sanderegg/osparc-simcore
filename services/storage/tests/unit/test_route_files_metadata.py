@@ -5,6 +5,7 @@
 
 import urllib.parse
 from pathlib import Path
+from random import choice
 from typing import Awaitable, Callable
 
 from aiohttp import web
@@ -78,21 +79,52 @@ async def test_get_files_metadata(
     assert len(list_fmds) == (NUM_FILES)
 
 
-async def test_s3_file_metadata(
-    client,
-    dsm_mockup_db: dict[str, FileMetaData],
+async def test_get_file_metadata(
+    upload_file: Callable[[ByteSize, str], Awaitable[tuple[Path, FileID]]],
+    client: TestClient,
+    user_id: UserID,
+    location_id: int,
+    project_id: ProjectID,
+    file_uuid: FileID,
+    faker: Faker,
 ):
-    # go through all files and get them
-    for d in dsm_mockup_db.keys():
-        fmd = dsm_mockup_db[d]
-        resp = await client.get(
-            "/v0/locations/0/files/{}/metadata?user_id={}".format(
-                urllib.parse.quote(fmd.file_uuid, safe=""), fmd.user_id
-            )
-        )
-        payload = await resp.json()
-        assert resp.status == 200, str(payload)
+    assert client.app
 
-        data, error = tuple(payload.get(k) for k in ("data", "error"))
-        assert not error
-        assert data
+    url = (
+        client.app.router["get_file_metadata"]
+        .url_for(
+            location_id=f"{location_id}",
+            file_id=f"{urllib.parse.quote(file_uuid, safe='')}",
+        )
+        .with_query(user_id=f"{user_id}")
+    )
+    # this should return an empty list
+    response = await client.get(f"{url}")
+    # NOTE: this is weird, do we still need this Ok when nothing found??
+    assert response.status == web.HTTPOk.status_code
+    assert await response.json() == {"data": {}, "error": "No result found"}
+    # data, error = await assert_status(response, web.HTTPOk)
+    # assert error == "No result found"
+    # assert data == {}
+    # now add some stuff there
+    NUM_FILES = 10
+    file_size = parse_obj_as(ByteSize, "15Mib")
+    files_owned_by_us = []
+    for _ in range(NUM_FILES):
+        files_owned_by_us.append(await upload_file(file_size, faker.file_name()))
+    selected_file, selected_file_uuid = choice(files_owned_by_us)
+    url = (
+        client.app.router["get_file_metadata"]
+        .url_for(
+            location_id=f"{location_id}",
+            file_id=f"{urllib.parse.quote(selected_file_uuid, safe='')}",
+        )
+        .with_query(user_id=f"{user_id}")
+    )
+    response = await client.get(f"{url}")
+    data, error = await assert_status(response, web.HTTPOk)
+    assert not error
+    assert data
+    fmd = parse_obj_as(FileMetaData, data)
+    assert fmd.file_uuid == selected_file_uuid
+    assert fmd.file_size == selected_file.stat().st_size
