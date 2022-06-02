@@ -24,6 +24,8 @@ from models_library.api_schemas_storage import (
     FileUploadCompleteState,
     FileUploadSchema,
 )
+from models_library.projects import ProjectID
+from models_library.projects_nodes_io import NodeID
 from models_library.users import UserID
 from pydantic import ByteSize, parse_obj_as
 from pytest_simcore.helpers.utils_assert import assert_status
@@ -433,7 +435,9 @@ async def test_upload_real_file_with_s3_client(
     client: TestClient,
     create_upload_file_link: Callable[..., Awaitable[FileUploadSchema]],
     create_file_of_size: Callable[[ByteSize, Optional[str]], Path],
-    create_file_uuid: Callable[[str], FileID],
+    create_file_uuid: Callable[[ProjectID, NodeID, str], FileID],
+    project_id: ProjectID,
+    node_id: NodeID,
     faker: Faker,
 ):
     assert client.app
@@ -441,7 +445,7 @@ async def test_upload_real_file_with_s3_client(
     file_name = faker.file_name()
     # create a file
     file = create_file_of_size(file_size, file_name)
-    file_uuid = create_file_uuid(file_name)
+    file_uuid = create_file_uuid(project_id, node_id, file_name)
     # get an S3 upload link
     file_upload_link = await create_upload_file_link(
         file_uuid, link_type="s3", file_size=file_size
