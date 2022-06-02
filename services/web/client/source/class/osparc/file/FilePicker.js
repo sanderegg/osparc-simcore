@@ -255,6 +255,7 @@ qx.Class.define("osparc.file.FilePicker", {
     __selectedFileFound: null,
     __fileDownloadLink: null,
     __uploadedParts: null,
+    __uploadingParts: null,
 
     setOutputValueFromStore: function(store, dataset, path, label) {
       this.self().setOutputValueFromStore(this.getNode(), store, dataset, path, label);
@@ -567,20 +568,28 @@ qx.Class.define("osparc.file.FilePicker", {
     },
 
     // Use XMLHttpRequest to upload the file to S3.
-    __uploadFile: function(file, presignedLinkData) {
+    __uploadFile: async function(file, presignedLinkData) {
       this.getNode().getStatus().setProgress(0);
 
       // create empty object, it will be filled up with etags and 1 based chunk ids when chunks get uploaded
       this.__uploadedParts = [];
+      this.__uploadingParts = 0;
       for (let chunkIdx = 0; chunkIdx < presignedLinkData.resp.urls.length; chunkIdx++) {
         this.__uploadedParts.push({
           "number": chunkIdx+1,
           "e_tag": null
         });
       }
+      const fileSize = presignedLinkData.fileSize;
+      const chunkSize = presignedLinkData.resp["chunk_size"];
       for (let chunkIdx = 0; chunkIdx < presignedLinkData.resp.urls.length; chunkIdx++) {
-        const chunkBlob = this.__createChunk(file, presignedLinkData.fileSize, chunkIdx, presignedLinkData.resp["chunk_size"]);
+        this.__uploadingParts++;
+        const chunkBlob = this.__createChunk(file, fileSize, chunkIdx, chunkSize);
         this.__uploadChunk(file, chunkBlob, presignedLinkData, chunkIdx);
+        while (this.__uploadingParts > 10) {
+          const sleepFor = 1000;
+          await osparc.utils.Utils.sleep(sleepFor);
+        }
       }
     },
 
@@ -605,6 +614,7 @@ qx.Class.define("osparc.file.FilePicker", {
           if (eTag) {
             // remove double double quotes ""etag"" -> "etag"
             this.__uploadedParts[chunkIdx]["e_tag"] = eTag.slice(1, -1);
+            this.__uploadingParts--;
             if (this.__uploadedParts.every(uploadedPart => uploadedPart["e_tag"] !== null)) {
               this.__checkCompleteUpload(file, presignedLinkData, xhr);
             }
