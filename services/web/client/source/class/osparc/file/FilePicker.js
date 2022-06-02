@@ -630,7 +630,7 @@ qx.Class.define("osparc.file.FilePicker", {
 
     // Use XMLHttpRequest to complete the upload to S3
     __checkCompleteUpload: function(file, presignedLinkData) {
-      this.getNode().getStatus().setProgress(95);
+      this.getNode().getStatus().setProgress(99);
       const completeUrl = presignedLinkData.resp.links.complete_upload;
       const location = presignedLinkData.locationId;
       const path = presignedLinkData.fileUuid;
