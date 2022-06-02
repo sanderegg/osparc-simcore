@@ -29,6 +29,7 @@ from simcore_service_storage.constants import SIMCORE_S3_ID
 from simcore_service_storage.dsm import APP_DSM_KEY, DataStorageManager
 from simcore_service_storage.models import FileID, FileMetaData
 from simcore_service_storage.s3_client import StorageS3Client
+from tests.helpers.utils_file_meta_data import assert_file_meta_data_in_db
 from tests.helpers.utils_project import clone_project_data
 
 pytest_simcore_core_services_selection = ["postgres"]
@@ -183,7 +184,6 @@ async def test_copy_folders_from_valid_project(
     upload_file: Callable[[ByteSize, str, str], Awaitable[tuple[Path, FileID]]],
     faker: Faker,
     aiopg_engine: Engine,
-    storage_s3_client: StorageS3Client,
 ):
     assert client.app
     url = (
@@ -199,7 +199,9 @@ async def test_copy_folders_from_valid_project(
     src_file_uuid = create_file_uuid(
         ProjectID(src_project["uuid"]), src_node_id, src_file_name
     )
-    await upload_file(parse_obj_as(ByteSize, "10Mib"), src_file_name, src_file_uuid)
+    src_file, _ = await upload_file(
+        parse_obj_as(ByteSize, "10Mib"), src_file_name, src_file_uuid
+    )
 
     dst_project = await create_project()
     dst_node_id = await create_project_node(ProjectID(dst_project["uuid"]))
@@ -221,6 +223,17 @@ async def test_copy_folders_from_valid_project(
     assert not error
     assert data == jsonable_encoder(
         await _get_updated_project(aiopg_engine, dst_project["uuid"])
+    )
+    # check that file meta data was effectively copied
+    await assert_file_meta_data_in_db(
+        aiopg_engine,
+        file_uuid=create_file_uuid(
+            ProjectID(dst_project["uuid"]), dst_node_id, src_file_name
+        ),
+        expected_entry_exists=True,
+        expected_file_size=src_file.stat().st_size,
+        expected_upload_id=None,
+        expected_upload_expiration_date=None,
     )
 
 
