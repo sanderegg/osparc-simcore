@@ -581,11 +581,11 @@ qx.Class.define("osparc.file.FilePicker", {
       }
       for (let chunkIdx = 0; chunkIdx < presignedLinkData.resp.urls.length; chunkIdx++) {
         const chunkBlob = this.__createChunk(file, presignedLinkData.fileSize, chunkIdx, presignedLinkData.resp["chunk_size"]);
-        this.__uploadChunk(chunkBlob, presignedLinkData, chunkIdx);
+        this.__uploadChunk(file, chunkBlob, presignedLinkData, chunkIdx);
       }
     },
 
-    __uploadChunk: function(chunkBlob, presignedLinkData, chunkIdx) {
+    __uploadChunk: function(file, chunkBlob, presignedLinkData, chunkIdx) {
       // From https://github.com/minio/cookbook/blob/master/docs/presigned-put-upload-via-browser.md
       const url = presignedLinkData.resp.urls[chunkIdx];
       const xhr = new XMLHttpRequest();
@@ -608,7 +608,7 @@ qx.Class.define("osparc.file.FilePicker", {
             // remove double double quotes ""etag"" -> "etag"
             this.__uploadedParts[chunkIdx]["e_tag"] = eTag.slice(1, -1);
             if (this.__uploadedParts.every(uploadedPart => uploadedPart["e_tag"] !== null)) {
-              this.__completeUpload(chunkBlob, presignedLinkData, xhr);
+              this.__completeUpload(file, presignedLinkData, xhr);
             }
           }
         } else {
