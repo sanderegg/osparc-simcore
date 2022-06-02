@@ -570,7 +570,6 @@ qx.Class.define("osparc.file.FilePicker", {
     __uploadFile: function(file, presignedLinkData) {
       this.getNode().getStatus().setProgress(0);
 
-      console.log("presignedLinkData", presignedLinkData);
       // create empty object, it will be filled up with etags and 1 based chunk ids when chunks get uploaded
       this.__uploadedParts = [];
       for (let chunkIdx = 0; chunkIdx < presignedLinkData.resp.urls.length; chunkIdx++) {
@@ -602,7 +601,6 @@ qx.Class.define("osparc.file.FilePicker", {
       }, false);
       xhr.onload = () => {
         if (xhr.status == 200) {
-          console.log("chunk uploaded", chunkIdx);
           const eTag = xhr.getResponseHeader("etag");
           if (eTag) {
             // remove double double quotes ""etag"" -> "etag"
@@ -635,6 +633,7 @@ qx.Class.define("osparc.file.FilePicker", {
       const path = presignedLinkData.fileUuid;
       const xhr = new XMLHttpRequest();
       xhr.onloadend = () => {
+        console.log("completeUpload", xhr);
         if (xhr.status == 202) {
           console.log("waiting for completion", file.name);
           // @odeimaiz: we need to poll the received new location in the response
