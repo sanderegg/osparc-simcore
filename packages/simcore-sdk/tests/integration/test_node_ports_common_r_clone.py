@@ -85,8 +85,8 @@ async def cleanup_s3(
     r_clone_settings: RCloneSettings, s3_object: str
 ) -> AsyncIterable[None]:
     yield
-    async with _get_s3_object(r_clone_settings, s3_object) as s3_object:
-        await s3_object.delete()
+    async with _get_s3_object(r_clone_settings, s3_object) as s3_object_in_s3:
+        await s3_object_in_s3.delete()
 
 
 @pytest.fixture
@@ -138,8 +138,8 @@ async def _download_s3_object(
     r_clone_settings: RCloneSettings, s3_path: str, local_path: Path
 ):
     await asyncio.sleep(WAIT_FOR_S3_BACKEND_TO_UPDATE)
-    async with _get_s3_object(r_clone_settings, s3_path) as s3_object:
-        await s3_object.download_file(f"{local_path}")
+    async with _get_s3_object(r_clone_settings, s3_path) as s3_object_ins3:
+        await s3_object_ins3.download_file(f"{local_path}")
 
 
 def _is_file_present(postgres_db: sa.engine.Engine, s3_object: str) -> bool:
@@ -187,25 +187,3 @@ async def test_sync_local_to_s3(
     assert file_to_upload.read_text() == local_file_for_download.read_text()
 
     assert _is_file_present(postgres_db=postgres_db, s3_object=s3_object) is True
-
-
-async def test_sync_local_to_s3_cleanup_on_error(
-    r_clone_settings: RCloneSettings,
-    s3_object: str,
-    file_to_upload: Path,
-    user_id: int,
-    postgres_db: sa.engine.Engine,
-    client_session: ClientSession,
-    cleanup_s3: None,
-    raise_error_after_upload: None,
-) -> None:
-    with pytest.raises(_TestException):
-        await r_clone.sync_local_to_s3(
-            session=client_session,
-            r_clone_settings=r_clone_settings,
-            s3_object=s3_object,
-            local_file_path=file_to_upload,
-            user_id=user_id,
-            store_id=SIMCORE_LOCATION,
-        )
-    assert _is_file_present(postgres_db=postgres_db, s3_object=s3_object) is False

@@ -30,7 +30,7 @@ from tqdm import tqdm
 from yarl import URL
 
 from ..node_ports_common.client_session_manager import ClientSessionContextManager
-from . import exceptions, storage_client
+from . import config, exceptions, storage_client
 from .constants import SIMCORE_LOCATION, ETag
 from .r_clone import RCloneFailedError, is_r_clone_available, sync_local_to_s3
 
@@ -229,8 +229,18 @@ async def _upload_file_to_presigned_links(
 
 
 async def _complete_upload(
-    session: ClientSession, upload_links: FileUploadSchema, parts: list[UploadedPart]
+    session: ClientSession,
+    upload_links: FileUploadSchema,
+    parts: list[UploadedPart],
+    completion_timeout_s: int = config.STORAGE_MULTIPART_UPLOAD_COMPLETION_TIMEOUT_S,
 ) -> ETag:
+    """completes a poentially multipart upload in AWS
+    NOTE: it can take several minutes to finish, see [AWS documentation](https://docs.aws.amazon.com/AmazonS3/latest/API/API_CompleteMultipartUpload.html)
+    it can take several minutes
+    :raises ValueError: _description_
+    :raises exceptions.S3TransferError: _description_
+    :rtype: ETag
+    """
     log.debug("completing upload of %s", f"{upload_links=} with {parts=}")
     async with session.post(
         upload_links.links.complete_upload,
@@ -251,8 +261,8 @@ async def _complete_upload(
     log.debug("waiting for upload completion...")
     async for attempt in AsyncRetrying(
         reraise=True,
-        wait=wait_fixed(0.5),
-        stop=stop_after_delay(60),
+        wait=wait_fixed(1),
+        stop=stop_after_delay(completion_timeout_s),
         retry=retry_if_exception_type(ValueError),
         before_sleep=before_sleep_log(log, logging.DEBUG),
     ):

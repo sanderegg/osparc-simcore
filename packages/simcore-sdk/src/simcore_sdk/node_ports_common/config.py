@@ -1,7 +1,7 @@
 """Takes care of the configurations.
 """
 import os
-from typing import Dict, Type
+from typing import Dict, Final, Type
 
 # required configurations
 STORAGE_ENDPOINT: str = os.environ.get("STORAGE_ENDPOINT", default="undefined")
@@ -15,7 +15,12 @@ POSTGRES_USER: str = os.environ.get("POSTGRES_USER", "simcore")
 # overridable required configurations
 STORE: str = os.environ.get("STORAGE_STORE_LOCATION_NAME", default="simcore.s3")
 BUCKET: str = os.environ.get("S3_BUCKET_NAME", default="simcore")
-
+_MINUTE: Final[int] = 60
+STORAGE_MULTIPART_UPLOAD_COMPLETION_TIMEOUT_S: Final[int] = int(
+    os.environ.get(
+        "STORAGE_MULTIPART_UPLOAD_COMPLETION_TIMEOUT_S", default=f"{5 * _MINUTE}"
+    )
+)
 
 # -------------------------------------------------------------------------
 NODE_KEYS: Dict[str, bool] = {
