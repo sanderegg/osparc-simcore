@@ -254,6 +254,8 @@ qx.Class.define("osparc.file.FilePicker", {
     __selectedFileLayout: null,
     __selectedFileFound: null,
     __fileDownloadLink: null,
+    __uploadedParts: null,
+    __uploadingParts: null,
 
     setOutputValueFromStore: function(store, dataset, path, label) {
       this.self().setOutputValueFromStore(this.getNode(), store, dataset, path, label);
@@ -550,13 +552,13 @@ qx.Class.define("osparc.file.FilePicker", {
       const nodeId = this.getNode() ? this.getNode().getNodeId() : osparc.utils.Utils.uuidv4();
       const fileId = file.name;
       const fileUuid = studyId +"/"+ nodeId +"/"+ fileId;
+      const fileSize = file.size;
       const dataStore = osparc.store.Data.getInstance();
-      dataStore.getPresignedLink(download, locationId, fileUuid)
+      dataStore.getPresignedLink(download, locationId, fileUuid, fileSize)
         .then(presignedLinkData => {
-          if (presignedLinkData.presignedLink.urls) {
+          if (presignedLinkData.resp.urls) {
             try {
               this.__uploadFile(file, presignedLinkData);
-              console.info("completed upload.");
             } catch (error) {
               console.error(error);
               this.__abortUpload(presignedLinkData);
@@ -566,71 +568,131 @@ qx.Class.define("osparc.file.FilePicker", {
     },
 
     // Use XMLHttpRequest to upload the file to S3.
-    __uploadFile: function(file, presignedLinkData) {
-      const url = presignedLinkData.presignedLink.urls[0];
+    __uploadFile: async function(file, presignedLinkData) {
+      this.getNode().getStatus().setProgress(1);
 
-      // From https://github.com/minio/cookbook/blob/master/docs/presigned-put-upload-via-browser.md
-      const xhr = new XMLHttpRequest();
-      xhr.upload.addEventListener("progress", e => {
-        if (e.lengthComputable) {
-          const percentComplete = e.loaded / e.total * 100;
-          this.getNode().getStatus().setProgress(percentComplete === 100 ? 99 : percentComplete);
-        } else {
-          console.log("Unable to compute progress information since the total size is unknown");
+      // create empty object, it will be filled up with etags and 1 based chunk ids when chunks get uploaded
+      this.__uploadedParts = [];
+      this.__uploadingParts = 0;
+      for (let chunkIdx = 0; chunkIdx < presignedLinkData.resp.urls.length; chunkIdx++) {
+        this.__uploadedParts.push({
+          "number": chunkIdx+1,
+          "e_tag": null
+        });
+      }
+      const fileSize = presignedLinkData.fileSize;
+      const chunkSize = presignedLinkData.resp["chunk_size"];
+      for (let chunkIdx = 0; chunkIdx < presignedLinkData.resp.urls.length; chunkIdx++) {
+        this.__uploadingParts++;
+        const chunkBlob = this.__createChunk(file, fileSize, chunkIdx, chunkSize);
+        this.__uploadChunk(file, chunkBlob, presignedLinkData, chunkIdx);
+        // in order to not overload both the browser and backend, 5 chunks in parallel
+        while (this.__uploadingParts > 4) {
+          const sleepFor = 1000;
+          await osparc.utils.Utils.sleep(sleepFor);
         }
-      }, false);
+      }
+    },
+
+    __uploadChunk: function(file, chunkBlob, presignedLinkData, chunkIdx) {
+      // From https://github.com/minio/cookbook/blob/master/docs/presigned-put-upload-via-browser.md
+      const url = presignedLinkData.resp.urls[chunkIdx];
+      const xhr = new XMLHttpRequest();
       xhr.onload = () => {
         if (xhr.status == 200) {
-          console.log("Completed upload", file.name);
-          this.getNode().getStatus().setProgress(100);
-          // @odeimaiz here we should get the eTag at the end of the upload, no idea how to get it
-          this.__completeUpload(file, presignedLinkData, xhr.response);
+          const eTag = xhr.getResponseHeader("etag");
+          if (eTag) {
+            // remove double double quotes ""etag"" -> "etag"
+            this.__uploadedParts[chunkIdx]["e_tag"] = eTag.slice(1, -1);
+            this.__uploadingParts--;
+            const uploadedParts = this.__uploadedParts.filter(uploadedPart => uploadedPart["e_tag"] !== null).length;
+            const progress = uploadedParts/this.__uploadedParts.length;
+            this.getNode().getStatus().setProgress(100*progress-1);
+            if (this.__uploadedParts.every(uploadedPart => uploadedPart["e_tag"] !== null)) {
+              this.__checkCompleteUpload(file, presignedLinkData, xhr);
+            }
+          }
         } else {
-          console.log(xhr.response);
-          this.getNode().getStatus().setProgress(0);
+          console.error(xhr.response);
           this.__abortUpload(presignedLinkData);
         }
       };
       xhr.open("PUT", url, true);
-      this.getNode().getStatus().setProgress(0);
-      xhr.send(file);
+      xhr.send(chunkBlob);
+    },
+
+    __createChunk: function(file, fileSize, chunkIdx, chunkSize) {
+      const start = chunkIdx * chunkSize;
+      const chunkEnd = Math.min(start + chunkSize, fileSize);
+      const chunkBlob = file.slice(start, chunkEnd);
+      return chunkBlob;
     },
 
     // Use XMLHttpRequest to complete the upload to S3
-    __completeUpload: function(file, presignedLinkData, uploadResponse) {
-      const completeUrl = presignedLinkData.presignedLink.links.complete_upload;
+    __checkCompleteUpload: function(file, presignedLinkData) {
+      this.getNode().getStatus().setProgress(99);
+      const completeUrl = presignedLinkData.resp.links.complete_upload;
       const location = presignedLinkData.locationId;
       const path = presignedLinkData.fileUuid;
       const xhr = new XMLHttpRequest();
       xhr.onloadend = () => {
-        if (xhr.status == 202) {
-          console.log("waiting for completion", file.name);
-          // @odeimaiz: we need to poll the received new location in the response
-          // we do have links.state -> poll that link until it says ok
-          // right now this kind of work if files are small and this happens fast
-        }
-
-
         const fileMetadata = {
           location,
           dataset: this.getNode().getStudy().getUuid(),
-          path: path,
+          path,
           name: file.name
         };
-        if ("location" in fileMetadata && "dataset" in fileMetadata && "path" in fileMetadata && "name" in fileMetadata) {
-          this.setOutputValueFromStore(fileMetadata["location"], fileMetadata["dataset"], fileMetadata["path"], fileMetadata["name"]);
+        const resp = JSON.parse(xhr.responseText);
+        if ("error" in resp && resp["error"]) {
+          console.error(resp["error"]);
+          this.__abortUpload(presignedLinkData);
+        } else if ("data" in resp) {
+          if (xhr.status == 202) {
+            console.log("waiting for completion", file.name);
+            // @odeimaiz: we need to poll the received new location in the response
+            // we do have links.state -> poll that link until it says ok
+            // right now this kind of work if files are small and this happens fast
+            this.__pollFileUploadState(resp["data"]["links"]["state"], fileMetadata);
+          } else if (xhr.status == 200) {
+            this.__completeUpload(fileMetadata);
+          }
         }
-        this.fireEvent("fileUploaded");
       };
       xhr.open("POST", completeUrl, true);
       xhr.setRequestHeader("Content-Type", "application/json");
-      // @odeimaiz: here we should pass every uploaded part (sorted by number from 1...X with their respective eTag)
-      // xhr.send({parts: [{1:uploadResponse["ETag"]}]});
-
-      xhr.send(JSON.stringify({parts: []}));
+      const body = {
+        parts: this.__uploadedParts
+      };
+      xhr.send(JSON.stringify(body));
     },
+
+    __pollFileUploadState: function(stateLink, fileMetadata) {
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", stateLink, true);
+      xhr.setRequestHeader("Content-Type", "application/json");
+      xhr.onloadend = () => {
+        const resp = JSON.parse(xhr.responseText);
+        if ("data" in resp && resp["data"] && resp["data"]["state"] === "ok") {
+          this.__completeUpload(fileMetadata);
+        } else {
+          const interval = 2000;
+          qx.event.Timer.once(() => this.__pollFileUploadState(stateLink, fileMetadata), this, interval);
+        }
+      };
+      xhr.send();
+    },
+
+    __completeUpload: function(fileMetadata) {
+      this.getNode().getStatus().setProgress(100);
+      if ("location" in fileMetadata && "dataset" in fileMetadata && "path" in fileMetadata && "name" in fileMetadata) {
+        this.setOutputValueFromStore(fileMetadata["location"], fileMetadata["dataset"], fileMetadata["path"], fileMetadata["name"]);
+      }
+      this.fireEvent("fileUploaded");
+    },
+
     __abortUpload: function(presignedLinkData) {
-      const abortUrl = presignedLinkData.presignedLink.links.abort_upload;
+      this.getNode().getStatus().setProgress(0);
+      const abortUrl = presignedLinkData.resp.links.abort_upload;
       const xhr = new XMLHttpRequest();
       xhr.open("POST", abortUrl, true);
     }
