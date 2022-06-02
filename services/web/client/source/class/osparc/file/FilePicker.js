@@ -254,6 +254,7 @@ qx.Class.define("osparc.file.FilePicker", {
     __selectedFileLayout: null,
     __selectedFileFound: null,
     __fileDownloadLink: null,
+    __uploadedParts: null,
 
     setOutputValueFromStore: function(store, dataset, path, label) {
       this.self().setOutputValueFromStore(this.getNode(), store, dataset, path, label);
