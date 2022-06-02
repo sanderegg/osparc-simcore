@@ -99,13 +99,19 @@ async def get_download_file_link(
         f"{_base_url()}/locations/{location_id}/files/{quote(file_id, safe='')}",
         params={"user_id": f"{user_id}", "link_type": link_type.value},
     ) as response:
+        if response.status == web.HTTPNotFound.status_code:
+            raise exceptions.S3InvalidPathError(
+                f"file {location_id}@{file_id} not found"
+            )
         response.raise_for_status()
 
         presigned_link_enveloped = Envelope[PresignedLink].parse_obj(
             await response.json()
         )
         if presigned_link_enveloped.data is None:
-            raise exceptions.StorageServerIssue("Storage server is not reponding")
+            raise exceptions.S3InvalidPathError(
+                f"file {location_id}@{file_id} not found"
+            )
         return presigned_link_enveloped.data.link
 
 
