@@ -569,7 +569,7 @@ qx.Class.define("osparc.file.FilePicker", {
 
     // Use XMLHttpRequest to upload the file to S3.
     __uploadFile: async function(file, presignedLinkData) {
-      this.getNode().getStatus().setProgress(0);
+      this.getNode().getStatus().setProgress(1);
 
       // create empty object, it will be filled up with etags and 1 based chunk ids when chunks get uploaded
       this.__uploadedParts = [];
