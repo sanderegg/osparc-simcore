@@ -149,4 +149,5 @@ async def test_invalid_calls(
                     fct_call == get_upload_file_links
                 ):
                     kwargs["link_type"] = LinkType.S3
+                    kwargs["file_size"] = None
                 await fct_call(session=session, **kwargs)
