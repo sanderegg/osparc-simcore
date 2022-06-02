@@ -60,8 +60,16 @@ def _resolve_storage_url(request: web.Request) -> URL:
     return url
 
 
-async def _request_storage(request: web.Request, method: str, **kwargs):
-    await extract_and_validate(request)
+Payload = Any
+StatusCode = int
+
+
+async def _request_storage(
+    request: web.Request, method: str, **kwargs
+) -> tuple[Payload, StatusCode]:
+    # NOTE: this extrac/validate stuff fails with bodies...
+    if not request.has_body:
+        await extract_and_validate(request)
 
     url = _resolve_storage_url(request)
     # _token_data, _token_secret = _get_token_key_and_secret(request)
@@ -75,7 +83,7 @@ async def _request_storage(request: web.Request, method: str, **kwargs):
         method.upper(), url, ssl=False, json=body, **kwargs
     ) as resp:
         payload = await resp.json()
-        return payload
+        return (payload, resp.status)
 
 
 def _unresolve_storage_url(request: web.Request, storage_url: AnyUrl) -> AnyUrl:
@@ -116,36 +124,36 @@ def extract_link(data: Optional[Dict]) -> str:
 @login_required
 @permission_required("storage.files.*")
 async def get_storage_locations(request: web.Request):
-    payload = await _request_storage(request, "GET")
-    return payload
+    payload, status = await _request_storage(request, "GET")
+    return create_data_response(payload, status=status)
 
 
 @login_required
 @permission_required("storage.files.*")
 async def get_datasets_metadata(request: web.Request):
-    payload = await _request_storage(request, "GET")
-    return payload
+    payload, status = await _request_storage(request, "GET")
+    return create_data_response(payload, status=status)
 
 
 @login_required
 @permission_required("storage.files.*")
 async def get_files_metadata(request: web.Request):
-    payload = await _request_storage(request, "GET")
-    return payload
+    payload, status = await _request_storage(request, "GET")
+    return create_data_response(payload, status=status)
 
 
 @login_required
 @permission_required("storage.files.*")
 async def get_files_metadata_dataset(request: web.Request):
-    payload = await _request_storage(request, "GET")
-    return payload
+    payload, status = await _request_storage(request, "GET")
+    return create_data_response(payload, status=status)
 
 
 @login_required
 @permission_required("storage.files.*")
 async def get_file_metadata(request: web.Request):
-    payload = await _request_storage(request, "GET")
-    return payload
+    payload, status = await _request_storage(request, "GET")
+    return create_data_response(payload, status=status)
 
 
 @login_required
@@ -159,14 +167,14 @@ async def update_file_meta_data(request: web.Request):
 @login_required
 @permission_required("storage.files.*")
 async def download_file(request: web.Request):
-    payload = await _request_storage(request, "GET")
-    return payload
+    payload, status = await _request_storage(request, "GET")
+    return create_data_response(payload, status=status)
 
 
 @login_required
 @permission_required("storage.files.*")
 async def upload_file(request: web.Request):
-    payload = await _request_storage(request, "PUT")
+    payload, status = await _request_storage(request, "PUT")
     data, _ = unwrap_envelope(payload)
     file_upload_schema = FileUploadSchema.parse_obj(data)
     file_upload_schema.links.complete_upload = _unresolve_storage_url(
@@ -175,47 +183,47 @@ async def upload_file(request: web.Request):
     file_upload_schema.links.abort_upload = _unresolve_storage_url(
         request, file_upload_schema.links.abort_upload
     )
-    return create_data_response(jsonable_encoder(file_upload_schema))
+    return create_data_response(jsonable_encoder(file_upload_schema), status=status)
 
 
 @login_required
 @permission_required("storage.files.*")
 async def complete_upload_file(request: web.Request):
-    payload = await _request_storage(request, "POST")
+    payload, status = await _request_storage(request, "POST")
     data, _ = unwrap_envelope(payload)
     file_upload_complete = FileUploadCompleteResponse.parse_obj(data)
     file_upload_complete.links.state = _unresolve_storage_url(
         request, file_upload_complete.links.state
     )
-    return create_data_response(jsonable_encoder(file_upload_complete))
+    return create_data_response(jsonable_encoder(file_upload_complete), status=status)
 
 
 @login_required
 @permission_required("storages.files.*")
 async def abort_upload_file(request: web.Request):
-    payload = await _request_storage(request, "POST")
-    return payload
+    payload, status = await _request_storage(request, "POST")
+    return create_data_response(payload, status=status)
 
 
 @login_required
 @permission_required("storage.files.*")
 async def is_completed_upload_file(request: web.Request):
-    payload = await _request_storage(request, "POST")
-    return payload
+    payload, status = await _request_storage(request, "POST")
+    return create_data_response(payload, status=status)
 
 
 @login_required
 @permission_required("storage.files.*")
 async def delete_file(request: web.Request):
-    payload = await _request_storage(request, "DELETE")
-    return payload
+    payload, status = await _request_storage(request, "DELETE")
+    return create_data_response(payload, status=status)
 
 
 @login_required
 @permission_required("storage.files.sync")
 async def synchronise_meta_data_table(request: web.Request):
-    payload = await _request_storage(request, "POST")
-    return payload
+    payload, status = await _request_storage(request, "POST")
+    return create_data_response(payload, status=status)
 
 
 async def get_storage_locations_for_user(
