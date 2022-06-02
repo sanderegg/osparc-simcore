@@ -273,7 +273,7 @@ async def test_errors_upon_invalid_file_identifiers(
         )
 
     download_folder = Path(tmpdir) / "downloads"
-    with pytest.raises(exceptions.StorageInvalidCall):
+    with pytest.raises(exceptions.S3InvalidPathError):
         await filemanager.download_file_from_s3(
             user_id=user_id,
             store_id=store,
@@ -282,7 +282,7 @@ async def test_errors_upon_invalid_file_identifiers(
             local_folder=download_folder,
         )
 
-    with pytest.raises(exceptions.StorageInvalidCall):
+    with pytest.raises(exceptions.S3InvalidPathError):
         await filemanager.download_file_from_s3(
             user_id=user_id,
             store_id=store,
