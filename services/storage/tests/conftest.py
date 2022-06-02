@@ -455,11 +455,14 @@ def upload_file(
     create_file_of_size: Callable[[ByteSize, Optional[str]], Path],
     create_file_uuid: Callable[[str], FileID],
 ) -> Callable[[ByteSize, str], Awaitable[tuple[Path, FileID]]]:
-    async def _uploader(file_size: ByteSize, file_name: str) -> tuple[Path, FileID]:
+    async def _uploader(
+        file_size: ByteSize, file_name: str, file_uuid: Optional[str] = None
+    ) -> tuple[Path, FileID]:
         assert client.app
         # create a file
         file = create_file_of_size(file_size, file_name)
-        file_uuid = create_file_uuid(file_name)
+        if not file_uuid:
+            file_uuid = create_file_uuid(file_name)
         # get an upload link
         file_upload_link = await create_upload_file_link(
             file_uuid, link_type="presigned", file_size=file_size
