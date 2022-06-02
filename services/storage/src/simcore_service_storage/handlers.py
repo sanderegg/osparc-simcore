@@ -133,108 +133,6 @@ async def get_storage_locations(request: web.Request):
         return {"error": None, "data": locs}
 
 
-@routes.get(f"/{api_vtag}/locations/{{location_id}}/datasets", name="get_datasets_metadata")  # type: ignore
-async def get_datasets_metadata(request: web.Request):
-    query_params = parse_request_query_parameters_as(StorageQueryParamsBase, request)
-    path_params = parse_request_path_parameters_as(LocationPathParams, request)
-    log.debug(
-        "received call to get_datasets_metadata with %s",
-        f"{path_params=}, {query_params=}",
-    )
-    with handle_storage_errors():
-        dsm = await _prepare_storage_manager(
-            jsonable_encoder(path_params), jsonable_encoder(query_params), request
-        )
-        data = await dsm.list_datasets(
-            query_params.user_id, get_location_from_id(path_params.location_id)
-        )
-        return {"error": None, "data": data}
-
-
-@routes.get(f"/{api_vtag}/locations/{{location_id}}/files/metadata", name="get_files_metadata")  # type: ignore
-async def get_files_metadata(request: web.Request):
-    query_params = parse_request_query_parameters_as(FilesMetadataQueryParams, request)
-    path_params = parse_request_path_parameters_as(LocationPathParams, request)
-    log.debug(
-        "received call to get_files_metadata with %s",
-        f"{path_params=}, {query_params=}",
-    )
-    with handle_storage_errors():
-        dsm = await _prepare_storage_manager(
-            jsonable_encoder(path_params), jsonable_encoder(query_params), request
-        )
-        data = await dsm.list_files(
-            user_id=query_params.user_id,
-            location=get_location_from_id(path_params.location_id),
-            uuid_filter=query_params.uuid_filter,
-        )
-        data_as_dict = []
-        for d in data:
-            log.info("DATA %s", jsonable_encoder(d.fmd))
-            data_as_dict.append({**jsonable_encoder(d.fmd), "parent_id": d.parent_id})
-
-        return {"error": None, "data": data_as_dict}
-
-
-@routes.get(f"/{api_vtag}/locations/{{location_id}}/datasets/{{dataset_id}}/metadata", name="get_files_metadata_dataset")  # type: ignore
-async def get_files_metadata_dataset(request: web.Request):
-    query_params = parse_request_query_parameters_as(StorageQueryParamsBase, request)
-    path_params = parse_request_path_parameters_as(
-        FilesMetadataDatasetPathParams, request
-    )
-    log.debug(
-        "received call to get_files_metadata_dataset with %s",
-        f"{path_params=}, {query_params=}",
-    )
-    with handle_storage_errors():
-        dsm = await _prepare_storage_manager(
-            jsonable_encoder(path_params), jsonable_encoder(query_params), request
-        )
-        data = await dsm.list_files_dataset(
-            user_id=query_params.user_id,
-            location=get_location_from_id(path_params.location_id),
-            dataset_id=path_params.dataset_id,
-        )
-        data_as_dict = []
-        for d in data:
-            log.info("DATA %s", jsonable_encoder(d.fmd))
-            data_as_dict.append({**jsonable_encoder(d.fmd), "parent_id": d.parent_id})
-
-        return {"error": None, "data": data_as_dict}
-
-
-@routes.get(
-    f"/{api_vtag}/locations/{{location_id}}/files/{{file_id}}/metadata",
-    name="get_file_metadata",
-)  # type: ignore
-async def get_file_metadata(request: web.Request):
-    query_params = parse_request_query_parameters_as(StorageQueryParamsBase, request)
-    path_params = parse_request_path_parameters_as(FilePathParams, request)
-    log.debug(
-        "received call to get_files_metadata_dataset with %s",
-        f"{path_params=}, {query_params=}",
-    )
-    with handle_storage_errors():
-        dsm = await _prepare_storage_manager(
-            jsonable_encoder(path_params), jsonable_encoder(query_params), request
-        )
-        data = await dsm.list_file(
-            user_id=query_params.user_id,
-            location=get_location_from_id(path_params.location_id),
-            file_uuid=path_params.file_id,
-        )
-        # when no metadata is found
-        if data is None:
-            # NOTE: This is what happens Larry... data must be an empty {} or else some old
-            # dynamic services will FAIL (sic)
-            return {"error": "No result found", "data": {}}
-
-        return {
-            "error": None,
-            "data": {**jsonable_encoder(data.fmd), "parent_id": data.parent_id},
-        }
-
-
 @routes.post(f"/{api_vtag}/locations/{{location_id}}:sync", name="synchronise_meta_data_table")  # type: ignore
 async def synchronise_meta_data_table(request: web.Request):
     query_params = parse_request_query_parameters_as(SyncMetadataQueryParams, request)
@@ -276,6 +174,109 @@ async def synchronise_meta_data_table(request: web.Request):
         sync_results["dry_run"] = query_params.dry_run
 
         return {"error": None, "data": sync_results}
+
+
+@routes.get(f"/{api_vtag}/locations/{{location_id}}/datasets", name="get_datasets_metadata")  # type: ignore
+async def get_datasets_metadata(request: web.Request):
+    query_params = parse_request_query_parameters_as(StorageQueryParamsBase, request)
+    path_params = parse_request_path_parameters_as(LocationPathParams, request)
+    log.debug(
+        "received call to get_datasets_metadata with %s",
+        f"{path_params=}, {query_params=}",
+    )
+    with handle_storage_errors():
+        dsm = await _prepare_storage_manager(
+            jsonable_encoder(path_params), jsonable_encoder(query_params), request
+        )
+        data = await dsm.list_datasets(
+            query_params.user_id, get_location_from_id(path_params.location_id)
+        )
+        return {"error": None, "data": data}
+
+
+@routes.get(f"/{api_vtag}/locations/{{location_id}}/datasets/{{dataset_id}}/metadata", name="get_files_metadata_dataset")  # type: ignore
+async def get_files_metadata_dataset(request: web.Request):
+    query_params = parse_request_query_parameters_as(StorageQueryParamsBase, request)
+    path_params = parse_request_path_parameters_as(
+        FilesMetadataDatasetPathParams, request
+    )
+    log.debug(
+        "received call to get_files_metadata_dataset with %s",
+        f"{path_params=}, {query_params=}",
+    )
+    with handle_storage_errors():
+        dsm = await _prepare_storage_manager(
+            jsonable_encoder(path_params), jsonable_encoder(query_params), request
+        )
+        data = await dsm.list_files_dataset(
+            user_id=query_params.user_id,
+            location=get_location_from_id(path_params.location_id),
+            dataset_id=path_params.dataset_id,
+        )
+        data_as_dict = []
+        for d in data:
+            log.info("DATA %s", jsonable_encoder(d.fmd))
+            data_as_dict.append({**jsonable_encoder(d.fmd), "parent_id": d.parent_id})
+
+        return {"error": None, "data": data_as_dict}
+
+
+@routes.get(f"/{api_vtag}/locations/{{location_id}}/files/metadata", name="get_files_metadata")  # type: ignore
+async def get_files_metadata(request: web.Request):
+    query_params = parse_request_query_parameters_as(FilesMetadataQueryParams, request)
+    path_params = parse_request_path_parameters_as(LocationPathParams, request)
+    log.debug(
+        "received call to get_files_metadata with %s",
+        f"{path_params=}, {query_params=}",
+    )
+    with handle_storage_errors():
+        dsm = await _prepare_storage_manager(
+            jsonable_encoder(path_params), jsonable_encoder(query_params), request
+        )
+        data = await dsm.list_files(
+            user_id=query_params.user_id,
+            location=get_location_from_id(path_params.location_id),
+            uuid_filter=query_params.uuid_filter,
+        )
+        data_as_dict = []
+        for d in data:
+            log.info("DATA %s", jsonable_encoder(d.fmd))
+            data_as_dict.append({**jsonable_encoder(d.fmd), "parent_id": d.parent_id})
+
+        return {"error": None, "data": data_as_dict}
+
+
+@routes.get(
+    f"/{api_vtag}/locations/{{location_id}}/files/{{file_id}}/metadata",
+    name="get_file_metadata",
+)  # type: ignore
+async def get_file_metadata(request: web.Request):
+    query_params = parse_request_query_parameters_as(StorageQueryParamsBase, request)
+    path_params = parse_request_path_parameters_as(FilePathParams, request)
+    log.debug(
+        "received call to get_files_metadata_dataset with %s",
+        f"{path_params=}, {query_params=}",
+    )
+    with handle_storage_errors():
+        dsm = await _prepare_storage_manager(
+            jsonable_encoder(path_params), jsonable_encoder(query_params), request
+        )
+
+        data = await dsm.list_file(
+            user_id=query_params.user_id,
+            location=get_location_from_id(path_params.location_id),
+            file_uuid=path_params.file_id,
+        )
+        # when no metadata is found
+        if data is None:
+            # NOTE: This is what happens Larry... data must be an empty {} or else some old
+            # dynamic services will FAIL (sic)
+            return {"error": "No result found", "data": {}}
+
+        return {
+            "error": None,
+            "data": {**jsonable_encoder(data.fmd), "parent_id": data.parent_id},
+        }
 
 
 @routes.patch(f"/{api_vtag}/locations/{{location_id}}/files/{{file_id}}/metadata")  # type: ignore
