@@ -70,6 +70,17 @@ async def test_simcore_s3_access_returns_default(client: TestClient):
     assert received_settings
 
 
+async def test_create_folders_from_project(client: TestClient):
+    assert client.app
+    url = (
+        client.app.router["create_folders_from_project"].url_for().with_query(user_id=1)
+    )
+    response = await client.post(f"{url}")
+    data, error = await assert_status(response, web.HTTPOk)
+    assert not error
+    assert data
+
+
 current_dir = Path(sys.argv[0] if __name__ == "__main__" else __file__).resolve().parent
 
 
