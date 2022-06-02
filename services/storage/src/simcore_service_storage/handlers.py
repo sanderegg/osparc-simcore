@@ -15,7 +15,9 @@ from models_library.api_schemas_storage import (
     FileUploadCompletionBody,
     FileUploadLinks,
     FileUploadSchema,
+    FoldersBody,
     LinkType,
+    SoftCopyBody,
 )
 from models_library.projects import ProjectID
 from models_library.utils.fastapi_encoders import jsonable_encoder
@@ -47,11 +49,9 @@ from .models import (
     FilesMetadataDatasetPathParams,
     FilesMetadataQueryParams,
     FileUploadQueryParams,
-    FoldersBody,
     LocationPathParams,
     SearchFilesQueryParams,
     SimcoreS3FoldersParams,
-    SoftCopyBody,
     StorageQueryParamsBase,
     SyncMetadataQueryParams,
 )
@@ -549,8 +549,8 @@ async def get_or_create_temporary_s3_access(request: web.Request):
         return {"data": s3_settings.dict()}
 
 
-@routes.post(f"/{api_vtag}/simcore-s3/folders", name="copy_folders_from_project", name="create_folders_from_project")  # type: ignore
-async def create_folders_from_project(request: web.Request):
+@routes.post(f"/{api_vtag}/simcore-s3/folders", name="copy_folders_from_project")  # type: ignore
+async def copy_folders_from_project(request: web.Request):
     query_params = parse_request_query_parameters_as(StorageQueryParamsBase, request)
     body = await parse_request_body_as(FoldersBody, request)
     log.debug(
