@@ -3,14 +3,13 @@
 # pylint: disable=unused-variable
 # pylint: disable=too-many-arguments
 
-import asyncio
 import filecmp
 import json
 import urllib.parse
 from dataclasses import dataclass
 from pathlib import Path
 from time import perf_counter
-from typing import AsyncIterator, Awaitable, Callable, Optional, Type
+from typing import Awaitable, Callable, Optional, Type
 
 import botocore
 import botocore.exceptions
@@ -23,27 +22,19 @@ from models_library.api_schemas_storage import (
     FileUploadCompleteFutureResponse,
     FileUploadCompleteResponse,
     FileUploadCompleteState,
-    FileUploadCompletionBody,
     FileUploadSchema,
 )
-from models_library.projects import ProjectID
 from models_library.users import UserID
-from models_library.utils.fastapi_encoders import jsonable_encoder
 from pydantic import ByteSize, parse_obj_as
 from pytest_simcore.helpers.utils_assert import assert_status
-from simcore_postgres_database.models.file_meta_data import file_meta_data
 from simcore_service_storage.dsm import _MULTIPART_UPLOADS_MIN_TOTAL_SIZE
-from simcore_service_storage.s3_client import (
-    FileID,
-    StorageS3Client,
-    UploadedPart,
-    UploadID,
-)
+from simcore_service_storage.s3_client import FileID, StorageS3Client, UploadID
 from tenacity._asyncio import AsyncRetrying
 from tenacity.retry import retry_if_exception_type
 from tenacity.stop import stop_after_delay
 from tenacity.wait import wait_fixed
-from tests.helpers.file_utils import upload_file_part, upload_file_to_presigned_link
+from tests.helpers.file_utils import upload_file_part
+from tests.helpers.utils_file_meta_data import assert_file_meta_data_in_db
 from yarl import URL
 
 pytest_simcore_core_services_selection = ["postgres"]
@@ -58,96 +49,6 @@ _HTTP_PRESIGNED_LINK_QUERY_KEYS = [
     "X-Amz-Signature",
     "X-Amz-SignedHeaders",
 ]
-
-
-@pytest.fixture
-async def create_upload_file_link(
-    client: TestClient, user_id: UserID, project_id: ProjectID, location_id: int
-) -> AsyncIterator[Callable[..., Awaitable[FileUploadSchema]]]:
-
-    file_params: list[tuple[UserID, int, FileID]] = []
-
-    async def _link_creator(file_uuid: FileID, **query_kwargs) -> FileUploadSchema:
-        assert client.app
-        url = (
-            client.app.router["upload_file"]
-            .url_for(
-                location_id=f"{location_id}",
-                file_id=urllib.parse.quote(file_uuid, safe=""),
-            )
-            .with_query(**query_kwargs, user_id=user_id)
-        )
-        response = await client.put(f"{url}")
-        data, error = await assert_status(response, web.HTTPOk)
-        assert not error
-        assert data
-        received_file_upload = FileUploadSchema.parse_obj(data)
-        assert received_file_upload
-        print(f"--> created link for {file_uuid=}")
-        file_params.append((user_id, location_id, file_uuid))
-        return received_file_upload
-
-    yield _link_creator
-
-    # cleanup
-    assert client.app
-    clean_tasks = []
-    for u_id, loc_id, file_uuid in file_params:
-        url = (
-            client.app.router["delete_file"]
-            .url_for(
-                location_id=f"{loc_id}",
-                file_id=urllib.parse.quote(file_uuid, safe=""),
-            )
-            .with_query(user_id=u_id)
-        )
-        clean_tasks.append(client.delete(f"{url}"))
-    await asyncio.gather(*clean_tasks)
-
-
-async def assert_file_meta_data_in_db(
-    aiopg_engine: Engine,
-    *,
-    file_uuid: FileID,
-    expected_entry_exists: bool,
-    expected_file_size: Optional[int],
-    expected_upload_id: Optional[bool],
-    expected_upload_expiration_date: Optional[bool],
-) -> Optional[UploadID]:
-    if expected_entry_exists and expected_file_size == None:
-        assert True, "Invalid usage of assertion, expected_file_size cannot be None"
-
-    async with aiopg_engine.acquire() as conn:
-        result = await conn.execute(
-            file_meta_data.select().where(file_meta_data.c.file_uuid == f"{file_uuid}")
-        )
-        db_data = await result.fetchall()
-        assert db_data is not None
-        assert len(db_data) == (1 if expected_entry_exists else 0)
-        upload_id = None
-        if expected_entry_exists:
-            row = db_data[0]
-            assert (
-                row[file_meta_data.c.file_size] == expected_file_size
-            ), f"entry in file_meta_data was not initialized correctly, size should be set to {expected_file_size}"
-            if expected_upload_id:
-                assert (
-                    row[file_meta_data.c.upload_id] is not None
-                ), "multipart upload shall have an upload_id, it is missing!"
-            else:
-                assert (
-                    row[file_meta_data.c.upload_id] is None
-                ), "single file upload should not have an upload_id"
-            if expected_upload_expiration_date:
-                assert row[
-                    file_meta_data.c.upload_expires_at
-                ], "no upload expiration date!"
-            else:
-                assert (
-                    row[file_meta_data.c.upload_expires_at] is None
-                ), "expiration date should be NULL"
-            upload_id = row[file_meta_data.c.upload_id]
-    return upload_id
 
 
 async def assert_multipart_uploads_in_progress(
@@ -499,96 +400,6 @@ async def test_upload_same_file_uuid_aborts_previous_upload(
         file_uuid,
         expected_upload_ids=([new_upload_id] if new_upload_id else None),
     )
-
-
-@pytest.fixture
-def upload_file(
-    aiopg_engine: Engine,
-    storage_s3_client: StorageS3Client,
-    storage_s3_bucket: str,
-    client: TestClient,
-    create_upload_file_link: Callable[..., Awaitable[FileUploadSchema]],
-    create_file_of_size: Callable[[ByteSize, Optional[str]], Path],
-    create_file_uuid: Callable[[str], FileID],
-) -> Callable[[ByteSize, str], Awaitable[tuple[Path, FileID]]]:
-    async def _uploader(file_size: ByteSize, file_name: str) -> tuple[Path, FileID]:
-        assert client.app
-        # create a file
-        file = create_file_of_size(file_size, file_name)
-        file_uuid = create_file_uuid(file_name)
-        # get an upload link
-        file_upload_link = await create_upload_file_link(
-            file_uuid, link_type="presigned", file_size=file_size
-        )
-
-        # upload the file
-        part_to_etag: list[UploadedPart] = await upload_file_to_presigned_link(
-            file, file_upload_link
-        )
-        # complete the upload
-        complete_url = URL(file_upload_link.links.complete_upload).relative()
-        start = perf_counter()
-        print(f"--> completing upload of {file=}")
-        response = await client.post(
-            f"{complete_url}",
-            json=jsonable_encoder(FileUploadCompletionBody(parts=part_to_etag)),
-        )
-        response.raise_for_status()
-        data, error = await assert_status(response, web.HTTPAccepted)
-        assert not error
-        assert data
-        file_upload_complete_response = FileUploadCompleteResponse.parse_obj(data)
-        state_url = URL(file_upload_complete_response.links.state).relative()
-
-        completion_etag = None
-        async for attempt in AsyncRetrying(
-            reraise=True,
-            wait=wait_fixed(1),
-            stop=stop_after_delay(60),
-            retry=retry_if_exception_type(ValueError),
-        ):
-            with attempt:
-                print(
-                    f"--> checking for upload {state_url=}, {attempt.retry_state.attempt_number}..."
-                )
-                response = await client.post(f"{state_url}")
-                response.raise_for_status()
-                data, error = await assert_status(response, web.HTTPOk)
-                assert not error
-                assert data
-                future = FileUploadCompleteFutureResponse.parse_obj(data)
-                if future.state == FileUploadCompleteState.NOK:
-                    raise ValueError(f"{data=}")
-                assert future.state == FileUploadCompleteState.OK
-                assert future.e_tag is not None
-                completion_etag = future.e_tag
-                print(
-                    f"--> done waiting, data is completely uploaded [{attempt.retry_state.retry_object.statistics}]"
-                )
-
-        print(f"--> completed upload in {perf_counter() - start}")
-
-        # check the entry in db now has the correct file size, and the upload id is gone
-        await assert_file_meta_data_in_db(
-            aiopg_engine,
-            file_uuid=file_uuid,
-            expected_entry_exists=True,
-            expected_file_size=file_size,
-            expected_upload_id=False,
-            expected_upload_expiration_date=False,
-        )
-        # check the file is in S3 for real
-        (
-            s3_file_size,
-            s3_last_modified,
-            s3_etag,
-        ) = await storage_s3_client.get_file_metadata(storage_s3_bucket, file_uuid)
-        assert s3_file_size == file_size
-        assert s3_last_modified
-        assert s3_etag == completion_etag
-        return file, file_uuid
-
-    return _uploader
 
 
 @pytest.mark.parametrize(

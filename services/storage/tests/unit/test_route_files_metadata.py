@@ -6,7 +6,6 @@
 import os
 import urllib.parse
 
-import pytest
 from aiohttp.test_utils import TestClient
 from simcore_service_storage.dsm import DataStorageManager
 from simcore_service_storage.models import FileMetaData
@@ -69,48 +68,6 @@ async def test_s3_file_metadata(
         payload = await resp.json()
         assert resp.status == 200, str(payload)
 
-        data, error = tuple(payload.get(k) for k in ("data", "error"))
-        assert not error
-        assert data
-
-
-@pytest.mark.skip(reason="this test is not checking anything, missing project table!!")
-async def test_s3_datasets_metadata(
-    client: TestClient,
-    dsm_mockup_db: dict[str, FileMetaData],
-):
-    assert client.app
-    for d in dsm_mockup_db.keys():
-        fmd = dsm_mockup_db[d]
-        url = (
-            client.app.router["get_datasets_metadata"]
-            .url_for(location_id=f"{fmd.location_id}")
-            .with_query(user_id=f"{fmd.user_id}")
-        )
-        resp = await client.get(f"{url}")
-        payload = await resp.json()
-        assert resp.status == 200, str(payload)
-        data, error = tuple(payload.get(k) for k in ("data", "error"))
-        assert not error
-        assert data == []
-
-
-@pytest.mark.skip(reason="this test is not checking anything, missing project table!!")
-async def test_s3_files_datasets_metadata(
-    client: TestClient,
-    dsm_mockup_db: dict[str, FileMetaData],
-):
-    assert client.app
-    for d in dsm_mockup_db.keys():
-        fmd = dsm_mockup_db[d]
-        url = (
-            client.app.router["get_files_metadata_dataset"]
-            .url_for(location_id=f"{fmd.location_id}", dataset_id=f"{fmd.project_id}")
-            .with_query(user_id=f"{ fmd.user_id}")
-        )
-        resp = await client.get(f"{url}")
-        payload = await resp.json()
-        assert resp.status == 200, str(payload)
         data, error = tuple(payload.get(k) for k in ("data", "error"))
         assert not error
         assert data
