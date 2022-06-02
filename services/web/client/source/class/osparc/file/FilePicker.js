@@ -665,9 +665,7 @@ qx.Class.define("osparc.file.FilePicker", {
     },
 
     __pollFileUploadState: function(stateLink, fileMetadata) {
-      fetch(stateLink, {
-        method: "GET"
-      })
+      fetch(stateLink)
         .then(resp => {
           if (resp.ok) {
             this.__completeUpload(fileMetadata);
