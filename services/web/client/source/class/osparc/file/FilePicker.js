@@ -665,16 +665,19 @@ qx.Class.define("osparc.file.FilePicker", {
     },
 
     __pollFileUploadState: function(stateLink, fileMetadata) {
-      fetch(stateLink, {
-        method: "POST"
-      })
-        .then(resp => {
-          if (resp.ok) {
-            this.__completeUpload(fileMetadata);
-          } else {
-            this.__pollFileUploadState(stateLink, fileMetadata);
-          }
-        });
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", stateLink, true);
+      xhr.setRequestHeader("Content-Type", "application/json");
+      xhr.onloadend = () => {
+        const resp = JSON.parse(xhr.responseText);
+        if ("data" in resp && resp["data"] && resp["data"]["state"] === "ok") {
+          this.__completeUpload(fileMetadata);
+        } else {
+          const interval = 2000;
+          qx.event.Timer.once(() => this.__pollFileUploadState(stateLink, fileMetadata), this, interval);
+        }
+      };
+      xhr.send();
     },
 
     __completeUpload: function(fileMetadata) {
