@@ -6,7 +6,7 @@ import filecmp
 import urllib.parse
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import AsyncGenerator, AsyncIterable, Callable, Final
+from typing import AsyncGenerator, Callable, Final
 from uuid import uuid4
 
 import aioboto3
@@ -53,15 +53,6 @@ def local_file_for_download(upload_file_dir: Path, file_name: str) -> Path:
     return local_file_path
 
 
-@pytest.fixture
-async def cleanup_s3(
-    r_clone_settings: RCloneSettings, s3_object: str
-) -> AsyncIterable[None]:
-    yield
-    async with _get_s3_object(r_clone_settings, s3_object) as s3_object_in_s3:
-        await s3_object_in_s3.delete()
-
-
 # UTILS
 @asynccontextmanager
 async def _get_s3_object(
@@ -89,8 +80,7 @@ async def _download_s3_object(
         await s3_object_in_s3.download_file(f"{local_path}")
 
 
-@pytest.fixture
-def fake_upload_file_link(
+def _fake_upload_file_link(
     r_clone_settings: RCloneSettings, s3_object: str
 ) -> FileUploadSchema:
     return FileUploadSchema(
@@ -110,18 +100,18 @@ def fake_upload_file_link(
 
 # TESTS
 async def test_sync_local_to_s3(
+    bucket: str,
     r_clone_settings: RCloneSettings,
     file_name: str,
     create_file_of_size: Callable[[ByteSize, str], Path],
     create_valid_file_uuid: Callable[[Path], str],
-    fake_upload_file_link: FileUploadSchema,
     tmp_path: Path,
     faker: Faker,
-    cleanup_s3: None,
 ) -> None:
     local_file = create_file_of_size(parse_obj_as(ByteSize, "10Mib"), file_name)
     file_uuid = create_valid_file_uuid(local_file)
-    await r_clone.sync_local_to_s3(local_file, r_clone_settings, fake_upload_file_link)
+    upload_file_link = _fake_upload_file_link(r_clone_settings, file_uuid)
+    await r_clone.sync_local_to_s3(local_file, r_clone_settings, upload_file_link)
 
     local_download_file = tmp_path / faker.file_name()
     await _download_s3_object(

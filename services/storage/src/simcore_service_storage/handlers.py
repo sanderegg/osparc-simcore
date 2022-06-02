@@ -133,7 +133,7 @@ async def get_storage_locations(request: web.Request):
         return {"error": None, "data": locs}
 
 
-@routes.get(f"/{api_vtag}/locations/{{location_id}}/datasets")  # type: ignore
+@routes.get(f"/{api_vtag}/locations/{{location_id}}/datasets", name="get_datasets_metadata")  # type: ignore
 async def get_datasets_metadata(request: web.Request):
     query_params = parse_request_query_parameters_as(StorageQueryParamsBase, request)
     path_params = parse_request_path_parameters_as(LocationPathParams, request)
@@ -151,7 +151,7 @@ async def get_datasets_metadata(request: web.Request):
         return {"error": None, "data": data}
 
 
-@routes.get(f"/{api_vtag}/locations/{{location_id}}/files/metadata")  # type: ignore
+@routes.get(f"/{api_vtag}/locations/{{location_id}}/files/metadata", name="get_files_metadata")  # type: ignore
 async def get_files_metadata(request: web.Request):
     query_params = parse_request_query_parameters_as(FilesMetadataQueryParams, request)
     path_params = parse_request_path_parameters_as(LocationPathParams, request)
@@ -176,7 +176,7 @@ async def get_files_metadata(request: web.Request):
         return {"error": None, "data": data_as_dict}
 
 
-@routes.get(f"/{api_vtag}/locations/{{location_id}}/datasets/{{dataset_id}}/metadata")  # type: ignore
+@routes.get(f"/{api_vtag}/locations/{{location_id}}/datasets/{{dataset_id}}/metadata", name="get_files_metadata_dataset")  # type: ignore
 async def get_files_metadata_dataset(request: web.Request):
     query_params = parse_request_query_parameters_as(StorageQueryParamsBase, request)
     path_params = parse_request_path_parameters_as(
@@ -235,7 +235,7 @@ async def get_file_metadata(request: web.Request):
         }
 
 
-@routes.post(f"/{api_vtag}/locations/{{location_id}}:sync")  # type: ignore
+@routes.post(f"/{api_vtag}/locations/{{location_id}}:sync", name="synchronise_meta_data_table")  # type: ignore
 async def synchronise_meta_data_table(request: web.Request):
     query_params = parse_request_query_parameters_as(SyncMetadataQueryParams, request)
     path_params = parse_request_path_parameters_as(LocationPathParams, request)
