@@ -261,6 +261,7 @@ async def get_file_metadata(request: web.Request):
         dsm = await _prepare_storage_manager(
             jsonable_encoder(path_params), jsonable_encoder(query_params), request
         )
+
         data = await dsm.list_file(
             user_id=query_params.user_id,
             location=get_location_from_id(path_params.location_id),
