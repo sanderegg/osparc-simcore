@@ -111,7 +111,7 @@ def s3_simcore_location() -> str:
 
 
 @pytest.fixture
-async def filemanager_cfg(
+def filemanager_cfg(
     storage_service: URL,
     testing_environ_vars: Dict,
     user_id: str,
