@@ -599,17 +599,6 @@ qx.Class.define("osparc.file.FilePicker", {
       // From https://github.com/minio/cookbook/blob/master/docs/presigned-put-upload-via-browser.md
       const url = presignedLinkData.resp.urls[chunkIdx];
       const xhr = new XMLHttpRequest();
-      let lastChunkPercent = 0;
-      xhr.upload.addEventListener("progress", e => {
-        if (e.lengthComputable) {
-          const chunkPercent = (e.loaded / e.total * 100) / presignedLinkData.resp.urls.length;
-          const lastProgress = this.getNode().getStatus().getProgress();
-          this.getNode().getStatus().setProgress(lastProgress-lastChunkPercent+chunkPercent);
-          lastChunkPercent = chunkPercent;
-        } else {
-          console.log("Unable to compute progress information since the total size is unknown");
-        }
-      }, false);
       xhr.onload = () => {
         if (xhr.status == 200) {
           const eTag = xhr.getResponseHeader("etag");
@@ -617,12 +606,15 @@ qx.Class.define("osparc.file.FilePicker", {
             // remove double double quotes ""etag"" -> "etag"
             this.__uploadedParts[chunkIdx]["e_tag"] = eTag.slice(1, -1);
             this.__uploadingParts--;
+            const uploadedParts = this.__uploadedParts.filter(uploadedPart => uploadedPart["e_tag"] !== null).length;
+            const progress = uploadedParts/this.__uploadedParts.length;
+            this.getNode().getStatus().setProgress(100*progress-1);
             if (this.__uploadedParts.every(uploadedPart => uploadedPart["e_tag"] !== null)) {
               this.__checkCompleteUpload(file, presignedLinkData, xhr);
             }
           }
         } else {
-          console.log(xhr.response);
+          console.error(xhr.response);
           this.__abortUpload(presignedLinkData);
         }
       };
@@ -652,7 +644,6 @@ qx.Class.define("osparc.file.FilePicker", {
           name: file.name
         };
         const resp = JSON.parse(xhr.responseText);
-        console.log(resp);
         if ("error" in resp && resp["error"]) {
           console.error(resp["error"]);
           this.__abortUpload(presignedLinkData);
