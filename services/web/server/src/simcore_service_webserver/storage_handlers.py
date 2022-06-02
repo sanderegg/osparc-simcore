@@ -95,15 +95,6 @@ def _unresolve_storage_url(request: web.Request, storage_url: AnyUrl) -> AnyUrl:
     return parse_obj_as(AnyUrl, f"{converted_url}")
 
 
-def _unresolve_storage_url(request: web.Request, storage_url: AnyUrl) -> AnyUrl:
-    assert storage_url.path  # nosec
-    prefix = f"/{_get_storage_vtag(request.app)}"
-    converted_url = request.url.with_path(
-        f"/v0/storage{storage_url.path.removeprefix(prefix)}"
-    )
-    return parse_obj_as(AnyUrl, f"{converted_url}")
-
-
 async def safe_unwrap(
     resp: ClientResponse,
 ) -> Tuple[Optional[Union[Dict[str, Any], List[Dict[str, Any]]]], Optional[Dict]]:
