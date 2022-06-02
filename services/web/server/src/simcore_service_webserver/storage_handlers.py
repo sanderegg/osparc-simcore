@@ -208,7 +208,7 @@ async def abort_upload_file(request: web.Request):
 @login_required
 @permission_required("storage.files.*")
 async def is_completed_upload_file(request: web.Request):
-    payload, status = await _request_storage(request, "POST")
+    payload, status = await _request_storage(request, "GET")
     return create_data_response(payload, status=status)
 
 
