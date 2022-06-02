@@ -250,6 +250,14 @@ class FileUploadCompleteFutureResponse(BaseModel):
 # /simcore-s3/
 
 # TODO: class Project(BaseModel):
+class FoldersBody(BaseModel):
+    source: dict[str, Any] = Field(default_factory=dict)
+    destination: dict[str, Any] = Field(default_factory=dict)
+    nodes_map: dict[str, str] = Field(default_factory=dict)
+
+
+class SoftCopyBody(BaseModel):
+    link_id: str
 
 
 # ERRORS/ LOGS ---------------
