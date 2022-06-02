@@ -5,21 +5,27 @@
 import asyncio
 import json
 import sys
+from copy import deepcopy
 from pathlib import Path
-from typing import Any
+from typing import Any, Awaitable, Callable
 
 import pytest
+import sqlalchemy as sa
 from aiohttp import web
 from aiohttp.test_utils import TestClient
+from aiopg.sa.engine import Engine
+from faker import Faker
 from models_library.api_schemas_storage import FoldersBody
-from models_library.projects import ProjectID
 from models_library.users import UserID
+from models_library.utils.fastapi_encoders import jsonable_encoder
 from pytest_simcore.helpers.utils_assert import assert_status
 from settings_library.s3 import S3Settings
+from simcore_postgres_database.storage_models import file_meta_data
 from simcore_service_storage.access_layer import AccessRights
 from simcore_service_storage.constants import SIMCORE_S3_ID
 from simcore_service_storage.dsm import APP_DSM_KEY, DataStorageManager
 from simcore_service_storage.models import FileMetaData
+from simcore_service_storage.s3_client import StorageS3Client
 from tests.helpers.utils_project import clone_project_data
 
 pytest_simcore_core_services_selection = ["postgres"]
@@ -73,18 +79,86 @@ async def test_simcore_s3_access_returns_default(client: TestClient):
     assert received_settings
 
 
-async def test_copy_folders_from_project(
+async def test_copy_folders_from_non_existing_project(
     client: TestClient,
     user_id: UserID,
-    project_id: ProjectID,
+    create_project: Callable[[], Awaitable[dict[str, Any]]],
+    faker: Faker,
 ):
     assert client.app
-    url = client.app.router["copy_folders_from_project"].url_for().with_query(user_id=1)
-    FoldersBody(source)
-    response = await client.post(f"{url}")
-    data, error = await assert_status(response, web.HTTPOk)
+    url = (
+        client.app.router["copy_folders_from_project"]
+        .url_for()
+        .with_query(user_id=user_id)
+    )
+    src_project = await create_project()
+    incorrect_src_project = deepcopy(src_project)
+    incorrect_src_project["uuid"] = faker.uuid4()
+    dst_project = await create_project()
+    incorrect_dst_project = deepcopy(dst_project)
+    incorrect_dst_project["uuid"] = faker.uuid4()
+
+    response = await client.post(
+        f"{url}",
+        json=jsonable_encoder(
+            FoldersBody(
+                source=incorrect_src_project, destination=dst_project, nodes_map={}
+            )
+        ),
+    )
+    data, error = await assert_status(response, web.HTTPNotFound)
+    assert error
+    assert not data
+
+    response = await client.post(
+        f"{url}",
+        json=jsonable_encoder(
+            FoldersBody(
+                source=src_project, destination=incorrect_dst_project, nodes_map={}
+            )
+        ),
+    )
+    data, error = await assert_status(response, web.HTTPNotFound)
+    assert error
+    assert not data
+
+
+async def test_copy_folders_from_empty_project(
+    client: TestClient,
+    user_id: UserID,
+    create_project: Callable[[], Awaitable[dict[str, Any]]],
+    # upload_file: Callable[[ByteSize, str], Awaitable[tuple[Path, FileID]]],
+    aiopg_engine: Engine,
+    storage_s3_client: StorageS3Client,
+):
+    assert client.app
+    url = (
+        client.app.router["copy_folders_from_project"]
+        .url_for()
+        .with_query(user_id=user_id)
+    )
+
+    # we will copy from src to dst
+    src_project = await create_project()
+    dst_project = await create_project()
+
+    response = await client.post(
+        f"{url}",
+        json=jsonable_encoder(
+            FoldersBody(source=src_project, destination=dst_project, nodes_map={})
+        ),
+    )
+    data, error = await assert_status(response, web.HTTPCreated)
     assert not error
-    assert data
+    assert data == jsonable_encoder(dst_project)
+    # check there is nothing in the dst project
+    async with aiopg_engine.acquire() as conn:
+        num_entries = await conn.scalar(
+            sa.select([sa.func.count()])
+            .select_from(file_meta_data)
+            .where(file_meta_data.c.project_id == dst_project["uuid"])
+        )
+        assert num_entries == 0
 
 
 current_dir = Path(sys.argv[0] if __name__ == "__main__" else __file__).resolve().parent
