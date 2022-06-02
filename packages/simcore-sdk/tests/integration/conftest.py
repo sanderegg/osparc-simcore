@@ -5,7 +5,7 @@
 
 import json
 from pathlib import Path
-from typing import Any, Awaitable, Callable, Dict, Iterable, List, Tuple
+from typing import Any, Awaitable, Callable, Dict, Iterable, Iterator, List, Tuple
 from urllib.parse import quote_plus
 from uuid import uuid4
 
@@ -17,6 +17,7 @@ from pytest_simcore.helpers.rawdata_fakers import random_project, random_user
 from settings_library.r_clone import RCloneSettings, S3Provider
 from simcore_postgres_database.models.comp_pipeline import comp_pipeline
 from simcore_postgres_database.models.comp_tasks import comp_tasks
+from simcore_postgres_database.models.file_meta_data import file_meta_data
 from simcore_postgres_database.models.projects import projects
 from simcore_postgres_database.models.users import users
 from simcore_sdk.node_ports import node_config
@@ -110,7 +111,7 @@ def s3_simcore_location() -> str:
 
 
 @pytest.fixture
-async def filemanager_cfg(
+def filemanager_cfg(
     storage_service: URL,
     testing_environ_vars: Dict,
     user_id: str,
@@ -393,3 +394,10 @@ async def r_clone_settings(
     r_clone_settings_factory: Awaitable[RCloneSettings],
 ) -> RCloneSettings:
     return await r_clone_settings_factory
+
+
+@pytest.fixture
+def cleanup_file_meta_data(postgres_db: sa.engine.Engine) -> Iterator[None]:
+    yield
+    with postgres_db.connect() as conn:
+        conn.execute(file_meta_data.delete())

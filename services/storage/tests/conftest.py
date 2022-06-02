@@ -12,7 +12,7 @@ import sys
 import uuid
 from pathlib import Path
 from random import randrange
-from typing import AsyncIterator, Callable, Iterator, Optional
+from typing import AsyncIterator, Callable, Iterator
 from uuid import uuid4
 
 import dotenv
@@ -25,7 +25,7 @@ from faker import Faker
 from models_library.projects import ProjectID
 from models_library.projects_nodes import NodeID
 from moto.server import ThreadedMotoServer
-from pydantic import ByteSize, parse_obj_as
+from pydantic import parse_obj_as
 from pytest_simcore.helpers.utils_docker import get_localhost_ip
 from simcore_service_storage.application import create
 from simcore_service_storage.constants import APP_DSM_KEY, SIMCORE_S3_STR
@@ -54,6 +54,7 @@ pytest_plugins = [
     "pytest_simcore.docker_compose",
     "pytest_simcore.tmp_path_extra",
     "pytest_simcore.monkeypatch_extra",
+    "pytest_simcore.file_extra",
 ]
 
 CURRENT_DIR = Path(sys.argv[0] if __name__ == "__main__" else __file__).resolve().parent
@@ -353,19 +354,6 @@ def client(
     return event_loop.run_until_complete(
         aiohttp_client(app, server_kwargs={"port": unused_tcp_port_factory()})
     )
-
-
-@pytest.fixture
-def create_file_of_size(tmp_path: Path, faker: Faker) -> Callable[[ByteSize], Path]:
-    def _creator(size: ByteSize, name: Optional[str] = None) -> Path:
-        file: Path = tmp_path / (name or faker.file_name())
-        with file.open("wb") as fp:
-            fp.truncate(size)
-
-        assert file.stat().st_size == size
-        return file
-
-    return _creator
 
 
 @pytest.fixture

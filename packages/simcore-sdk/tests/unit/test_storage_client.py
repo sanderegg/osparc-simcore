@@ -94,7 +94,7 @@ async def test_get_upload_file_links(
 ):
     async with aiohttp.ClientSession() as session:
         links = await get_upload_file_links(
-            session, file_id, location_id, user_id, link_type
+            session, file_id, location_id, user_id, link_type, file_size=None
         )
     assert isinstance(links, FileUploadSchema)
     assert len(links.urls) == 1
@@ -149,4 +149,5 @@ async def test_invalid_calls(
                     fct_call == get_upload_file_links
                 ):
                     kwargs["link_type"] = LinkType.S3
+                    kwargs["file_size"] = None
                 await fct_call(session=session, **kwargs)
