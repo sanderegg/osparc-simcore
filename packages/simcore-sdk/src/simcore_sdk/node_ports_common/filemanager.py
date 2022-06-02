@@ -470,12 +470,9 @@ async def upload_file(
             if use_rclone:
                 assert r_clone_settings  # nosec
                 await sync_local_to_s3(
-                    session=session,
-                    r_clone_settings=r_clone_settings,
-                    s3_object=s3_object,
-                    local_file_path=local_file_path,
-                    user_id=user_id,
-                    store_id=store_id,
+                    local_file_path,
+                    r_clone_settings,
+                    upload_links,
                 )
             else:
                 uploaded_parts = await _upload_file_to_presigned_links(
