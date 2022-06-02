@@ -606,7 +606,7 @@ qx.Class.define("osparc.file.FilePicker", {
             // remove double double quotes ""etag"" -> "etag"
             this.__uploadedParts[chunkIdx]["e_tag"] = eTag.slice(1, -1);
             if (this.__uploadedParts.every(uploadedPart => uploadedPart["e_tag"] !== null)) {
-              this.__completeUpload(file, presignedLinkData, xhr);
+              this.__checkCompleteUpload(file, presignedLinkData, xhr);
             }
           }
         } else {
@@ -626,31 +626,35 @@ qx.Class.define("osparc.file.FilePicker", {
     },
 
     // Use XMLHttpRequest to complete the upload to S3
-    __completeUpload: function(file, presignedLinkData) {
-      this.getNode().getStatus().setProgress(100);
+    __checkCompleteUpload: function(file, presignedLinkData) {
+      this.getNode().getStatus().setProgress(95);
       const completeUrl = presignedLinkData.resp.links.complete_upload;
       const location = presignedLinkData.locationId;
       const path = presignedLinkData.fileUuid;
       const xhr = new XMLHttpRequest();
       xhr.onloadend = () => {
-        console.log("completeUpload", xhr);
-        if (xhr.status == 202) {
-          console.log("waiting for completion", file.name);
-          // @odeimaiz: we need to poll the received new location in the response
-          // we do have links.state -> poll that link until it says ok
-          // right now this kind of work if files are small and this happens fast
-        }
-
         const fileMetadata = {
           location,
           dataset: this.getNode().getStudy().getUuid(),
-          path: path,
+          path,
           name: file.name
         };
-        if ("location" in fileMetadata && "dataset" in fileMetadata && "path" in fileMetadata && "name" in fileMetadata) {
-          this.setOutputValueFromStore(fileMetadata["location"], fileMetadata["dataset"], fileMetadata["path"], fileMetadata["name"]);
+        const resp = JSON.parse(xhr.responseText);
+        console.log(resp);
+        if ("error" in resp && resp["error"]) {
+          console.error(resp["error"]);
+          this.__abortUpload(presignedLinkData);
+        } else if ("data" in resp) {
+          if (xhr.status == 202) {
+            console.log("waiting for completion", file.name);
+            // @odeimaiz: we need to poll the received new location in the response
+            // we do have links.state -> poll that link until it says ok
+            // right now this kind of work if files are small and this happens fast
+            this.__pollFileUploadState(resp["data"]["links"]["state"], fileMetadata);
+          } else if (xhr.status == 200) {
+            this.__completeUpload(fileMetadata);
+          }
         }
-        this.fireEvent("fileUploaded");
       };
       xhr.open("POST", completeUrl, true);
       xhr.setRequestHeader("Content-Type", "application/json");
@@ -658,6 +662,27 @@ qx.Class.define("osparc.file.FilePicker", {
         parts: this.__uploadedParts
       };
       xhr.send(JSON.stringify(body));
+    },
+
+    __pollFileUploadState: function(stateLink, fileMetadata) {
+      fetch(stateLink, {
+        method: "GET"
+      })
+        .then(resp => {
+          if (resp.ok) {
+            this.__completeUpload(fileMetadata);
+          } else {
+            this.__pollFileUploadState(stateLink, fileMetadata);
+          }
+        });
+    },
+
+    __completeUpload: function(fileMetadata) {
+      this.getNode().getStatus().setProgress(100);
+      if ("location" in fileMetadata && "dataset" in fileMetadata && "path" in fileMetadata && "name" in fileMetadata) {
+        this.setOutputValueFromStore(fileMetadata["location"], fileMetadata["dataset"], fileMetadata["path"], fileMetadata["name"]);
+      }
+      this.fireEvent("fileUploaded");
     },
 
     __abortUpload: function(presignedLinkData) {
