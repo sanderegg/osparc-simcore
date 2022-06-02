@@ -378,21 +378,30 @@ def client(
 
 
 @pytest.fixture
-async def node_id(create_project_node: Callable[..., Awaitable[NodeID]]) -> NodeID:
-    return await create_project_node()
+async def node_id(
+    project_id: ProjectID, create_project_node: Callable[[ProjectID], Awaitable[NodeID]]
+) -> NodeID:
+    return await create_project_node(project_id)
 
 
 @pytest.fixture
-def create_file_uuid(project_id: ProjectID, node_id: NodeID) -> Callable[[str], FileID]:
-    def _creator(file_name: str) -> FileID:
+def create_file_uuid() -> Callable[[ProjectID, NodeID, str], FileID]:
+    def _creator(project_id: ProjectID, node_id: NodeID, file_name: str) -> FileID:
         return parse_obj_as(FileID, f"{project_id}/{node_id}/{file_name}")
 
     return _creator
 
 
 @pytest.fixture
-def file_uuid(create_file_uuid: Callable[[str], FileID], faker: Faker) -> FileID:
-    return create_file_uuid(f"öä$äö2-34 name in to add complexity {faker.file_name()}")
+def file_uuid(
+    project_id: ProjectID,
+    node_id: NodeID,
+    create_file_uuid: Callable[[ProjectID, NodeID, str], FileID],
+    faker: Faker,
+) -> FileID:
+    return create_file_uuid(
+        project_id, node_id, f"öä$äö2-34 name in to add complexity {faker.file_name()}"
+    )
 
 
 @pytest.fixture
@@ -402,7 +411,7 @@ def location_id() -> int:
 
 @pytest.fixture
 async def create_upload_file_link(
-    client: TestClient, user_id: UserID, project_id: ProjectID, location_id: int
+    client: TestClient, user_id: UserID, location_id: int
 ) -> AsyncIterator[Callable[..., Awaitable[FileUploadSchema]]]:
 
     file_params: list[tuple[UserID, int, FileID]] = []
@@ -451,9 +460,11 @@ def upload_file(
     storage_s3_client: StorageS3Client,
     storage_s3_bucket: str,
     client: TestClient,
+    project_id: ProjectID,
+    node_id: NodeID,
     create_upload_file_link: Callable[..., Awaitable[FileUploadSchema]],
     create_file_of_size: Callable[[ByteSize, Optional[str]], Path],
-    create_file_uuid: Callable[[str], FileID],
+    create_file_uuid: Callable[[ProjectID, NodeID, str], FileID],
 ) -> Callable[[ByteSize, str], Awaitable[tuple[Path, FileID]]]:
     async def _uploader(
         file_size: ByteSize, file_name: str, file_uuid: Optional[str] = None
@@ -462,7 +473,7 @@ def upload_file(
         # create a file
         file = create_file_of_size(file_size, file_name)
         if not file_uuid:
-            file_uuid = create_file_uuid(file_name)
+            file_uuid = create_file_uuid(project_id, node_id, file_name)
         # get an upload link
         file_upload_link = await create_upload_file_link(
             file_uuid, link_type="presigned", file_size=file_size

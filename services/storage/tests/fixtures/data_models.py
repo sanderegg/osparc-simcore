@@ -75,9 +75,9 @@ async def project_id(
 
 @pytest.fixture
 async def create_project_node(
-    user_id: UserID, project_id: ProjectID, aiopg_engine: Engine, faker: Faker
+    user_id: UserID, aiopg_engine: Engine, faker: Faker
 ) -> AsyncIterator[Callable[..., Awaitable[NodeID]]]:
-    async def _creator() -> NodeID:
+    async def _creator(project_id: ProjectID) -> NodeID:
         async with aiopg_engine.acquire() as conn:
             result = await conn.execute(
                 sa.select([projects.c.workbench]).where(

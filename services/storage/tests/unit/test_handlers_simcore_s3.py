@@ -16,15 +16,18 @@ from aiohttp.test_utils import TestClient
 from aiopg.sa.engine import Engine
 from faker import Faker
 from models_library.api_schemas_storage import FoldersBody
+from models_library.projects import ProjectID
+from models_library.projects_nodes_io import NodeID
 from models_library.users import UserID
 from models_library.utils.fastapi_encoders import jsonable_encoder
+from pydantic import ByteSize, parse_obj_as
 from pytest_simcore.helpers.utils_assert import assert_status
 from settings_library.s3 import S3Settings
-from simcore_postgres_database.storage_models import file_meta_data
+from simcore_postgres_database.storage_models import file_meta_data, projects
 from simcore_service_storage.access_layer import AccessRights
 from simcore_service_storage.constants import SIMCORE_S3_ID
 from simcore_service_storage.dsm import APP_DSM_KEY, DataStorageManager
-from simcore_service_storage.models import FileMetaData
+from simcore_service_storage.models import FileID, FileMetaData
 from simcore_service_storage.s3_client import StorageS3Client
 from tests.helpers.utils_project import clone_project_data
 
@@ -159,6 +162,66 @@ async def test_copy_folders_from_empty_project(
             .where(file_meta_data.c.project_id == dst_project["uuid"])
         )
         assert num_entries == 0
+
+
+async def _get_updated_project(aiopg_engine: Engine, project_id: str) -> dict[str, Any]:
+    async with aiopg_engine.acquire() as conn:
+        result = await conn.execute(
+            sa.select([projects]).where(projects.c.uuid == project_id)
+        )
+        row = await result.fetchone()
+        assert row
+        return dict(row)
+
+
+async def test_copy_folders_from_valid_project(
+    client: TestClient,
+    user_id: UserID,
+    create_project: Callable[[], Awaitable[dict[str, Any]]],
+    create_project_node: Callable[[ProjectID], Awaitable[NodeID]],
+    create_file_uuid: Callable[[ProjectID, NodeID, str], FileID],
+    upload_file: Callable[[ByteSize, str, str], Awaitable[tuple[Path, FileID]]],
+    faker: Faker,
+    aiopg_engine: Engine,
+    storage_s3_client: StorageS3Client,
+):
+    assert client.app
+    url = (
+        client.app.router["copy_folders_from_project"]
+        .url_for()
+        .with_query(user_id=user_id)
+    )
+
+    # we will copy from src to dst
+    src_project = await create_project()
+    src_node_id = await create_project_node(ProjectID(src_project["uuid"]))
+    src_file_name = faker.file_name()
+    src_file_uuid = create_file_uuid(
+        ProjectID(src_project["uuid"]), src_node_id, src_file_name
+    )
+    await upload_file(parse_obj_as(ByteSize, "10Mib"), src_file_name, src_file_uuid)
+
+    dst_project = await create_project()
+    dst_node_id = await create_project_node(ProjectID(dst_project["uuid"]))
+
+    # empty node map
+    response = await client.post(
+        f"{url}",
+        json=jsonable_encoder(
+            FoldersBody(
+                source=await _get_updated_project(aiopg_engine, src_project["uuid"]),
+                destination=await _get_updated_project(
+                    aiopg_engine, dst_project["uuid"]
+                ),
+                nodes_map={f"{src_node_id}": f"{dst_node_id}"},
+            )
+        ),
+    )
+    data, error = await assert_status(response, web.HTTPCreated)
+    assert not error
+    assert data == jsonable_encoder(
+        await _get_updated_project(aiopg_engine, dst_project["uuid"])
+    )
 
 
 current_dir = Path(sys.argv[0] if __name__ == "__main__" else __file__).resolve().parent
