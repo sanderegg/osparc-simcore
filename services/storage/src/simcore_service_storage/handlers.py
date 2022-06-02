@@ -116,7 +116,7 @@ def handle_storage_errors():
 # HANDLERS ---------------------------------------------------
 
 
-@routes.get(f"/{api_vtag}/locations", name="get_storage_locations", name="get_storage_locations")  # type: ignore
+@routes.get(f"/{api_vtag}/locations", name="get_storage_locations")  # type: ignore
 async def get_storage_locations(request: web.Request):
     query_params = parse_request_query_parameters_as(StorageQueryParamsBase, request)
     log.debug(
