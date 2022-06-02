@@ -11,6 +11,9 @@ from typing import Any
 import pytest
 from aiohttp import web
 from aiohttp.test_utils import TestClient
+from models_library.api_schemas_storage import FoldersBody
+from models_library.projects import ProjectID
+from models_library.users import UserID
 from pytest_simcore.helpers.utils_assert import assert_status
 from settings_library.s3 import S3Settings
 from simcore_service_storage.access_layer import AccessRights
@@ -70,11 +73,14 @@ async def test_simcore_s3_access_returns_default(client: TestClient):
     assert received_settings
 
 
-async def test_create_folders_from_project(client: TestClient):
+async def test_copy_folders_from_project(
+    client: TestClient,
+    user_id: UserID,
+    project_id: ProjectID,
+):
     assert client.app
-    url = (
-        client.app.router["create_folders_from_project"].url_for().with_query(user_id=1)
-    )
+    url = client.app.router["copy_folders_from_project"].url_for().with_query(user_id=1)
+    FoldersBody(source)
     response = await client.post(f"{url}")
     data, error = await assert_status(response, web.HTTPOk)
     assert not error
