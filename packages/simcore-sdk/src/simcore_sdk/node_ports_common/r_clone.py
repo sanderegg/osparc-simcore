@@ -2,20 +2,17 @@ import asyncio
 import logging
 import re
 import shlex
+import urllib.parse
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import AsyncGenerator, Optional
 
 from aiocache import cached
 from aiofiles import tempfile
-from aiohttp import ClientSession
-from models_library.users import UserID
+from models_library.api_schemas_storage import FileUploadSchema
 from pydantic.errors import PydanticErrorMixin
 from settings_library.r_clone import RCloneSettings
 from settings_library.utils_r_clone import get_r_clone_config
-
-from .constants import SIMCORE_LOCATION
-from .storage_client import LinkType, get_upload_file_links
 
 logger = logging.getLogger(__name__)
 
@@ -64,30 +61,16 @@ async def is_r_clone_available(r_clone_settings: Optional[RCloneSettings]) -> bo
 
 
 async def sync_local_to_s3(
-    session: ClientSession,
-    r_clone_settings: RCloneSettings,
-    s3_object: str,
     local_file_path: Path,
-    user_id: UserID,
-    store_id: str,
+    r_clone_settings: RCloneSettings,
+    upload_file_links: FileUploadSchema,
 ) -> None:
     """_summary_
 
     :raises e: RCloneFailedError
     """
-    assert store_id == SIMCORE_LOCATION  # nosec
-
-    s3_links = await get_upload_file_links(
-        session=session,
-        file_id=s3_object,
-        location_id=store_id,
-        user_id=user_id,
-        link_type=LinkType.S3,
-        file_size=None,
-    )
-    assert s3_links.urls  # nosec
-    assert len(s3_links.urls) == 1  # nosec
-    s3_link = s3_links.urls[0]
+    assert len(upload_file_links.urls) == 1  # nosec
+    s3_link = urllib.parse.unquote(upload_file_links.urls[0])
     s3_path = re.sub(r"^s3://", "", s3_link)
     logger.debug(" %s; %s", f"{s3_link=}", f"{s3_path=}")
 

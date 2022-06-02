@@ -109,7 +109,7 @@ def create(specs: openapi.Spec) -> List[web.RouteDef]:
         f"{_FILE_PATH}:complete/futures/{{future_id}}",
         storage_handlers.is_completed_upload_file,
     )
-    operation_id = specs.paths[path].operations["post"].operation_id
-    routes.append(web.post(BASEPATH + path, handle, name=operation_id))
+    operation_id = specs.paths[path].operations["get"].operation_id
+    routes.append(web.get(BASEPATH + path, handle, name=operation_id))
 
     return routes
