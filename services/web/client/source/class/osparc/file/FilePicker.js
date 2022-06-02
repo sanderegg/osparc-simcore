@@ -589,10 +589,13 @@ qx.Class.define("osparc.file.FilePicker", {
       // From https://github.com/minio/cookbook/blob/master/docs/presigned-put-upload-via-browser.md
       const url = presignedLinkData.resp.urls[chunkIdx];
       const xhr = new XMLHttpRequest();
+      let lastChunkPercent = 0;
       xhr.upload.addEventListener("progress", e => {
         if (e.lengthComputable) {
-          const percentComplete = e.loaded / e.total * 100;
-          this.getNode().getStatus().setProgress(percentComplete === 100 ? 99 : percentComplete);
+          const chunkPercent = (e.loaded / e.total * 100) / presignedLinkData.resp.urls.length;
+          const lastProgress = this.getNode().getStatus().getProgress();
+          this.getNode().getStatus().setProgress(lastProgress-lastChunkPercent+chunkPercent);
+          lastChunkPercent = chunkPercent;
         } else {
           console.log("Unable to compute progress information since the total size is unknown");
         }
