@@ -586,7 +586,9 @@ qx.Class.define("osparc.file.FilePicker", {
         this.__uploadingParts++;
         const chunkBlob = this.__createChunk(file, fileSize, chunkIdx, chunkSize);
         this.__uploadChunk(file, chunkBlob, presignedLinkData, chunkIdx);
-        while (this.__uploadingParts > 10) {
+        // in order to not overload both the browser and backend, keep less than 500MB in chunks
+        const mb200 = 200*1024*1024;
+        while (this.__uploadingParts > mb200/chunkSize) {
           const sleepFor = 1000;
           await osparc.utils.Utils.sleep(sleepFor);
         }
