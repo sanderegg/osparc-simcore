@@ -10,7 +10,7 @@ from collections import deque
 from contextlib import suppress
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Final, Optional
+from typing import Any, Final, Optional, Union
 
 import botocore
 import botocore.exceptions
@@ -206,7 +206,7 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
                         data.append(dex)
 
             if self.has_project_db:
-                uuid_name_dict = {}
+                uuid_name_dict: dict[Union[ProjectID, NodeID], str] = {}
                 # now parse the project to search for node/project names
                 try:
                     async with self.engine.acquire() as conn, conn.begin():
@@ -217,10 +217,12 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
                         async for row in conn.execute(query):
                             proj_data = dict(row.items())  # type: ignore
 
-                            uuid_name_dict[proj_data["uuid"]] = proj_data["name"]
+                            uuid_name_dict[ProjectID(proj_data["uuid"])] = proj_data[
+                                "name"
+                            ]
                             wb = proj_data["workbench"]
                             for node in wb.keys():
-                                uuid_name_dict[node] = wb[node]["label"]
+                                uuid_name_dict[NodeID(node)] = wb[node]["label"]
                 except DBAPIError as _err:
                     logger.exception("Error querying database for project names")
 
@@ -242,14 +244,12 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
                     if d.node_id in uuid_name_dict:
                         d.node_name = uuid_name_dict[d.node_id]
 
-                    d.raw_file_path = str(
-                        Path(d.project_id) / Path(d.node_id) / Path(d.file_name)
-                    )
+                    d.raw_file_path = f"{d.project_id}/{d.node_id}/{d.file_name}"
                     d.display_file_path = d.raw_file_path
                     d.file_id = d.file_uuid
                     if d.node_name and d.project_name:
-                        d.display_file_path = str(
-                            Path(d.project_name) / Path(d.node_name) / Path(d.file_name)
+                        d.display_file_path = (
+                            f"{d.project_name}/{d.node_name}/{d.file_name}"
                         )
                         # once the data was sync to postgres metadata table at this point
                         clean_data.append(dx)
