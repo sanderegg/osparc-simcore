@@ -17,6 +17,7 @@ import botocore.exceptions
 import sqlalchemy as sa
 from aiohttp import web
 from aiopg.sa import Engine
+from aiopg.sa.connection import SAConnection
 from models_library.api_schemas_storage import LinkType
 from models_library.projects import ProjectID
 from models_library.projects_nodes import NodeID
@@ -75,6 +76,18 @@ _MAX_LINK_CHUNK_BYTE_SIZE: Final[dict[LinkType, ByteSize]] = {
     LinkType.PRESIGNED: _PRESIGNED_LINK_MAX_SIZE,
     LinkType.S3: _S3_MAX_FILE_SIZE,
 }
+
+
+async def _check_project_exists(conn: SAConnection, project_uuid: ProjectID):
+    if (
+        await conn.scalar(
+            sa.select([sa.func.count()])
+            .select_from(projects)
+            .where(projects.c.uuid == f"{project_uuid}")
+        )
+        == 0
+    ):
+        raise web.HTTPNotFound(reason=f"Project '{project_uuid}' not found")
 
 
 def setup_dsm(app: web.Application):
@@ -736,30 +749,34 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
 
         Lastly, the meta data db is kept in sync
         """
-        source_folder = ProjectID(source_project["uuid"])
-        dest_folder = ProjectID(destination_project["uuid"])
+        src_project_uuid = ProjectID(source_project["uuid"])
+        dest_project_uuid = ProjectID(destination_project["uuid"])
 
-        # access layer
         async with self.engine.acquire() as conn, conn.begin():
+
+            for prj_uuid in [src_project_uuid, dest_project_uuid]:
+                await _check_project_exists(conn, prj_uuid)
+
+            # access layer
             source_access_rights = await get_project_access_rights(
-                conn, user_id, project_id=source_folder
+                conn, user_id, project_id=src_project_uuid
             )
             dest_access_rights = await get_project_access_rights(
-                conn, user_id, project_id=dest_folder
+                conn, user_id, project_id=dest_project_uuid
             )
         if not source_access_rights.read:
             raise web.HTTPForbidden(
-                reason=f"User {user_id} does not have enough access rights to read from project '{source_folder}'"
+                reason=f"User {user_id} does not have enough access rights to read from project '{src_project_uuid}'"
             )
 
         if not dest_access_rights.write:
             raise web.HTTPForbidden(
-                reason=f"User {user_id} does not have enough access rights to write to project '{dest_folder}'"
+                reason=f"User {user_id} does not have enough access rights to write to project '{dest_project_uuid}'"
             )
 
         # build up naming map based on labels
         uuid_name_dict = {}
-        uuid_name_dict[dest_folder] = destination_project["name"]
+        uuid_name_dict[dest_project_uuid] = destination_project["name"]
         for src_node_id, src_node in source_project["workbench"].items():
             new_node_id = node_mapping.get(src_node_id)
             if new_node_id is not None:
@@ -768,14 +785,14 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
         logger.debug(
             "Listing all items under  %s:%s/",
             self.simcore_bucket_name,
-            source_folder,
+            src_project_uuid,
         )
 
         # Step 1: list all objects for this project replace them with the destination object name
         # and do a copy at the same time collect some names
         # Note: the / at the end of the Prefix is VERY important, makes the listing several order of magnitudes faster
         response = await get_s3_client(self.app).client.list_objects_v2(
-            Bucket=self.simcore_bucket_name, Prefix=f"{source_folder}/"
+            Bucket=self.simcore_bucket_name, Prefix=f"{src_project_uuid}/"
         )
 
         contents: list = response.get("Contents", [])
@@ -783,7 +800,7 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
             "Listed  %s items under %s:%s/",
             len(contents),
             self.simcore_bucket_name,
-            source_folder,
+            src_project_uuid,
         )
 
         for item in contents:
@@ -806,7 +823,7 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
             if new_node_id is not None:
                 old_filename = source_object_parts[2]
                 dest_object_name = str(
-                    Path(f"{dest_folder}") / new_node_id / old_filename
+                    Path(f"{dest_project_uuid}") / new_node_id / old_filename
                 )
 
                 logger.debug(
@@ -827,14 +844,14 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
                     "Copying %s to %s completed", source_object_name, dest_object_name
                 )
 
-        # Step 2: list all references in outputs that point to datcore and copy over
+        # Step 2: list all references in outputs and copy over
         for node_id, node in destination_project["workbench"].items():
             outputs: dict = node.get("outputs", {})
             for _, output in outputs.items():
                 source = output["path"]
 
                 if output.get("store") == DATCORE_ID:
-                    destination_folder = str(Path(f"{dest_folder}") / node_id)
+                    destination_folder = str(Path(f"{dest_project_uuid}") / node_id)
                     logger.info("Copying %s to %s", source, destination_folder)
 
                     destination = await self.copy_file_datcore_s3(
@@ -850,7 +867,7 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
 
                 elif output.get("store") == SIMCORE_S3_ID:
                     destination = str(
-                        Path(f"{dest_folder}") / node_id / Path(source).name
+                        Path(f"{dest_project_uuid}") / node_id / Path(source).name
                     )
                     output["store"] = SIMCORE_S3_ID
                     output["path"] = destination
@@ -860,32 +877,31 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
         # step 3: list files first to create fmds
         # Note: the / at the end of the Prefix is VERY important, makes the listing several order of magnitudes faster
         response = await get_s3_client(self.app).client.list_objects_v2(
-            Bucket=self.simcore_bucket_name, Prefix=f"{dest_folder}/"
+            Bucket=self.simcore_bucket_name, Prefix=f"{dest_project_uuid}/"
         )
 
-        if "Contents" in response:
-            for item in response["Contents"]:
-                if "Key" not in item:
-                    continue
-                fmd = FileMetaData.from_simcore_node(
-                    user_id=user_id,
-                    file_uuid=item["Key"],
-                    bucket=self.simcore_bucket_name,
-                )
-                fmd.project_name = uuid_name_dict.get(dest_folder, "Untitled")
-                fmd.node_name = uuid_name_dict.get(fmd.node_id, "Untitled")
-                fmd.raw_file_path = fmd.file_uuid
-                fmd.display_file_path = str(
-                    Path(fmd.project_name or "Untitled")
-                    / (fmd.node_name or "Untitled")
-                    / fmd.file_name
-                )
-                fmd.user_id = user_id
-                assert "Size" in item  # nosec
-                fmd.file_size = ByteSize(item["Size"])
-                assert "LastModified" in item  # nosec
-                fmd.last_modified = item["LastModified"]
-                fmds.append(fmd)
+        for item in response.get("Contents", []):
+            if "Key" not in item:
+                continue
+            fmd = FileMetaData.from_simcore_node(
+                user_id=user_id,
+                file_uuid=item["Key"],
+                bucket=self.simcore_bucket_name,
+            )
+            fmd.project_name = uuid_name_dict.get(dest_project_uuid, "Untitled")
+            fmd.node_name = uuid_name_dict.get(fmd.node_id, "Untitled")
+            fmd.raw_file_path = fmd.file_uuid
+            fmd.display_file_path = str(
+                Path(fmd.project_name or "Untitled")
+                / (fmd.node_name or "Untitled")
+                / fmd.file_name
+            )
+            fmd.user_id = user_id
+            assert "Size" in item  # nosec
+            fmd.file_size = ByteSize(item["Size"])
+            assert "LastModified" in item  # nosec
+            fmd.last_modified = item["LastModified"]
+            fmds.append(fmd)
 
         # step 4 sync db
         async with self.engine.acquire() as conn, conn.begin():

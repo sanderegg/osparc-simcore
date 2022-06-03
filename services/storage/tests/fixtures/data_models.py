@@ -4,7 +4,6 @@
 
 
 from typing import Any, AsyncIterator, Awaitable, Callable
-from uuid import UUID
 
 import pytest
 import sqlalchemy as sa
@@ -31,7 +30,7 @@ async def user_id(aiopg_engine: Engine) -> AsyncIterator[UserID]:
     async with aiopg_engine.acquire() as conn:
         result = await conn.execute(stmt)
         row = await result.fetchone()
-
+    assert row
     assert isinstance(row.id, int)
     yield row.id
 
@@ -40,30 +39,45 @@ async def user_id(aiopg_engine: Engine) -> AsyncIterator[UserID]:
 
 
 @pytest.fixture
-async def project_id(user_id: UserID, aiopg_engine: Engine) -> AsyncIterator[ProjectID]:
-    # inject a random project for user in db. This will give user_id, the full project's ownership
+async def create_project(
+    user_id: UserID, aiopg_engine: Engine
+) -> AsyncIterator[Callable[[], Awaitable[dict[str, Any]]]]:
+    created_project_uuids = []
 
-    # pylint: disable=no-value-for-parameter
-    stmt = (
-        projects.insert()
-        .values(**random_project(prj_owner=user_id))
-        .returning(projects.c.uuid)
-    )
+    async def _creator() -> dict[str, Any]:
+        async with aiopg_engine.acquire() as conn:
+            result = await conn.execute(
+                projects.insert()
+                .values(**random_project(prj_owner=user_id))
+                .returning(sa.literal_column("*"))
+            )
+            row = await result.fetchone()
+            assert row
+            created_project_uuids.append(row[projects.c.uuid])
+            return dict(row)
+
+    yield _creator
+    # cleanup
     async with aiopg_engine.acquire() as conn:
-        result = await conn.execute(stmt)
-        [prj_uuid] = (await result.fetchone()).as_tuple()
+        await conn.execute(
+            projects.delete().where(projects.c.uuid.in_(created_project_uuids))
+        )
 
-    yield UUID(prj_uuid)
 
-    async with aiopg_engine.acquire() as conn:
-        await conn.execute(projects.delete().where(projects.c.uuid == prj_uuid))
+@pytest.fixture
+async def project_id(
+    create_project: Callable[[], Awaitable[dict[str, Any]]]
+) -> ProjectID:
+
+    project = await create_project()
+    return ProjectID(project["uuid"])
 
 
 @pytest.fixture
 async def create_project_node(
-    user_id: UserID, project_id: ProjectID, aiopg_engine: Engine, faker: Faker
+    user_id: UserID, aiopg_engine: Engine, faker: Faker
 ) -> AsyncIterator[Callable[..., Awaitable[NodeID]]]:
-    async def _creator() -> NodeID:
+    async def _creator(project_id: ProjectID) -> NodeID:
         async with aiopg_engine.acquire() as conn:
             result = await conn.execute(
                 sa.select([projects.c.workbench]).where(

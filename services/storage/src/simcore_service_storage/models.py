@@ -1,7 +1,7 @@
 import datetime
 import urllib.parse
 from dataclasses import dataclass
-from typing import Any, Literal, Optional
+from typing import Literal, Optional
 from uuid import UUID
 
 from models_library.api_schemas_storage import ETag, LinkType
@@ -264,16 +264,6 @@ class MultiPartUploadLinks(BaseModel):
     upload_id: UploadID
     chunk_size: ByteSize
     urls: list[AnyUrl]
-
-
-class FoldersBody(BaseModel):
-    source: dict[str, Any] = Field(default_factory=dict)
-    destination: dict[str, Any] = Field(default_factory=dict)
-    nodes_map: dict[str, str] = Field(default_factory=dict)
-
-
-class SoftCopyBody(BaseModel):
-    link_id: str
 
 
 __all__ = (
