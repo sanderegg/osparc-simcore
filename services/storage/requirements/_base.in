@@ -17,6 +17,9 @@
 aiohttp
 aiohttp-swagger[performance]
 
+# redis
+redis
+
 # s3 storage
 aiobotocore
 # dependencies due to type annotations

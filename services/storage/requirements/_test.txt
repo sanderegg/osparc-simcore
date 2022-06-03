@@ -172,6 +172,7 @@ numpy==1.22.3
     # via pandas
 packaging==21.3
     # via
+    #   -c requirements/_base.txt
     #   pytest
     #   pytest-sugar
 pandas==1.4.2
@@ -196,8 +197,9 @@ pycparser==2.21
     # via cffi
 pylint==2.13.8
     # via -r requirements/_test.in
-pyparsing==3.0.8
+pyparsing==3.0.9
     # via
+    #   -c requirements/_base.txt
     #   moto
     #   packaging
 pyrsistent==0.18.1
