@@ -1,6 +1,7 @@
 # pylint: disable=redefined-outer-name
 # pylint: disable=unused-argument
 # pylint: disable=unused-variable
+# pylint: disable=too-many-nested-blocks
 
 import asyncio
 import json
@@ -313,7 +314,7 @@ async def _create_and_delete_folders_from_project(
 def mock_check_project_exists(mocker: MockerFixture):
     # NOTE: this avoid having to inject project in database
     mock = mocker.patch(
-        f"simcore_service_storage.dsm._check_project_exists",
+        "simcore_service_storage.dsm._check_project_exists",
         autospec=True,
         return_value=None,
     )
