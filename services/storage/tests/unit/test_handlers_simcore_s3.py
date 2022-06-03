@@ -194,17 +194,25 @@ async def test_copy_folders_from_valid_project(
 
     # we will copy from src to dst
     src_project = await create_project()
-    src_node_id = await create_project_node(ProjectID(src_project["uuid"]))
-    src_file_name = faker.file_name()
-    src_file_uuid = create_file_uuid(
-        ProjectID(src_project["uuid"]), src_node_id, src_file_name
-    )
-    src_file, _ = await upload_file(
-        parse_obj_as(ByteSize, "10Mib"), src_file_name, src_file_uuid
-    )
-
     dst_project = await create_project()
-    dst_node_id = await create_project_node(ProjectID(dst_project["uuid"]))
+    NUM_NODES = 12
+    src_projects_list: dict[NodeID, dict[FileID, Path]] = {}
+    dst_projects_list: list[NodeID] = []
+    for node_index in range(NUM_NODES):
+        src_node_id = await create_project_node(ProjectID(src_project["uuid"]))
+        dst_node_id = await create_project_node(ProjectID(dst_project["uuid"]))
+        src_file_name = faker.file_name()
+        src_file_uuid = create_file_uuid(
+            ProjectID(src_project["uuid"]), src_node_id, src_file_name
+        )
+        src_projects_list[src_node_id] = {}
+        dst_projects_list.append(dst_node_id)
+        num_files = faker.pyint(min_value=1, max_value=7)
+        for file_index in range(num_files):
+            src_file, _ = await upload_file(
+                parse_obj_as(ByteSize, "10Mib"), src_file_name, src_file_uuid
+            )
+            src_projects_list[src_node_id][src_file_uuid] = src_file
 
     # empty node map
     response = await client.post(
@@ -215,7 +223,12 @@ async def test_copy_folders_from_valid_project(
                 destination=await _get_updated_project(
                     aiopg_engine, dst_project["uuid"]
                 ),
-                nodes_map={f"{src_node_id}": f"{dst_node_id}"},
+                nodes_map={
+                    f"{src_node_id}": f"{dst_node_id}"
+                    for src_node_id, dst_node_id in zip(
+                        src_projects_list, dst_projects_list
+                    )
+                },
             )
         ),
     )
@@ -225,16 +238,18 @@ async def test_copy_folders_from_valid_project(
         await _get_updated_project(aiopg_engine, dst_project["uuid"])
     )
     # check that file meta data was effectively copied
-    await assert_file_meta_data_in_db(
-        aiopg_engine,
-        file_uuid=create_file_uuid(
-            ProjectID(dst_project["uuid"]), dst_node_id, src_file_name
-        ),
-        expected_entry_exists=True,
-        expected_file_size=src_file.stat().st_size,
-        expected_upload_id=None,
-        expected_upload_expiration_date=None,
-    )
+    for src_node_id, dst_node_id in zip(src_projects_list, dst_projects_list):
+        for src_file_uuid, src_file in src_projects_list[src_node_id].items():
+            await assert_file_meta_data_in_db(
+                aiopg_engine,
+                file_uuid=create_file_uuid(
+                    ProjectID(dst_project["uuid"]), dst_node_id, src_file.name
+                ),
+                expected_entry_exists=True,
+                expected_file_size=src_file.stat().st_size,
+                expected_upload_id=None,
+                expected_upload_expiration_date=None,
+            )
 
 
 current_dir = Path(sys.argv[0] if __name__ == "__main__" else __file__).resolve().parent
