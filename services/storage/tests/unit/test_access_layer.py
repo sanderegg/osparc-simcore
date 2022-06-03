@@ -15,7 +15,7 @@ from simcore_service_storage.access_layer import (
     get_project_access_rights,
 )
 
-pytest_simcore_core_services_selection = ["postgres"]
+pytest_simcore_core_services_selection = ["postgres", "redis"]
 
 
 @pytest.fixture

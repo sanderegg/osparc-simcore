@@ -6,7 +6,7 @@ from aiohttp.test_utils import TestClient
 from models_library.users import UserID
 from tests.helpers.utils import has_datcore_tokens
 
-pytest_simcore_core_services_selection = ["postgres"]
+pytest_simcore_core_services_selection = ["postgres", "redis"]
 pytest_simcore_ops_services_selection = ["adminer"]
 
 

@@ -34,7 +34,7 @@ from simcore_service_storage.s3_client import StorageS3Client
 from tests.helpers.utils_file_meta_data import assert_file_meta_data_in_db
 from tests.helpers.utils_project import clone_project_data
 
-pytest_simcore_core_services_selection = ["postgres"]
+pytest_simcore_core_services_selection = ["postgres", "redis"]
 pytest_simcore_ops_services_selection = ["adminer"]
 
 

@@ -34,7 +34,7 @@ from simcore_service_storage.models import (
 )
 from simcore_service_storage.s3_client import StorageS3Client, UploadedPart
 
-pytest_simcore_core_services_selection = ["postgres"]
+pytest_simcore_core_services_selection = ["postgres", "redis"]
 pytest_simcore_ops_services_selection = ["adminer"]
 
 

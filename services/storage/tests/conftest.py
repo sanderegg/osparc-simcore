@@ -41,6 +41,7 @@ from moto.server import ThreadedMotoServer
 from pydantic import ByteSize, parse_obj_as
 from pytest_simcore.helpers.utils_assert import assert_status
 from pytest_simcore.helpers.utils_docker import get_localhost_ip
+from settings_library.redis import RedisSettings
 from simcore_service_storage.application import create
 from simcore_service_storage.constants import APP_DSM_KEY, SIMCORE_S3_STR
 from simcore_service_storage.dsm import DataStorageManager
@@ -76,6 +77,7 @@ pytest_plugins = [
     "pytest_simcore.tmp_path_extra",
     "pytest_simcore.monkeypatch_extra",
     "pytest_simcore.file_extra",
+    "pytest_simcore.redis_service",
 ]
 
 CURRENT_DIR = Path(sys.argv[0] if __name__ == "__main__" else __file__).resolve().parent
@@ -352,6 +354,7 @@ def mock_config(
     aiopg_engine: Engine,
     postgres_host_config: dict[str, str],
     mocked_s3_server_envs,
+    redis_service: RedisSettings,
 ):
     # NOTE: this can be overriden in tests that do not need all dependencies up
     ...

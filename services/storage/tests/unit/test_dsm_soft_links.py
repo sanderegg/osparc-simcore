@@ -16,7 +16,7 @@ from simcore_service_storage.dsm import DataStorageManager
 from simcore_service_storage.models import FileMetaData, FileMetaDataEx, file_meta_data
 from sqlalchemy.sql.expression import literal_column
 
-pytest_simcore_core_services_selection = ["postgres"]
+pytest_simcore_core_services_selection = ["postgres", "redis"]
 pytest_simcore_ops_services_selection = ["adminer"]
 
 

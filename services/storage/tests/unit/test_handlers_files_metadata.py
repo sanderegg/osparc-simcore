@@ -18,7 +18,7 @@ from pydantic import ByteSize, parse_obj_as
 from pytest_simcore.helpers.utils_assert import assert_status
 from simcore_service_storage.models import FileID
 
-pytest_simcore_core_services_selection = ["postgres"]
+pytest_simcore_core_services_selection = ["postgres", "redis"]
 pytest_simcore_ops_services_selection = ["adminer"]
 
 

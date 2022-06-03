@@ -39,7 +39,7 @@ from tests.helpers.file_utils import upload_file_part
 from tests.helpers.utils_file_meta_data import assert_file_meta_data_in_db
 from yarl import URL
 
-pytest_simcore_core_services_selection = ["postgres"]
+pytest_simcore_core_services_selection = ["postgres", "redis"]
 pytest_simcore_ops_services_selection = ["adminer"]
 
 
