@@ -21,6 +21,7 @@ from models_library.projects_nodes_io import NodeID
 from models_library.users import UserID
 from models_library.utils.fastapi_encoders import jsonable_encoder
 from pydantic import ByteSize, parse_obj_as
+from pytest_mock import MockerFixture
 from pytest_simcore.helpers.utils_assert import assert_status
 from settings_library.s3 import S3Settings
 from simcore_postgres_database.storage_models import file_meta_data, projects
@@ -308,6 +309,16 @@ async def _create_and_delete_folders_from_project(
     await assert_status(resp, expected_cls=web.HTTPNoContent)
 
 
+@pytest.fixture
+def mock_check_project_exists(mocker: MockerFixture):
+    # NOTE: this avoid having to inject project in database
+    mock = mocker.patch(
+        f"simcore_service_storage.dsm._check_project_exists",
+        autospec=True,
+        return_value=None,
+    )
+
+
 @pytest.mark.parametrize(
     "project_name,project", [(prj["name"], prj) for prj in _get_project_with_data()]
 )
@@ -318,6 +329,7 @@ async def test_create_and_delete_folders_from_project(
     project: dict[str, Any],
     mock_get_project_access_rights,
     mock_datcore_download,
+    mock_check_project_exists,
 ):
     source_project = project
     await _create_and_delete_folders_from_project(source_project, client)
@@ -333,6 +345,7 @@ async def test_create_and_delete_folders_from_project_burst(
     project,
     mock_get_project_access_rights,
     mock_datcore_download,
+    mock_check_project_exists,
 ):
     source_project = project
 
