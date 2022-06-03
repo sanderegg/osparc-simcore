@@ -255,7 +255,6 @@ qx.Class.define("osparc.file.FilePicker", {
     __selectedFileFound: null,
     __fileDownloadLink: null,
     __uploadedParts: null,
-    __uploadingParts: null,
 
     setOutputValueFromStore: function(store, dataset, path, label) {
       this.self().setOutputValueFromStore(this.getNode(), store, dataset, path, label);
@@ -573,7 +572,6 @@ qx.Class.define("osparc.file.FilePicker", {
 
       // create empty object, it will be filled up with etags and 1 based chunk ids when chunks get uploaded
       this.__uploadedParts = [];
-      this.__uploadingParts = 0;
       for (let chunkIdx = 0; chunkIdx < presignedLinkData.resp.urls.length; chunkIdx++) {
         this.__uploadedParts.push({
           "number": chunkIdx+1,
@@ -583,42 +581,47 @@ qx.Class.define("osparc.file.FilePicker", {
       const fileSize = presignedLinkData.fileSize;
       const chunkSize = presignedLinkData.resp["chunk_size"];
       for (let chunkIdx = 0; chunkIdx < presignedLinkData.resp.urls.length; chunkIdx++) {
-        this.__uploadingParts++;
         const chunkBlob = this.__createChunk(file, fileSize, chunkIdx, chunkSize);
-        this.__uploadChunk(file, chunkBlob, presignedLinkData, chunkIdx);
-        // in order to not overload both the browser and backend, 5 chunks in parallel
-        while (this.__uploadingParts > 4) {
-          const sleepFor = 1000;
-          await osparc.utils.Utils.sleep(sleepFor);
+        try {
+          const uploaded = await this.__uploadChunk(file, chunkBlob, presignedLinkData, chunkIdx);
+          if (!uploaded) {
+            this.__abortUpload(presignedLinkData);
+          }
+        } catch (err) {
+          this.__abortUpload(presignedLinkData);
         }
       }
     },
 
     __uploadChunk: function(file, chunkBlob, presignedLinkData, chunkIdx) {
-      // From https://github.com/minio/cookbook/blob/master/docs/presigned-put-upload-via-browser.md
-      const url = presignedLinkData.resp.urls[chunkIdx];
-      const xhr = new XMLHttpRequest();
-      xhr.onload = () => {
-        if (xhr.status == 200) {
-          const eTag = xhr.getResponseHeader("etag");
-          if (eTag) {
-            // remove double double quotes ""etag"" -> "etag"
-            this.__uploadedParts[chunkIdx]["e_tag"] = eTag.slice(1, -1);
-            this.__uploadingParts--;
-            const uploadedParts = this.__uploadedParts.filter(uploadedPart => uploadedPart["e_tag"] !== null).length;
-            const progress = uploadedParts/this.__uploadedParts.length;
-            this.getNode().getStatus().setProgress(100*progress-1);
-            if (this.__uploadedParts.every(uploadedPart => uploadedPart["e_tag"] !== null)) {
-              this.__checkCompleteUpload(file, presignedLinkData, xhr);
+      return new Promise((resolve, reject) => {
+        // From https://github.com/minio/cookbook/blob/master/docs/presigned-put-upload-via-browser.md
+        const url = presignedLinkData.resp.urls[chunkIdx];
+        const xhr = new XMLHttpRequest();
+        xhr.onload = () => {
+          if (xhr.status == 200) {
+            const eTag = xhr.getResponseHeader("etag");
+            if (eTag) {
+              // remove double double quotes ""etag"" -> "etag"
+              this.__uploadedParts[chunkIdx]["e_tag"] = eTag.slice(1, -1);
+              const uploadedParts = this.__uploadedParts.filter(uploadedPart => uploadedPart["e_tag"] !== null).length;
+              const progress = uploadedParts/this.__uploadedParts.length;
+              this.getNode().getStatus().setProgress(100*progress-1);
+              if (this.__uploadedParts.every(uploadedPart => uploadedPart["e_tag"] !== null)) {
+                this.__checkCompleteUpload(file, presignedLinkData, xhr);
+              }
+              resolve(true);
             }
+            resolve(false);
+          } else {
+            console.error(xhr.response);
+            this.__abortUpload(presignedLinkData);
+            reject(xhr.response);
           }
-        } else {
-          console.error(xhr.response);
-          this.__abortUpload(presignedLinkData);
-        }
-      };
-      xhr.open("PUT", url, true);
-      xhr.send(chunkBlob);
+        };
+        xhr.open("PUT", url, true);
+        xhr.send(chunkBlob);
+      });
     },
 
     __createChunk: function(file, fileSize, chunkIdx, chunkSize) {
