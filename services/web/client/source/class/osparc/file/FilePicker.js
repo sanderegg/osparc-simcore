@@ -553,6 +553,7 @@ qx.Class.define("osparc.file.FilePicker", {
       const fileUuid = studyId +"/"+ nodeId +"/"+ fileId;
       const fileSize = file.size;
       const dataStore = osparc.store.Data.getInstance();
+      this.getNode().getStatus().setProgress(1);
       dataStore.getPresignedLink(download, locationId, fileUuid, fileSize)
         .then(presignedLinkData => {
           if (presignedLinkData.resp.urls) {
@@ -568,7 +569,7 @@ qx.Class.define("osparc.file.FilePicker", {
 
     // Use XMLHttpRequest to upload the file to S3.
     __uploadFile: async function(file, presignedLinkData) {
-      this.getNode().getStatus().setProgress(1);
+      this.getNode().getStatus().setProgress(2);
 
       // create empty object, it will be filled up with etags and 1 based chunk ids when chunks get uploaded
       this.__uploadedParts = [];
