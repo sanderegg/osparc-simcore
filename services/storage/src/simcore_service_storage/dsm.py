@@ -26,8 +26,6 @@ from models_library.utils.fastapi_encoders import jsonable_encoder
 from pydantic import AnyUrl, ByteSize, parse_obj_as
 from servicelib.aiohttp.aiopg_utils import DBAPIError
 from servicelib.aiohttp.client_session import get_client_session
-from simcore_service_storage.exceptions import FileMetaDataNotFoundError
-from simcore_service_webserver.redis import get_redis_lock_manager_client
 from sqlalchemy.sql.expression import literal_column
 from yarl import URL
 
@@ -49,6 +47,7 @@ from .constants import (
     SIMCORE_S3_STR,
 )
 from .datcore_adapter import datcore_adapter
+from .exceptions import FileMetaDataNotFoundError
 from .models import (
     DatasetMetaData,
     DatCoreApiToken,
@@ -60,6 +59,7 @@ from .models import (
     file_meta_data,
     projects,
 )
+from .redis import get_redis_lock_manager_client
 from .s3 import get_s3_client
 from .s3_client import FileID, UploadedPart
 from .settings import Settings

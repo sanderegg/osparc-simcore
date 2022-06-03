@@ -24,7 +24,7 @@ log = logging.getLogger(__name__)
 
 
 def get_plugin_settings(app: web.Application) -> RedisSettings:
-    settings: Optional[RedisSettings] = app[APP_CONFIG_KEY].WEBSERVER_REDIS
+    settings: Optional[RedisSettings] = app[APP_CONFIG_KEY].STORAGE_REDIS
     assert settings, "setup_settings not called?"  # nosec
     assert isinstance(settings, RedisSettings)  # nosec
     return settings
