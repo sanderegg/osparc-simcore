@@ -486,7 +486,7 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
         NOTE: for multipart upload, the upload shall be aborted/concluded to spare
         unnecessary costs and dangling updates
         """
-        async with self.engine.acquire() as conn:
+        async with self.engine.acquire() as conn, conn.begin():
             can: Optional[AccessRights] = await get_file_access_rights(
                 conn, user_id, file_uuid
             )
@@ -504,59 +504,58 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
                 bucket=self.simcore_bucket_name,
                 upload_expires_at=upload_expiration_date,
             )
-            async with conn.begin():
-                # NOTE: if this gets called successively with the same file_uuid, and
-                # there was a multipart upload in progress beforehand, it MUST be
-                # cancelled
-                if upload_id := await db_file_meta_data.get_upload_id(conn, file_uuid):
-                    await get_s3_client(self.app).abort_multipart_upload(
-                        bucket=self.simcore_bucket_name,
-                        file_id=file_uuid,
-                        upload_id=upload_id,
-                    )
-                await db_file_meta_data.upsert_file_metadata_for_upload(conn, fmd)
-                if (
-                    link_type == LinkType.PRESIGNED
-                    and file_size_bytes < _MULTIPART_UPLOADS_MIN_TOTAL_SIZE
-                ):
-                    single_presigned_link = await get_s3_client(
-                        self.app
-                    ).create_single_presigned_upload_link(
-                        self.simcore_bucket_name,
-                        file_uuid,
-                        expiration_secs=self.settings.STORAGE_DEFAULT_PRESIGNED_LINK_EXPIRATION_SECONDS,
-                    )
-                    return UploadLinks(
-                        [single_presigned_link],
-                        file_size_bytes or _MAX_LINK_CHUNK_BYTE_SIZE[link_type],
-                    )
-
-                if link_type == LinkType.PRESIGNED:
-                    assert file_size_bytes  # nosec
-
-                    # FIXME: a lock is needed here, else the dsm cleaner could remove that upload
-                    multipart_presigned_links = await get_s3_client(
-                        self.app
-                    ).create_multipart_upload_links(
-                        self.simcore_bucket_name,
-                        file_uuid,
-                        file_size_bytes,
-                        expiration_secs=self.settings.STORAGE_DEFAULT_PRESIGNED_LINK_EXPIRATION_SECONDS,
-                    )
-                    # update the database so we keep the upload id
-                    fmd.upload_id = multipart_presigned_links.upload_id
-                    await db_file_meta_data.upsert_file_metadata_for_upload(conn, fmd)
-                    return UploadLinks(
-                        multipart_presigned_links.urls,
-                        multipart_presigned_links.chunk_size,
-                    )
-                # user wants just the s3 link
-                s3_link = get_s3_client(self.app).compute_s3_url(
-                    self.simcore_bucket_name, file_uuid
+            # NOTE: if this gets called successively with the same file_uuid, and
+            # there was a multipart upload in progress beforehand, it MUST be
+            # cancelled
+            if upload_id := await db_file_meta_data.get_upload_id(conn, file_uuid):
+                await get_s3_client(self.app).abort_multipart_upload(
+                    bucket=self.simcore_bucket_name,
+                    file_id=file_uuid,
+                    upload_id=upload_id,
+                )
+            await db_file_meta_data.upsert_file_metadata_for_upload(conn, fmd)
+            if (
+                link_type == LinkType.PRESIGNED
+                and file_size_bytes < _MULTIPART_UPLOADS_MIN_TOTAL_SIZE
+            ):
+                single_presigned_link = await get_s3_client(
+                    self.app
+                ).create_single_presigned_upload_link(
+                    self.simcore_bucket_name,
+                    file_uuid,
+                    expiration_secs=self.settings.STORAGE_DEFAULT_PRESIGNED_LINK_EXPIRATION_SECONDS,
                 )
                 return UploadLinks(
-                    [s3_link], file_size_bytes or _MAX_LINK_CHUNK_BYTE_SIZE[link_type]
+                    [single_presigned_link],
+                    file_size_bytes or _MAX_LINK_CHUNK_BYTE_SIZE[link_type],
                 )
+
+            if link_type == LinkType.PRESIGNED:
+                assert file_size_bytes  # nosec
+
+                # FIXME: a lock is needed here, else the dsm cleaner could remove that upload
+                multipart_presigned_links = await get_s3_client(
+                    self.app
+                ).create_multipart_upload_links(
+                    self.simcore_bucket_name,
+                    file_uuid,
+                    file_size_bytes,
+                    expiration_secs=self.settings.STORAGE_DEFAULT_PRESIGNED_LINK_EXPIRATION_SECONDS,
+                )
+                # update the database so we keep the upload id
+                fmd.upload_id = multipart_presigned_links.upload_id
+                await db_file_meta_data.upsert_file_metadata_for_upload(conn, fmd)
+                return UploadLinks(
+                    multipart_presigned_links.urls,
+                    multipart_presigned_links.chunk_size,
+                )
+            # user wants just the s3 link
+            s3_link = get_s3_client(self.app).compute_s3_url(
+                self.simcore_bucket_name, file_uuid
+            )
+            return UploadLinks(
+                [s3_link], file_size_bytes or _MAX_LINK_CHUNK_BYTE_SIZE[link_type]
+            )
 
     async def abort_upload(self, file_uuid: FileID, user_id: UserID) -> None:
         """aborts a current upload and reverts to the last version if any.
