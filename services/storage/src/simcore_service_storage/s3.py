@@ -1,6 +1,7 @@
 """ Module to access s3 service
 
 """
+import json
 import logging
 from contextlib import AsyncExitStack
 
@@ -34,7 +35,7 @@ async def setup_s3_client(app):
                 log.info(
                     "S3 client %s successfully created [%s]",
                     f"{client=}",
-                    attempt.retry_state.retry_object.statistics,
+                    json.dumps(attempt.retry_state.retry_object.statistics),
                 )
         assert client  # nosec
         app[APP_S3_KEY] = client

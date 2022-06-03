@@ -55,3 +55,6 @@ APP_DB_ENGINE_KEY = f"{__name__}.db_engine"
 APP_DSM_THREADPOOL = f"{__name__}.dsm_threadpool"
 APP_DSM_KEY = f"{__name__}.DSM"
 APP_S3_KEY = f"{__name__}.S3_CLIENT"
+
+# REDIS LOCK MANAGER
+APP_REDIS_LOCK_MANAGER_KEY = f"{__name__}.REDIS_CLIENT"

@@ -4,6 +4,7 @@ from pydantic import Field, PositiveInt, validator
 from settings_library.base import BaseCustomSettings
 from settings_library.basic_types import LogLevel, PortInt
 from settings_library.postgres import PostgresSettings
+from settings_library.redis import RedisSettings
 from settings_library.s3 import S3Settings
 from settings_library.tracing import TracingSettings
 from settings_library.utils_logging import MixinLoggingSettings
@@ -57,6 +58,8 @@ class Settings(BaseCustomSettings, MixinLoggingSettings):
         30,
         description="Interval in seconds when task cleaning pending uploads runs. setting to NULL disables the cleaner.",
     )
+
+    STORAGE_REDIS: Optional[RedisSettings] = Field(auto_default_from_env=True)
 
     @validator("LOG_LEVEL")
     @classmethod

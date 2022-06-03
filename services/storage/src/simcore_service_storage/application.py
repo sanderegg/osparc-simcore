@@ -10,11 +10,12 @@ from servicelib.aiohttp.application import APP_CONFIG_KEY, create_safe_applicati
 from servicelib.aiohttp.dev_error_logger import setup_dev_error_logger
 from servicelib.aiohttp.monitoring import setup_monitoring
 from servicelib.aiohttp.tracing import setup_tracing
-from simcore_service_storage.dsm_cleaner import setup_dsm_cleaner
 
 from ._meta import WELCOME_MSG, app_name, version
 from .db import setup_db
 from .dsm import setup_dsm
+from .dsm_cleaner import setup_dsm_cleaner
+from .redis import setup_redis
 from .rest import setup_rest
 from .s3 import setup_s3
 from .settings import Settings
@@ -47,9 +48,11 @@ def create(settings: Settings) -> web.Application:
     if settings.STORAGE_S3:
         setup_s3(app)  # -> minio service
     if settings.STORAGE_POSTGRES and settings.STORAGE_S3:
-        setup_dsm(app)  # core subsystem. Needs s3 and db setups done
+        setup_dsm(app)  # core subsystem. Needs s3 and db, redis setups done
         if settings.STORAGE_CLEANER_INTERVAL_S:
             setup_dsm_cleaner(app)
+        if settings.STORAGE_REDIS:
+            setup_redis(app)  # redis only needed when dsm cleaner
     setup_rest(app)  # lastly, we expose API to the world
 
     if settings.LOG_LEVEL == "DEBUG":
