@@ -27,6 +27,7 @@ from pydantic import AnyUrl, ByteSize, parse_obj_as
 from servicelib.aiohttp.aiopg_utils import DBAPIError
 from servicelib.aiohttp.client_session import get_client_session
 from simcore_service_storage.exceptions import FileMetaDataNotFoundError
+from simcore_service_webserver.redis import get_redis_lock_manager_client
 from sqlalchemy.sql.expression import literal_column
 from yarl import URL
 
@@ -43,6 +44,7 @@ from .constants import (
     APP_DSM_KEY,
     DATCORE_ID,
     DATCORE_STR,
+    MULTIPART_UPLOAD_REDIS_LOCK_KEY,
     SIMCORE_S3_ID,
     SIMCORE_S3_STR,
 )
@@ -53,6 +55,7 @@ from .models import (
     FileMetaData,
     FileMetaDataEx,
     S3BucketName,
+    UploadID,
     UploadLinks,
     file_meta_data,
     projects,
@@ -513,6 +516,7 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
                     file_id=file_uuid,
                     upload_id=upload_id,
                 )
+            # initiate the upload call, we create an entry in the DB
             await db_file_meta_data.upsert_file_metadata_for_upload(conn, fmd)
             if (
                 link_type == LinkType.PRESIGNED
@@ -532,19 +536,23 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
 
             if link_type == LinkType.PRESIGNED:
                 assert file_size_bytes  # nosec
-
-                # FIXME: a lock is needed here, else the dsm cleaner could remove that upload
-                multipart_presigned_links = await get_s3_client(
-                    self.app
-                ).create_multipart_upload_links(
-                    self.simcore_bucket_name,
-                    file_uuid,
-                    file_size_bytes,
-                    expiration_secs=self.settings.STORAGE_DEFAULT_PRESIGNED_LINK_EXPIRATION_SECONDS,
-                )
-                # update the database so we keep the upload id
-                fmd.upload_id = multipart_presigned_links.upload_id
-                await db_file_meta_data.upsert_file_metadata_for_upload(conn, fmd)
+                # NOTE: we must lock here since there is a short time here
+                # where the upload ID exists WIHTOUT being in the DB, so it could potentially
+                # be removed by the DSM cleaner task in the meantime
+                async with get_redis_lock_manager_client(self.app).lock(
+                    name=MULTIPART_UPLOAD_REDIS_LOCK_KEY
+                ):
+                    multipart_presigned_links = await get_s3_client(
+                        self.app
+                    ).create_multipart_upload_links(
+                        self.simcore_bucket_name,
+                        file_uuid,
+                        file_size_bytes,
+                        expiration_secs=self.settings.STORAGE_DEFAULT_PRESIGNED_LINK_EXPIRATION_SECONDS,
+                    )
+                    # update the database so we keep the upload id
+                    fmd.upload_id = multipart_presigned_links.upload_id
+                    await db_file_meta_data.upsert_file_metadata_for_upload(conn, fmd)
                 return UploadLinks(
                     multipart_presigned_links.urls,
                     multipart_presigned_links.chunk_size,
@@ -1144,7 +1152,12 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
 
         return {"removed": removed}
 
-    async def clean_expired_uploads(self) -> None:
+    async def _clean_expired_uploads(self):
+        """this method will check for all incomplete updates by checking
+        the upload_expires_at entry in file_meta_data table.
+        1. will try to update the entry from S3 backend if exists
+        2. will delete the entry if nothing exists in S3 backend.
+        """
         now = datetime.datetime.utcnow()
         async with self.engine.acquire() as conn:
             list_of_expired_uploads = await db_file_meta_data.list_fmds(
@@ -1175,34 +1188,49 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
         ]
 
         # delete the remaining ones
+        logger.debug(
+            "following unfinished/incomplete uploads will now be deleted : [%s]",
+            [fmd.file_id for fmd in list_of_fmds_to_delete],
+        )
         await asyncio.gather(
             *(
                 self.delete_file(fmd.user_id, fmd.location, fmd.file_uuid)
                 for fmd in list_of_fmds_to_delete
             )
         )
-        logger.info(
-            "pending uploads of [%s] deleted",
+        logger.warning(
+            "pending/incomplete uploads of [%s] removed",
             [fmd.file_id for fmd in list_of_fmds_to_delete],
         )
 
-        # if the database is 100% in sync it should not happen
-        current_uploads = await get_s3_client(self.app).list_ongoing_multipart_uploads(
-            self.simcore_bucket_name
-        )
+    async def _clean_dangling_multipart_uploads(self):
+        """this method removes any dangling multipart upload that
+        was initiated on S3 backend if it does not exist in file_meta_data
+        table.
+        NOTE: when a multipart upload is initiated there is a short time where
+        the upload exists without counterpart in the table. Therefore a distributed lock
+        is used.
+        """
+        current_uploads: list[tuple[UploadID, FileID]] = await get_s3_client(
+            self.app
+        ).list_ongoing_multipart_uploads(self.simcore_bucket_name)
         if not current_uploads:
-            # nothing to do
-            return
-        current_upload_ids = [u for u, _ in current_uploads]
-        async with self.engine.acquire() as conn:
-            list_of_valid_uploads = await db_file_meta_data.list_fmds(
-                conn, upload_ids=current_upload_ids
-            )
-        if len(current_uploads) == len(list_of_valid_uploads):
-            # we are done
             return
 
-        # there are dangling uploads that need aborting, find which ones
+        # we do have some upload ids, let's check if they are all known to
+        # us (counterpart in file_meta_data)
+        # NOTE: we use the lock here to ensure we get the current list and that no new
+        # upload is created at this time.
+        async with get_redis_lock_manager_client(self.app).lock(
+            name=MULTIPART_UPLOAD_REDIS_LOCK_KEY
+        ), self.engine.acquire() as conn:
+            list_of_valid_uploads = await db_file_meta_data.list_fmds(
+                conn, upload_ids=[u for u, _ in current_uploads]
+            )
+        if len(current_uploads) == len(list_of_valid_uploads):
+            return
+
+        # we have some "dangling" uploads here.
         list_of_valid_upload_ids = [fmd.upload_id for fmd in list_of_valid_uploads]
         list_of_invalid_uploads = [
             (
@@ -1212,7 +1240,10 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
             for upload_id, file_id in current_uploads
             if upload_id not in list_of_valid_upload_ids
         ]
-
+        logger.debug(
+            "the following %s was found and will now be aborted",
+            f"{list_of_invalid_uploads=}",
+        )
         await asyncio.gather(
             *(
                 get_s3_client(self.app).abort_multipart_upload(
@@ -1222,7 +1253,12 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
             )
         )
         logger.warning(
-            "There are dangling multipart uploads %s, which were aborted. "
-            "TIP: this indicates something wrong in how storage handles pending uploads",
+            "Dangling multipart uploads %s, were aborted. "
+            "TIP: If storage was NOT improperly restarted, this might indicate that something went"
+            " wrong in how storage handles multipart uploads!!",
             f"{list_of_invalid_uploads}",
         )
+
+    async def clean_expired_uploads(self) -> None:
+        await self._clean_expired_uploads()
+        await self._clean_dangling_multipart_uploads()

@@ -58,3 +58,4 @@ APP_S3_KEY = f"{__name__}.S3_CLIENT"
 
 # REDIS LOCK MANAGER
 APP_REDIS_LOCK_MANAGER_KEY = f"{__name__}.REDIS_CLIENT"
+MULTIPART_UPLOAD_REDIS_LOCK_KEY = "storage_multipart_upload_lock"
