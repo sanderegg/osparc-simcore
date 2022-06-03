@@ -72,7 +72,6 @@ class ListModel(GenericModel, Generic[DataT]):
 class Envelope(GenericModel, Generic[DataT]):
     data: Optional[DataT] = None
     error: Optional[Any] = None
-    # TODO: this needs to be more concrete e.g. { "error": { "reason": "Invalid" , "exception": "ValueError" } }
 
     @classmethod
     def parse_data(cls, obj):
