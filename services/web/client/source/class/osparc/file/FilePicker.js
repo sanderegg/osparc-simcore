@@ -610,9 +610,8 @@ qx.Class.define("osparc.file.FilePicker", {
               if (this.__uploadedParts.every(uploadedPart => uploadedPart["e_tag"] !== null)) {
                 this.__checkCompleteUpload(file, presignedLinkData, xhr);
               }
-              resolve(true);
             }
-            resolve(false);
+            resolve(Boolean(eTag));
           } else {
             console.error(xhr.response);
             this.__abortUpload(presignedLinkData);
@@ -686,7 +685,6 @@ qx.Class.define("osparc.file.FilePicker", {
     },
 
     __completeUpload: function(fileMetadata) {
-      this.getNode().getStatus().setProgress(100);
       if ("location" in fileMetadata && "dataset" in fileMetadata && "path" in fileMetadata && "name" in fileMetadata) {
         this.setOutputValueFromStore(fileMetadata["location"], fileMetadata["dataset"], fileMetadata["path"], fileMetadata["name"]);
       }
