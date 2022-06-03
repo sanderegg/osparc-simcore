@@ -17,6 +17,7 @@ import botocore.exceptions
 import sqlalchemy as sa
 from aiohttp import web
 from aiopg.sa import Engine
+from aiopg.sa.connection import SAConnection
 from models_library.api_schemas_storage import LinkType
 from models_library.projects import ProjectID
 from models_library.projects_nodes import NodeID
@@ -75,6 +76,18 @@ _MAX_LINK_CHUNK_BYTE_SIZE: Final[dict[LinkType, ByteSize]] = {
     LinkType.PRESIGNED: _PRESIGNED_LINK_MAX_SIZE,
     LinkType.S3: _S3_MAX_FILE_SIZE,
 }
+
+
+async def _check_project_exists(conn: SAConnection, project_uuid: ProjectID):
+    if (
+        await conn.scalar(
+            sa.select([sa.func.count()])
+            .select_from(projects)
+            .where(projects.c.uuid == f"{project_uuid}")
+        )
+        == 0
+    ):
+        raise web.HTTPNotFound(reason=f"Project '{project_uuid}' not found")
 
 
 def setup_dsm(app: web.Application):
@@ -740,17 +753,9 @@ class DataStorageManager:  # pylint: disable=too-many-public-methods
         dest_project_uuid = ProjectID(destination_project["uuid"])
 
         async with self.engine.acquire() as conn, conn.begin():
-            # check project exist
+
             for prj_uuid in [src_project_uuid, dest_project_uuid]:
-                if (
-                    await conn.scalar(
-                        sa.select([sa.func.count()])
-                        .select_from(projects)
-                        .where(projects.c.uuid == f"{prj_uuid}")
-                    )
-                    == 0
-                ):
-                    raise web.HTTPNotFound(reason=f"Project '{prj_uuid}' not found")
+                await _check_project_exists(conn, prj_uuid)
 
             # access layer
             source_access_rights = await get_project_access_rights(
