@@ -44,12 +44,13 @@ follow-dev-logs: ## follow the logs of the qx compiler
 .PHONY: compile touch upgrade
 compile: ## qx compiles host' 'source' -> image's 'build-output'
 	# qx compile 'source' within $(docker_image) image  [itisfoundation/qooxdoo-kit:${QOOXDOO_KIT_TAG}]
-	@docker buildx build --file $(docker_file) --tag $(docker_image) \
+	@docker buildx build --file $(docker_file) --tag 192.168.1.20:5000/$(docker_image) \
 		--build-arg tag=${QOOXDOO_KIT_TAG} \
 		--build-arg VCS_REF=${VCS_REF} \
 		--build-arg VCS_REF_CLIENT=${VCS_REF_CLIENT} \
 		--build-arg VCS_STATUS_CLIENT=${VCS_STATUS_CLIENT} \
 		--build-arg VCS_URL=${VCS_URL} \
+		--output=type=registry \
 		--target=build-client .
 
 touch: ## minimal image build with /project/output-build inside

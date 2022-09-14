@@ -1,0 +1,2 @@
+[registry."IP_TO_REGISTRY:5000"]
+  http = true
