@@ -3,26 +3,30 @@ const puppeteer = require('puppeteer');
 const LOGS_DIR = "../logs/";
 
 async function getBrowser(demo) {
-  let options = {};
+  let options = {
+    defaultViewport: null, // Defaults to an 800x600 viewport. null disables the default viewport.
+  };
   if (demo) {
     const visibleOptions = {
       headless: false,
       devTools: true,
-      defaultViewport: null, // Defaults to an 800x600 viewport. null disables the default viewport.
       slowMo: 80, // Slows down Puppeteer operations by the specified amount of milliseconds.
+      args: [
+        // https://github.com/puppeteer/puppeteer/issues/4889 : adding extra headers make CORS fail
+        '--disable-web-security',
+      ],
     };
     Object.assign(options, visibleOptions);
   }
   else {
-    // https://github.com/puppeteer/puppeteer/issues/4889 : adding extra headers make CORS fail
     const woSandbox = {
-      defaultViewport: null,
       args: [
         '--no-sandbox',
         '--disable-setuid-sandbox',
         '--disable-dev-shm-usage',
         '--start-maximized',
-        '--disable-web-security'
+        // https://github.com/puppeteer/puppeteer/issues/4889 : adding extra headers make CORS fail
+        '--disable-web-security',
       ]
     };
     Object.assign(options, woSandbox);

@@ -209,7 +209,6 @@ async function makeRequest(page, endpoint, apiVersion = "v0") {
   await page.setBypassCSP(true);
   const resp = await page.evaluate(async (host, endpoint, apiVersion) => {
     const url = host + apiVersion + endpoint;
-    console.log("makeRequest", url);
     const resp = await fetch(url);
 
     if (!resp.ok) {
