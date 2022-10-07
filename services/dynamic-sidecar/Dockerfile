@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 ARG PYTHON_VERSION="3.9.12"
 FROM python:${PYTHON_VERSION}-slim-buster as base
 #
@@ -88,12 +89,12 @@ WORKDIR /build
 
 # install base 3rd party dependencies
 # NOTE: copies to /build to avoid overwriting later which would invalidate this layer
-COPY --chown=scu:scu services/dynamic-sidecar/requirements/_base.txt .
+COPY --link services/dynamic-sidecar/requirements/_base.txt /build/
 RUN pip --no-cache-dir install -r _base.txt
 
 # copy utility devops scripts
-COPY --chown=scu:scu services/dynamic-sidecar/scripts/Makefile /home/scu
-COPY --chown=root:root services/dynamic-sidecar/scripts/Makefile /root
+COPY --link services/dynamic-sidecar/scripts/Makefile /home/scu/
+COPY --chown=root:root services/dynamic-sidecar/scripts/Makefile /root/
 
 # --------------------------Prod-depends-only stage -------------------
 # This stage is for production only dependencies that get partially wiped out afterwards (final docker image concerns)
@@ -105,8 +106,8 @@ FROM build as prod-only-deps
 
 ENV SC_BUILD_TARGET prod-only-deps
 
-COPY --chown=scu:scu packages /build/packages
-COPY --chown=scu:scu services/dynamic-sidecar /build/services/dynamic-sidecar
+COPY --link packages/ /build/packages/
+COPY --link services/dynamic-sidecar/ /build/services/dynamic-sidecar/
 
 WORKDIR /build/services/dynamic-sidecar
 
@@ -130,11 +131,11 @@ ENV PYTHONOPTIMIZE=TRUE
 WORKDIR /home/scu
 
 # Starting from clean base image, copies pre-installed virtualenv from prod-only-deps
-COPY --chown=scu:scu --from=prod-only-deps  ${VIRTUAL_ENV} ${VIRTUAL_ENV}
-COPY --chown=scu:scu --from=prod-only-deps  ${DYNAMIC_SIDECAR_DY_VOLUMES_MOUNT_DIR} ${DYNAMIC_SIDECAR_DY_VOLUMES_MOUNT_DIR}
+COPY --link --from=prod-only-deps  ${VIRTUAL_ENV}/ ${VIRTUAL_ENV}/
+COPY --link --from=prod-only-deps  ${DYNAMIC_SIDECAR_DY_VOLUMES_MOUNT_DIR}/ ${DYNAMIC_SIDECAR_DY_VOLUMES_MOUNT_DIR}/
 
 # Copies booting scripts
-COPY --chown=scu:scu services/dynamic-sidecar/docker services/dynamic-sidecar/docker
+COPY --link services/dynamic-sidecar/docker/ services/dynamic-sidecar/docker/
 RUN chmod +x services/dynamic-sidecar/docker/*.sh
 
 # disabled healthcheck as director-v2 is already taking care of it

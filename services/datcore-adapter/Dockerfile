@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 ARG PYTHON_VERSION="3.9.12"
 ARG PENNSIEVE_VERSION="0.3.5"
 FROM itisfoundation/pennsieve-agent:3.8.10-${PENNSIEVE_VERSION} as pennsieve-agent
@@ -51,7 +52,7 @@ EXPOSE 3000
 
 # install Pennsieve agent [ref](https://docs.pennsieve.io/docs/the-pennsieve-agent)
 # from in-house-built version see https://github.com/ITISFoundation/dockerfiles/pennsieve-agent
-COPY --from=pennsieve-agent /pennsieve /opt/pennsieve/bin/pennsieve
+COPY --link --from=pennsieve-agent /pennsieve /opt/pennsieve/bin/pennsieve/
 ENV PATH="/opt/pennsieve/bin:$PATH"
 
 # -------------------------- Build stage -------------------
@@ -83,7 +84,7 @@ WORKDIR /build
 
 # install base 3rd party dependencies
 # NOTE: copies to /build to avoid overwriting later which would invalidate this layer
-COPY  --chown=scu:scu services/datcore-adapter/requirements/_base.txt .
+COPY --link services/datcore-adapter/requirements/_base.txt /build/
 RUN pip --no-cache-dir install -r _base.txt
 
 
@@ -97,8 +98,8 @@ FROM build as prod-only-deps
 
 ENV SC_BUILD_TARGET prod-only-deps
 
-COPY --chown=scu:scu packages /build/packages
-COPY --chown=scu:scu services/datcore-adapter /build/services/datcore-adapter
+COPY --link packages/ /build/packages/
+COPY --link services/datcore-adapter/ /build/services/datcore-adapter/
 
 WORKDIR /build/services/datcore-adapter
 
@@ -123,10 +124,10 @@ ENV PYTHONOPTIMIZE=TRUE
 WORKDIR /home/scu
 
 # Starting from clean base image, copies pre-installed virtualenv from prod-only-deps
-COPY --chown=scu:scu --from=prod-only-deps  ${VIRTUAL_ENV} ${VIRTUAL_ENV}
+COPY --link --from=prod-only-deps  ${VIRTUAL_ENV}/ ${VIRTUAL_ENV}/
 
 # Copies booting scripts
-COPY --chown=scu:scu services/datcore-adapter/docker services/datcore-adapter/docker
+COPY --link services/datcore-adapter/docker/ services/datcore-adapter/docker/
 RUN chmod +x services/datcore-adapter/docker/*.sh
 
 

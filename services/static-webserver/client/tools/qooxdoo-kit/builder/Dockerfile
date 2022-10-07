@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 #
 # Compiles client's source code within an image based in qooxdoo-kit
 #

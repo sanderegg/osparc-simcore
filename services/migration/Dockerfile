@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 ARG PYTHON_VERSION="3.9.12"
 FROM python:${PYTHON_VERSION}-slim-buster as base
 
@@ -50,7 +51,7 @@ RUN pip --no-cache-dir install --upgrade \
 WORKDIR /build
 
 # install only base 3rd party dependencies
-COPY  --chown=scu:scu packages/postgres-database/ .
+COPY --link packages/postgres-database/ /build/
 RUN pip --no-cache-dir --quiet install .[migration]
 
 
@@ -72,8 +73,8 @@ WORKDIR /home/scu
 USER ${SC_USER_NAME}
 
 # bring installed package without build tools
-COPY --from=build ${VIRTUAL_ENV} ${VIRTUAL_ENV}
-COPY --chown=scu:scu services/migration/docker services/migration/docker
+COPY --link --from=build ${VIRTUAL_ENV}/ ${VIRTUAL_ENV}/
+COPY --link services/migration/docker/ services/migration/docker/
 #, "| grep --regexp='^Rev: .* (head)$'" ]
 HEALTHCHECK --interval=10s --timeout=10s --start-period=1ms --retries=3 CMD [ "/bin/sh", "/home/scu/services/migration/docker/healthcheck.sh"]
 

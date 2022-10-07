@@ -88,8 +88,8 @@ RUN --mount=type=cache,mode=0777,target=/root/.cache/pip \
 WORKDIR /build
 
 # install base 3rd party dependencies (NOTE: this speeds up devel mode)
-COPY  --chown=scu:scu services/dask-sidecar/requirements/_base.txt .
-COPY  --chown=scu:scu services/dask-sidecar/requirements/_packages.txt .
+COPY  --link services/dask-sidecar/requirements/_base.txt /build/
+COPY  --link services/dask-sidecar/requirements/_packages.txt /build/
 RUN --mount=type=cache,mode=0777,target=/root/.cache/pip \
   pip install \
   --requirement _base.txt \
@@ -105,8 +105,8 @@ FROM build as prod-only-deps
 
 ENV SC_BUILD_TARGET=prod-only-deps
 
-COPY --chown=scu:scu packages /build/packages
-COPY --chown=scu:scu services/dask-sidecar /build/services/dask-sidecar
+COPY --link packages/ /build/packages/
+COPY --link services/dask-sidecar/ /build/services/dask-sidecar/
 
 WORKDIR /build/services/dask-sidecar
 
@@ -131,9 +131,9 @@ ENV PYTHONOPTIMIZE=TRUE
 WORKDIR /home/scu
 
 # bring installed package without build tools
-COPY --from=prod-only-deps --chown=scu:scu ${VIRTUAL_ENV} ${VIRTUAL_ENV}
+COPY --link --from=prod-only-deps ${VIRTUAL_ENV}/ ${VIRTUAL_ENV}/
 # copy docker entrypoint and boot scripts
-COPY --chown=scu:scu services/dask-sidecar/docker services/dask-sidecar/docker
+COPY --link services/dask-sidecar/docker/ services/dask-sidecar/docker/
 
 
 # WARNING: This image is used for dask-scheduler and dask-worker.

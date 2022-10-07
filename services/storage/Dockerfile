@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 ARG PYTHON_VERSION="3.9.12"
 FROM python:${PYTHON_VERSION}-slim-buster as base
 #
@@ -83,8 +84,8 @@ RUN pip --no-cache-dir install --upgrade \
 WORKDIR /build
 
 # install only base 3rd party dependencies
-COPY  --chown=scu:scu services/storage/requirements/_base.txt requirements_base.txt
-RUN pip --no-cache-dir --quiet install -r requirements_base.txt
+COPY --link services/storage/requirements/_base.txt /build/
+RUN pip --no-cache-dir --quiet install -r _base.txt
 # -------------------------- -------------------------------
 
 
@@ -101,8 +102,8 @@ FROM build as prod-only-deps
 ENV SC_BUILD_TARGET prod-only-deps
 
 # 2nd party packages
-COPY --chown=scu:scu packages /build/packages
-COPY --chown=scu:scu services/storage /build/services/storage
+COPY --link packages/ /build/packages/
+COPY --link services/storage/ /build/services/storage/
 
 WORKDIR /build/services/storage
 
@@ -126,10 +127,10 @@ ENV PYTHONOPTIMIZE=TRUE
 WORKDIR /home/scu
 
 # bring installed package without build tools
-COPY --from=prod-only-deps --chown=scu:scu ${VIRTUAL_ENV} ${VIRTUAL_ENV}
+COPY --link --from=prod-only-deps ${VIRTUAL_ENV}/ ${VIRTUAL_ENV}/
 
 # copy docker entrypoint and boot scripts
-COPY --chown=scu:scu services/storage/docker services/storage/docker
+COPY --link services/storage/docker/ services/storage/docker/
 RUN chmod +x services/storage/docker/*.sh
 
 HEALTHCHECK --interval=30s \

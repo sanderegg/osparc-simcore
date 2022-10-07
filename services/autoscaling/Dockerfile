@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 ARG PYTHON_VERSION="3.9.12"
 FROM python:${PYTHON_VERSION}-slim-buster as base
 
@@ -76,7 +77,7 @@ WORKDIR /build
 
 # install base 3rd party dependencies
 # NOTE: copies to /build to avoid overwriting later which would invalidate this layer
-COPY  --chown=scu:scu services/autoscaling/requirements/_base.txt .
+COPY --link services/autoscaling/requirements/_base.txt /build/
 RUN pip --no-cache-dir install -r _base.txt
 
 
@@ -90,8 +91,8 @@ FROM build as prod-only-deps
 
 ENV SC_BUILD_TARGET prod-only-deps
 
-COPY --chown=scu:scu packages /build/packages
-COPY --chown=scu:scu services/autoscaling /build/services/autoscaling
+COPY --link packages/ /build/packages/
+COPY --link services/autoscaling/ /build/services/autoscaling/
 
 WORKDIR /build/services/autoscaling
 
@@ -116,10 +117,10 @@ ENV PYTHONOPTIMIZE=TRUE
 WORKDIR /home/scu
 
 # Starting from clean base image, copies pre-installed virtualenv from prod-only-deps
-COPY --chown=scu:scu --from=prod-only-deps  ${VIRTUAL_ENV} ${VIRTUAL_ENV}
+COPY --link --from=prod-only-deps  ${VIRTUAL_ENV}/ ${VIRTUAL_ENV}/
 
 # Copies booting scripts
-COPY --chown=scu:scu services/autoscaling/docker services/autoscaling/docker
+COPY --link services/autoscaling/docker/ services/autoscaling/docker/
 RUN chmod +x services/autoscaling/docker/*.sh
 
 

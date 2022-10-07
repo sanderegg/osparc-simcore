@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 ARG PYTHON_VERSION="3.9.12"
 FROM python:${PYTHON_VERSION}-slim-buster as base
 #
@@ -86,8 +87,8 @@ RUN pip --no-cache-dir install --upgrade \
 WORKDIR /build
 
 # install only base 3rd party dependencies
-COPY  --chown=scu:scu services/web/server/requirements/_base.txt requirements_base.txt
-RUN pip --no-cache-dir --quiet install -r requirements_base.txt
+COPY --link services/web/server/requirements/_base.txt /build/
+RUN pip --no-cache-dir --quiet install -r _base.txt
 
 # --------------------------Prod-depends-only stage -------------------
 # This stage is for production only dependencies that get partially wiped out afterwards (final docker image concerns)
@@ -100,8 +101,8 @@ FROM build as prod-only-deps
 ENV SC_BUILD_TARGET prod-only-deps
 
 # 2nd party packages
-COPY --chown=scu:scu packages /build/packages
-COPY --chown=scu:scu services/web/server /build/services/web/server
+COPY --link packages/ /build/packages/
+COPY --link services/web/server/ /build/services/web/server/
 
 WORKDIR /build/services/web/server
 
@@ -123,7 +124,7 @@ ARG VCS_REF
 WORKDIR /home/scu
 
 # bring installed package without build tools
-COPY --from=prod-only-deps --chown=scu:scu ${VIRTUAL_ENV} ${VIRTUAL_ENV}
+COPY --link --from=prod-only-deps ${VIRTUAL_ENV}/ ${VIRTUAL_ENV}/
 
 # libmagic is requried by the exporter
 RUN apt-get update \
@@ -133,7 +134,7 @@ RUN apt-get update \
   && rm -rf /var/lib/apt/lists/*
 
 # copy docker entrypoint and boot scripts
-COPY --chown=scu:scu services/web/server/docker services/web/server/docker
+COPY --link services/web/server/docker/ services/web/server/docker/
 RUN chmod +x services/web/server/docker/*.sh
 
 
