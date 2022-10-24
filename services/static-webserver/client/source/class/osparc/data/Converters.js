@@ -48,63 +48,43 @@ qx.Class.define("osparc.data.Converters", {
           file["location_id"],
           ""
         );
-        if (file["location_id"] === 0 || file["location_id"] === "0") {
-          // simcore files
-          const splitted = file["file_uuid"].split("/");
-          if (splitted.length < 3) {
-            continue;
-          }
+        const isSimcore = file["location_id"] === 0 || file["location_id"] === "0";
 
-          let parent = fileInTree;
-          for (let j=0; j<splitted.length-1; j++) {
-            let label = "Unknown";
-            if (j===0) {
-              label = file["project_name"];
-            } else if (j===1) {
-              label = file["node_name"];
-            } else {
-              label = splitted[j];
-            }
-            const newItem = this.createDirEntry(
-              label,
-              file["location_id"],
-              parent.path === "" ? splitted[j] : parent.path +"/"+ splitted[j]
-            );
-            parent.children.push(newItem);
-            parent = newItem;
-          }
-          let fileInfo = this.createFileEntry(
-            splitted[splitted.length-1],
-            file["location_id"],
-            datasetId,
-            file["file_id"],
-            file["last_modified"],
-            file["file_size"]);
-          parent.children.push(fileInfo);
-          this.__mergeFileTreeChildren(children, fileInTree);
-        } else if (file["location_id"] === 1 || file["location_id"] === "1") {
-          // datcore files
-          let parent = fileInTree;
-          let splitted = file["file_uuid"].split("/");
-          for (let j=0; j<splitted.length-1; j++) {
-            const newItem = this.createDirEntry(
-              splitted[j],
-              file["location_id"],
-              parent.path === "" ? splitted[j] : parent.path +"/"+ splitted[j]
-            );
-            parent.children.push(newItem);
-            parent = newItem;
-          }
-          let fileInfo = this.createFileEntry(
-            splitted[splitted.length-1],
-            file["location_id"],
-            datasetId,
-            file["file_id"],
-            file["last_modified"],
-            file["file_size"]);
-          parent.children.push(fileInfo);
-          this.__mergeFileTreeChildren(children, fileInTree);
+        const splitted = file["file_uuid"].split("/");
+        if (isSimcore && splitted.length < 3) {
+          continue;
         }
+
+        // create directories
+        let parent = fileInTree;
+        for (let j=0; j<splitted.length-1; j++) {
+          let label = "Unknown";
+          if (isSimcore && j===0) {
+            label = file["project_name"];
+          } else if (isSimcore && j===1) {
+            label = file["node_name"];
+          } else {
+            label = splitted[j];
+          }
+          const newItem = this.createDirEntry(
+            label,
+            file["location_id"],
+            parent.path === "" ? splitted[j] : parent.path +"/"+ splitted[j]
+          );
+          parent.children.push(newItem);
+          parent = newItem;
+        }
+
+        // create file
+        const fileInfo = this.createFileEntry(
+          splitted[splitted.length-1],
+          file["location_id"],
+          datasetId,
+          file["file_id"],
+          file["last_modified"],
+          file["file_size"]);
+        parent.children.push(fileInfo);
+        this.__mergeFileTreeChildren(children, fileInTree);
       }
 
       return children;
