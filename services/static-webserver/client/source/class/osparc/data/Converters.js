@@ -50,34 +50,23 @@ qx.Class.define("osparc.data.Converters", {
         );
         if (file["location_id"] === 0 || file["location_id"] === "0") {
           // simcore files
-          let parent = fileInTree;
           const splitted = file["file_uuid"].split("/");
           if (splitted.length < 3) {
             continue;
           }
 
-          const prjId = splitted[0];
-          const nodeId = splitted[1];
-          const prjLabel = file["project_name"];
-          const nodeLabel = file["node_name"];
-          const prjItem = this.createDirEntry(
-            prjLabel,
-            file["location_id"],
-            prjId
-          );
-          parent.children.push(prjItem);
-          parent = prjItem;
-          const nodeItem = this.createDirEntry(
-            nodeLabel,
-            file["location_id"],
-            nodeId
-          );
-          parent.children.push(nodeItem);
-          parent = nodeItem;
-
-          for (let j=2; j<splitted.length-1; j++) {
+          let parent = fileInTree;
+          for (let j=0; j<splitted.length-1; j++) {
+            let label = "Unknown";
+            if (j===0) {
+              label = file["project_name"];
+            } else if (j===1) {
+              label = file["node_name"];
+            } else {
+              label = splitted[j];
+            }
             const newItem = this.createDirEntry(
-              splitted[j],
+              label,
               file["location_id"],
               parent.path === "" ? splitted[j] : parent.path +"/"+ splitted[j]
             );
@@ -87,7 +76,7 @@ qx.Class.define("osparc.data.Converters", {
           let fileInfo = this.createFileEntry(
             splitted[splitted.length-1],
             file["location_id"],
-            splitted[splitted.length-1],
+            datasetId,
             file["file_id"],
             file["last_modified"],
             file["file_size"]);
