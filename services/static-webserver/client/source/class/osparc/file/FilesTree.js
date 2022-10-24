@@ -120,10 +120,10 @@ qx.Class.define("osparc.file.FilesTree", {
       }
     },
 
-    attachPathLabelToChildren: function(srcPathLabel, data) {
+    attachPathLabel: function(srcPathLabel, data) {
       data["pathLabel"] = srcPathLabel.concat(data["label"]);
       if ("children" in data) {
-        data.children.forEach(child => this.self().attachPathLabelToChildren(data["pathLabel"], child));
+        data.children.forEach(child => this.self().attachPathLabel(data["pathLabel"], child));
       }
     }
   },
@@ -471,8 +471,7 @@ qx.Class.define("osparc.file.FilesTree", {
           const locationData = osparc.data.Converters.fromDSMToVirtualTreeModel(datasetId, files);
           const datasetData = locationData[0].children;
           datasetData[0].children.forEach(data => {
-            // data["pathLabel"] = datasetModel.getPathLabel().concat(data["label"]);
-            this.self().attachPathLabelToChildren(datasetModel.getPathLabel(), data);
+            this.self().attachPathLabel(datasetModel.getPathLabel(), data);
             const filesModel = qx.data.marshal.Json.createModel(data, true);
             datasetModel.getChildren().append(filesModel);
           });
