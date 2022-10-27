@@ -1134,7 +1134,7 @@ qx.Class.define("osparc.data.model.Node", {
         this.__unresponsiveRetries = 5;
         this.__nodeState(false);
 
-        this.removeIFrame();
+        this.getIFrame().resetSource();
         this.__initIFrame();
       }
     },
