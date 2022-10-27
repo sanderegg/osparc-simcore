@@ -66,6 +66,11 @@ qx.Class.define("osparc.component.workbench.NodeUI", {
     }
   },
 
+  events: {
+    "startNode": "qx.event.type.Data",
+    "stopNode": "qx.event.type.Data"
+  },
+
   statics: {
     NODE_WIDTH: 180,
     NODE_HEIGHT: 80
@@ -214,6 +219,22 @@ qx.Class.define("osparc.component.workbench.NodeUI", {
     },
 
     __applyNode: function(node) {
+      if (node.isDynamic()) {
+        const startBtn = new qx.ui.menu.Button().set({
+          label: this.tr("Start"),
+          icon: "@FontAwesome5Solid/play/10"
+        });
+        startBtn.addListener("execute", () => this.fireDataEvent("startNode", this.getNodeId()));
+        this._optionsMenu.addAt(startBtn, 0);
+
+        const stopBtn = new qx.ui.menu.Button().set({
+          label: this.tr("Stop"),
+          icon: "@FontAwesome5Solid/stop/10"
+        });
+        stopBtn.addListener("execute", () => this.fireDataEvent("stopNode", this.getNodeId()));
+        this._optionsMenu.addAt(stopBtn, 1);
+      }
+
       if (node.getKey().includes("parameter/int")) {
         const makeIterator = new qx.ui.menu.Button().set({
           label: this.tr("Convert to Iterator"),
