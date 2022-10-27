@@ -85,6 +85,8 @@ qx.Class.define("osparc.component.widget.NodeTreeItem", {
 
   events: {
     "fullscreenNode": "qx.event.type.Data",
+    "startNode": "qx.event.type.Data",
+    "stopNode": "qx.event.type.Data",
     "renameNode": "qx.event.type.Data",
     "infoNode": "qx.event.type.Data",
     "deleteNode": "qx.event.type.Data"
@@ -138,6 +140,8 @@ qx.Class.define("osparc.component.widget.NodeTreeItem", {
 
       if (node.isDynamic()) {
         this.getChildControl("fullscreen-button").show();
+        this.getChildControl("start-button").show();
+        this.getChildControl("stop-button").show();
       }
 
       const markerBtn = this.getChildControl("marker-button");
@@ -195,6 +199,28 @@ qx.Class.define("osparc.component.widget.NodeTreeItem", {
           });
           const part = this.getChildControl("buttons");
           part.add(control);
+          break;
+        }
+        case "start-button": {
+          control = new qx.ui.menu.Button().set({
+            label: this.tr("Start"),
+            icon: "@FontAwesome5Solid/play/10",
+            visibility: "excluded"
+          });
+          control.addListener("execute", () => this.fireDataEvent("startNode", this.getId()));
+          const optionsMenu = this.getChildControl("options-menu-button");
+          optionsMenu.getMenu().add(control);
+          break;
+        }
+        case "stop-button": {
+          control = new qx.ui.menu.Button().set({
+            label: this.tr("Stop"),
+            icon: "@FontAwesome5Solid/stop/10",
+            visibility: "excluded"
+          });
+          control.addListener("execute", () => this.fireDataEvent("stopNode", this.getId()));
+          const optionsMenu = this.getChildControl("options-menu-button");
+          optionsMenu.getMenu().add(control);
           break;
         }
         case "rename-button": {
@@ -295,6 +321,8 @@ qx.Class.define("osparc.component.widget.NodeTreeItem", {
       });
 
       this.getChildControl("fullscreen-button");
+      this.getChildControl("start-button");
+      this.getChildControl("stop-button");
       this.getChildControl("rename-button");
       this.getChildControl("marker-button");
       this.getChildControl("info-button");

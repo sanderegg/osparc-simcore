@@ -966,7 +966,7 @@ qx.Class.define("osparc.data.model.Node", {
       return [];
     },
 
-    __initLoadingIPage: function() {
+    __initLoadingPage: function() {
       const loadingPage = new osparc.ui.message.Loading(this.__getLoadingPageHeader(), this.__getExtraMessages(), true);
       this.addListener("changeLabel", () => loadingPage.setHeader(this.__getLoadingPageHeader()), this);
       this.getStatus().addListener("changeInteractive", () => loadingPage.setHeader(this.__getLoadingPageHeader()), this);
@@ -974,7 +974,7 @@ qx.Class.define("osparc.data.model.Node", {
     },
 
     __initIFrame: function() {
-      this.__initLoadingIPage();
+      this.__initLoadingPage();
 
       const iframe = new osparc.component.widget.PersistentIframe();
       osparc.utils.Utils.setIdToWidget(iframe, "PersistentIframe");
@@ -1133,6 +1133,9 @@ qx.Class.define("osparc.data.model.Node", {
 
         this.__unresponsiveRetries = 5;
         this.__nodeState(false);
+
+        this.removeIFrame();
+        this.__initLoadingPage();
       }
     },
 

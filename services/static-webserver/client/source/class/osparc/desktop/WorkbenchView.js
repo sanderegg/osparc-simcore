@@ -546,6 +546,16 @@ qx.Class.define("osparc.desktop.WorkbenchView", {
           this.__workbenchUI.nodeSelected(nodeId);
         }
       }, this);
+      nodesTree.addListener("startNode", e => {
+        const nodeId = e.getData();
+        // eslint-disable-next-line no-underscore-dangle
+        workbenchUI.__startNode(nodeId);
+      }, this);
+      nodesTree.addListener("stopNode", e => {
+        const nodeId = e.getData();
+        // eslint-disable-next-line no-underscore-dangle
+        workbenchUI.__stopNode(nodeId);
+      }, this);
       nodesTree.addListener("removeNode", e => {
         const nodeId = e.getData();
         this.__removeNode(nodeId);

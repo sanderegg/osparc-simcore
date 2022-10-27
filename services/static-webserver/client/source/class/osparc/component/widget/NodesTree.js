@@ -54,6 +54,8 @@ qx.Class.define("osparc.component.widget.NodesTree", {
   events: {
     "changeSelectedNode": "qx.event.type.Data",
     "fullscreenNode": "qx.event.type.Data",
+    "startNode": "qx.event.type.Data",
+    "stopNode": "qx.event.type.Data",
     "removeNode": "qx.event.type.Data"
   },
 
@@ -139,6 +141,8 @@ qx.Class.define("osparc.component.widget.NodesTree", {
         createItem: () => {
           const nodeTreeItem = new osparc.component.widget.NodeTreeItem();
           nodeTreeItem.addListener("fullscreenNode", e => this.__openFullscreen(e.getData()));
+          nodeTreeItem.addListener("startNode", e => this.fireDataEvent("startNode", e.getData()));
+          nodeTreeItem.addListener("stopNode", e => this.fireDataEvent("stopNode", e.getData()));
           nodeTreeItem.addListener("renameNode", e => this._openItemRenamer(e.getData()));
           nodeTreeItem.addListener("infoNode", e => this.__openNodeInfo(e.getData()));
           nodeTreeItem.addListener("deleteNode", e => this.__deleteNode(e.getData()));
