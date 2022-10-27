@@ -115,6 +115,8 @@ qx.Class.define("osparc.utils.StatusUI", {
           return qx.locale.Manager.tr("Idle");
 
         // dynamics
+        case "idle":
+          return qx.locale.Manager.tr("Idle");
         case "ready":
           return qx.locale.Manager.tr("Ready");
         case "failed":
