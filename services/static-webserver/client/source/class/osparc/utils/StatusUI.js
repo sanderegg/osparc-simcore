@@ -61,7 +61,7 @@ qx.Class.define("osparc.utils.StatusUI", {
 
         // dynamics
         case "idle":
-          return "";
+          return "@FontAwesome5Solid/hourglass/"+size;
         case "ready":
           return "@FontAwesome5Solid/check/"+size;
         case "starting":
