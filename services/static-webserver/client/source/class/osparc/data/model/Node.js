@@ -916,8 +916,8 @@ qx.Class.define("osparc.data.model.Node", {
         }
       };
       osparc.data.Resources.fetch("studies", "startNode", params)
-        .then(data => this.startDynamicService())
-        .catch(err => {});
+        .then(() => this.startDynamicService())
+        .catch(err => console.error(err));
       return true;
     },
 
@@ -929,8 +929,8 @@ qx.Class.define("osparc.data.model.Node", {
         }
       };
       osparc.data.Resources.fetch("studies", "stopNode", params)
-        .then(data => this.stopDynamicService())
-        .catch(err => {});
+        .then(() => this.stopDynamicService())
+        .catch(err => console.error(err));
       return true;
     },
 
@@ -1116,6 +1116,7 @@ qx.Class.define("osparc.data.model.Node", {
         this.__nodeState();
       }
     },
+
     stopDynamicService: function() {
       if (this.isDynamic()) {
         const metaData = this.getMetaData();
@@ -1134,6 +1135,7 @@ qx.Class.define("osparc.data.model.Node", {
         this.__nodeState(false);
       }
     },
+
     __onNodeState: function(data, starting=true) {
       const serviceState = data["service_state"];
       const nodeId = data["service_uuid"];
