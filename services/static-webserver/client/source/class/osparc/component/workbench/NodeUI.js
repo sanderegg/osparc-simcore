@@ -225,6 +225,9 @@ qx.Class.define("osparc.component.workbench.NodeUI", {
           icon: "@FontAwesome5Solid/play/10"
         });
         startBtn.addListener("execute", () => this.fireDataEvent("startNode", this.getNodeId()));
+        node.getStatus().bind("interactive", startBtn, "enabled", {
+          converter: state => state === "idle"
+        });
         this._optionsMenu.addAt(startBtn, 0);
 
         const stopBtn = new qx.ui.menu.Button().set({
@@ -232,6 +235,9 @@ qx.Class.define("osparc.component.workbench.NodeUI", {
           icon: "@FontAwesome5Solid/stop/10"
         });
         stopBtn.addListener("execute", () => this.fireDataEvent("stopNode", this.getNodeId()));
+        node.getStatus().bind("interactive", stopBtn, "enabled", {
+          converter: state => state === "ready"
+        });
         this._optionsMenu.addAt(stopBtn, 1);
       }
 

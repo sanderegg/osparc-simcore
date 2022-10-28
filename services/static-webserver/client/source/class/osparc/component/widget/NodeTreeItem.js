@@ -140,8 +140,18 @@ qx.Class.define("osparc.component.widget.NodeTreeItem", {
 
       if (node.isDynamic()) {
         this.getChildControl("fullscreen-button").show();
-        this.getChildControl("start-button").show();
-        this.getChildControl("stop-button").show();
+
+        const startButton = this.getChildControl("start-button");
+        startButton.show();
+        node.getStatus().bind("interactive", startButton, "enabled", {
+          converter: state => state === "idle"
+        });
+
+        const stopButton = this.getChildControl("stop-button");
+        stopButton.show();
+        node.getStatus().bind("interactive", stopButton, "enabled", {
+          converter: state => state === "ready"
+        });
       }
 
       const markerBtn = this.getChildControl("marker-button");
