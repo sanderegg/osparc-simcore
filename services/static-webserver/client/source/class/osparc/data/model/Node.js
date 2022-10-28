@@ -977,7 +977,6 @@ qx.Class.define("osparc.data.model.Node", {
       this.__initLoadingPage();
 
       const iframe = new osparc.component.widget.PersistentIframe();
-      osparc.utils.Utils.setIdToWidget(iframe, "PersistentIframe");
       iframe.addListener("restart", () => this.__restartIFrame(), this);
       this.setIFrame(iframe);
     },
@@ -1135,7 +1134,6 @@ qx.Class.define("osparc.data.model.Node", {
         this.__nodeState(false);
 
         this.getIFrame().resetSource();
-        this.__initIFrame();
       }
     },
 
