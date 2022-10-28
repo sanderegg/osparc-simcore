@@ -116,6 +116,7 @@ qx.Class.define("osparc.component.node.BaseNodeView", {
 
 
       const inputsStateBtn = this.__inputsButton = new qx.ui.form.Button().set({
+        width: 110,
         label: this.tr("Inputs"),
         icon: "@FontAwesome5Solid/sign-in-alt/14",
         backgroundColor: "transparent"
@@ -145,6 +146,7 @@ qx.Class.define("osparc.component.node.BaseNodeView", {
       });
 
       const outputsBtn = this._outputsBtn = new qx.ui.form.ToggleButton().set({
+        width: 110,
         label: this.tr("Outputs"),
         icon: "@FontAwesome5Solid/sign-out-alt/14",
         backgroundColor: "transparent"
@@ -290,7 +292,7 @@ qx.Class.define("osparc.component.node.BaseNodeView", {
     },
 
     setUpstreamDependencies: function(upstreamDependencies) {
-      this.__inputsButton.setVisibility(upstreamDependencies.length > 0 ? "visible" : "excluded");
+      this.__inputsButton.setVisibility(upstreamDependencies.length > 0 ? "visible" : "hidden");
       const monitoredNodes = [];
       const workbench = this.getNode().getStudy().getWorkbench();
       upstreamDependencies.forEach(nodeId => monitoredNodes.push(workbench.getNode(nodeId)));
