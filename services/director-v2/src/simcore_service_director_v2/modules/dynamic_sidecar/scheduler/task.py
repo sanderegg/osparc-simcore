@@ -148,11 +148,11 @@ class DynamicSidecarsScheduler:  # pylint: disable=too-many-instance-attributes
         project_id: Optional[ProjectID] = None,
     ) -> list[NodeID]:
         """Returns the list of tracked service UUIDs"""
-        all_tracked_service_uuids = list(self._inverse_search_mapping)
-        if user_id == project_id == None:
+        all_tracked_service_uuids = list(self._inverse_search_mapping.keys())
+        if user_id == project_id is None:
             return all_tracked_service_uuids
         # let's filter
-        def _filter_scheduler_data(node_id: NodeID) -> bool:
+        def _is_scheduled(node_id: NodeID) -> bool:
             try:
                 scheduler_data = self.get_scheduler_data(node_id)
                 if user_id and scheduler_data.user_id != user_id:
@@ -163,11 +163,12 @@ class DynamicSidecarsScheduler:  # pylint: disable=too-many-instance-attributes
             except DynamicSidecarNotFoundError:
                 return False
 
-        filtered_tracked_service_uuids = filter(
-            _filter_scheduler_data,
-            (n for n in all_tracked_service_uuids),
+        return list(
+            filter(
+                _is_scheduled,
+                (n for n in all_tracked_service_uuids),
+            )
         )
-        return list(filtered_tracked_service_uuids)
 
     async def mark_service_for_removal(
         self, node_uuid: NodeID, can_save: Optional[bool]
@@ -282,7 +283,6 @@ class DynamicSidecarsScheduler:  # pylint: disable=too-many-instance-attributes
             )
         except ClientHttpError:
             # error fetching docker_statues, probably someone should check
-            # TODO: ANE this needs review I believe... nobody is checking this...
             return RunningDynamicServiceDetails.from_scheduler_data(
                 node_uuid=node_uuid,
                 scheduler_data=scheduler_data,
@@ -291,7 +291,6 @@ class DynamicSidecarsScheduler:  # pylint: disable=too-many-instance-attributes
             )
 
         # wait for containers to start
-        # TODO: ANE what if it is stopping???
         if len(user_services_docker_statuses) == 0:
             # marks status as waiting for containers
             return RunningDynamicServiceDetails.from_scheduler_data(
