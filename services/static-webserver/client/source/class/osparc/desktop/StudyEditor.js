@@ -62,14 +62,6 @@ qx.Class.define("osparc.desktop.StudyEditor", {
       slideshowView.getCollapseWithUserMenu().bind("collapsed", workbenchView.getCollapseWithUserMenu(), "collapsed");
     });
 
-    slideshowView.addListener("startNode", e => {
-      const nodeId = e.getData();
-      workbenchView.requestStartNode(nodeId);
-    }, this);
-    slideshowView.addListener("stopNode", e => {
-      const nodeId = e.getData();
-      workbenchView.requestStopNode(nodeId);
-    }, this);
     slideshowView.addListener("startPartialPipeline", e => {
       const partialPipeline = e.getData();
       this.__startPipeline(partialPipeline);

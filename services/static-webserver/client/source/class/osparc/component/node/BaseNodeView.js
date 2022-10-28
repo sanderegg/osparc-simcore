@@ -70,8 +70,6 @@ qx.Class.define("osparc.component.node.BaseNodeView", {
   },
 
   events: {
-    "startNode": "qx.event.type.Data",
-    "stopNode": "qx.event.type.Data",
     "startPartialPipeline": "qx.event.type.Data",
     "stopPipeline": "qx.event.type.Event"
   },
@@ -338,13 +336,13 @@ qx.Class.define("osparc.component.node.BaseNodeView", {
         node.getStatus().bind("interactive", this.__nodeStartButton, "enabled", {
           converter: state => state === "idle"
         });
-        this.__nodeStartButton.addListener("execute", () => this.fireDataEvent("startNode", node.getNodeId()));
+        this.__nodeStartButton.addListener("execute", () => node.requestStartNode());
 
         this.__nodeStopButton.show();
         node.getStatus().bind("interactive", this.__nodeStopButton, "enabled", {
           converter: state => state === "ready"
         });
-        this.__nodeStopButton.addListener("execute", () => this.fireDataEvent("stopNode", node.getNodeId()));
+        this.__nodeStopButton.addListener("execute", () => node.requestStopNode());
       }
 
       this.__preparingInputs = new osparc.component.widget.PreparingInputs(node.getStudy());
