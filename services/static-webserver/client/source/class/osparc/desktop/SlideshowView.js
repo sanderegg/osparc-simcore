@@ -109,6 +109,8 @@ qx.Class.define("osparc.desktop.SlideshowView", {
   },
 
   events: {
+    "startNode": "qx.event.type.Data",
+    "stopNode": "qx.event.type.Data",
     "slidesStop": "qx.event.type.Event",
     "startPartialPipeline": "qx.event.type.Data",
     "stopPipeline": "qx.event.type.Event",
@@ -306,6 +308,12 @@ qx.Class.define("osparc.desktop.SlideshowView", {
           this.__nodeView = view;
         }
 
+        if (!this.__nodeView.hasListener("startNode")) {
+          this.__nodeView.addListener("startNode", e => this.fireDataEvent("startNode", e.getData()));
+        }
+        if (!this.__nodeView.hasListener("stopNode")) {
+          this.__nodeView.addListener("stopNode", e => this.fireDataEvent("stopNode", e.getData()));
+        }
         const upstreamDependencies = this.__getUpstreamCompDependencies(node);
         this.__nodeView.setUpstreamDependencies(upstreamDependencies);
         if (!this.__nodeView.hasListener("startPartialPipeline")) {

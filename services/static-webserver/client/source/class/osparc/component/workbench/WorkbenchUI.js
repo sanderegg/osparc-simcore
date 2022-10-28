@@ -591,8 +591,8 @@ qx.Class.define("osparc.component.workbench.WorkbenchUI", {
       this.bind("scale", nodeUI, "scale");
       node.addListener("keyChanged", () => this.__activeNodeChanged(nodeUI), this);
       nodeUI.populateNodeLayout(this.__svgLayer);
-      nodeUI.addListener("startNode", e => this.__startNode(e.getData()), this);
-      nodeUI.addListener("stopNode", e => this.__stopNode(e.getData()), this);
+      nodeUI.addListener("startNode", e => this.requestStartNode(e.getData()), this);
+      nodeUI.addListener("stopNode", e => this.requestStopNode(e.getData()), this);
       nodeUI.addListener("renameNode", e => this.__openNodeRenamer(e.getData()), this);
       nodeUI.addListener("markerClicked", e => this.__openMarkerEditor(e.getData()), this);
       nodeUI.addListener("infoNode", e => this.__openNodeInfo(e.getData()), this);
@@ -1492,14 +1492,17 @@ qx.Class.define("osparc.component.workbench.WorkbenchUI", {
       this.__annotatingRect = false;
       this.__toolHint.setValue(this.tr("Draw a rectangle first"));
     },
-    __startNode: function(nodeId) {
+
+    requestStartNode: function(nodeId) {
       const node = this.getStudy().getWorkbench().getNode(nodeId);
-      node.startNode();
+      node.requestStartNode();
     },
-    __stopNode: function(nodeId) {
+
+    requestStopNode: function(nodeId) {
       const node = this.getStudy().getWorkbench().getNode(nodeId);
-      node.stopNode();
+      node.requestStopNode();
     },
+
     __openNodeRenamer: function(nodeId) {
       const node = this.getStudy().getWorkbench().getNode(nodeId);
       const treeItemRenamer = new osparc.component.widget.Renamer(node.getLabel());

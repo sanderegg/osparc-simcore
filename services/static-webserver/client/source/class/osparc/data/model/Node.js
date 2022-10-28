@@ -908,7 +908,7 @@ qx.Class.define("osparc.data.model.Node", {
     },
     // !---- Output Nodes -----
 
-    startNode: function() {
+    requestStartNode: function() {
       const params = {
         url: {
           studyId: this.getStudy().getUuid(),
@@ -921,7 +921,7 @@ qx.Class.define("osparc.data.model.Node", {
       return true;
     },
 
-    stopNode: function() {
+    requestStopNode: function() {
       const params = {
         url: {
           studyId: this.getStudy().getUuid(),

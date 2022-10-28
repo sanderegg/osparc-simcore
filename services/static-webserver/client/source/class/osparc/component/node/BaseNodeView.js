@@ -70,6 +70,8 @@ qx.Class.define("osparc.component.node.BaseNodeView", {
   },
 
   events: {
+    "startNode": "qx.event.type.Data",
+    "stopNode": "qx.event.type.Data",
     "startPartialPipeline": "qx.event.type.Data",
     "stopPipeline": "qx.event.type.Event"
   },
@@ -134,6 +136,20 @@ qx.Class.define("osparc.component.node.BaseNodeView", {
       });
       infoBtn.addListener("execute", () => this.__openServiceDetails(), this);
       header.add(infoBtn);
+
+      const startBtn = this.__nodeStartButton = new qx.ui.form.Button().set({
+        label: this.tr("Start"),
+        icon: "@FontAwesome5Solid/play/14",
+        visibility: "excluded"
+      });
+      header.add(startBtn);
+
+      const stopBtn = this.__nodeStopButton = new qx.ui.form.Button().set({
+        label: this.tr("Stop"),
+        icon: "@FontAwesome5Solid/stop/14",
+        visibility: "excluded"
+      });
+      header.add(stopBtn);
 
       const nodeStatusUI = this.__nodeStatusUI = new osparc.ui.basic.NodeStatusUI().set({
         backgroundColor: "background-main-4"
@@ -315,6 +331,20 @@ qx.Class.define("osparc.component.node.BaseNodeView", {
     __applyNode: function(node) {
       if (this.__nodeStatusUI) {
         this.__nodeStatusUI.setNode(node);
+      }
+
+      if (node.isDynamic()) {
+        this.__nodeStartButton.show();
+        node.getStatus().bind("interactive", this.__nodeStartButton, "enabled", {
+          converter: state => state === "idle"
+        });
+        this.__nodeStartButton.addListener("execute", () => this.fireDataEvent("startNode", node.getNodeId()));
+
+        this.__nodeStopButton.show();
+        node.getStatus().bind("interactive", this.__nodeStopButton, "enabled", {
+          converter: state => state === "ready"
+        });
+        this.__nodeStopButton.addListener("execute", () => this.fireDataEvent("stopNode", node.getNodeId()));
       }
 
       this.__preparingInputs = new osparc.component.widget.PreparingInputs(node.getStudy());

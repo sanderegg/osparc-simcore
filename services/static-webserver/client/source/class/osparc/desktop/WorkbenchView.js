@@ -548,13 +548,11 @@ qx.Class.define("osparc.desktop.WorkbenchView", {
       }, this);
       nodesTree.addListener("startNode", e => {
         const nodeId = e.getData();
-        // eslint-disable-next-line no-underscore-dangle
-        workbenchUI.__startNode(nodeId);
+        this.requestStartNode(nodeId);
       }, this);
       nodesTree.addListener("stopNode", e => {
         const nodeId = e.getData();
-        // eslint-disable-next-line no-underscore-dangle
-        workbenchUI.__stopNode(nodeId);
+        this.requestStopNode(nodeId);
       }, this);
       nodesTree.addListener("removeNode", e => {
         const nodeId = e.getData();
@@ -682,6 +680,14 @@ qx.Class.define("osparc.desktop.WorkbenchView", {
           this.getStudy().nodeUpdated(data);
         }, this);
       }
+    },
+
+    requestStartNode: function(nodeId) {
+      this.__workbenchUI.requestStartNode(nodeId);
+    },
+
+    requestStopNode: function(nodeId) {
+      this.__workbenchUI.requestStopNode(nodeId);
     },
 
     getStartStopButtons: function() {
