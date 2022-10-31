@@ -66,11 +66,6 @@ qx.Class.define("osparc.component.workbench.NodeUI", {
     }
   },
 
-  events: {
-    "startNode": "qx.event.type.Data",
-    "stopNode": "qx.event.type.Data"
-  },
-
   statics: {
     NODE_WIDTH: 180,
     NODE_HEIGHT: 80
@@ -224,7 +219,7 @@ qx.Class.define("osparc.component.workbench.NodeUI", {
           label: this.tr("Start"),
           icon: "@FontAwesome5Solid/play/10"
         });
-        startBtn.addListener("execute", () => this.fireDataEvent("startNode", this.getNodeId()));
+        startBtn.addListener("execute", () => node.requestStartNode());
         node.getStatus().bind("interactive", startBtn, "enabled", {
           converter: state => state === "idle"
         });
@@ -234,7 +229,7 @@ qx.Class.define("osparc.component.workbench.NodeUI", {
           label: this.tr("Stop"),
           icon: "@FontAwesome5Solid/stop/10"
         });
-        stopBtn.addListener("execute", () => this.fireDataEvent("stopNode", this.getNodeId()));
+        stopBtn.addListener("execute", () => node.requestStopNode());
         node.getStatus().bind("interactive", stopBtn, "enabled", {
           converter: state => state === "ready"
         });

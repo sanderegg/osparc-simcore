@@ -591,8 +591,6 @@ qx.Class.define("osparc.component.workbench.WorkbenchUI", {
       this.bind("scale", nodeUI, "scale");
       node.addListener("keyChanged", () => this.__activeNodeChanged(nodeUI), this);
       nodeUI.populateNodeLayout(this.__svgLayer);
-      nodeUI.addListener("startNode", e => this.requestStartNode(e.getData()), this);
-      nodeUI.addListener("stopNode", e => this.requestStopNode(e.getData()), this);
       nodeUI.addListener("renameNode", e => this.__openNodeRenamer(e.getData()), this);
       nodeUI.addListener("markerClicked", e => this.__openMarkerEditor(e.getData()), this);
       nodeUI.addListener("infoNode", e => this.__openNodeInfo(e.getData()), this);
@@ -1491,16 +1489,6 @@ qx.Class.define("osparc.component.workbench.WorkbenchUI", {
       this.__annotatingText = true;
       this.__annotatingRect = false;
       this.__toolHint.setValue(this.tr("Draw a rectangle first"));
-    },
-
-    requestStartNode: function(nodeId) {
-      const node = this.getStudy().getWorkbench().getNode(nodeId);
-      node.requestStartNode();
-    },
-
-    requestStopNode: function(nodeId) {
-      const node = this.getStudy().getWorkbench().getNode(nodeId);
-      node.requestStopNode();
     },
 
     __openNodeRenamer: function(nodeId) {
