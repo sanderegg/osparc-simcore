@@ -917,7 +917,13 @@ qx.Class.define("osparc.data.model.Node", {
       };
       osparc.data.Resources.fetch("studies", "startNode", params)
         .then(() => this.startDynamicService())
-        .catch(err => console.error(err));
+        .catch(err => {
+          if ("status" in err && err.status === 409) {
+            osparc.component.message.FlashMessenger.getInstance().logAs(err.message, "WARNING");
+          } else {
+            console.error(err);
+          }
+        });
       return true;
     },
 
