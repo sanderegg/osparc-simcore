@@ -546,14 +546,6 @@ qx.Class.define("osparc.desktop.WorkbenchView", {
           this.__workbenchUI.nodeSelected(nodeId);
         }
       }, this);
-      nodesTree.addListener("startNode", e => {
-        const nodeId = e.getData();
-        this.requestStartNode(nodeId);
-      }, this);
-      nodesTree.addListener("stopNode", e => {
-        const nodeId = e.getData();
-        this.requestStopNode(nodeId);
-      }, this);
       nodesTree.addListener("removeNode", e => {
         const nodeId = e.getData();
         this.__removeNode(nodeId);
@@ -680,14 +672,6 @@ qx.Class.define("osparc.desktop.WorkbenchView", {
           this.getStudy().nodeUpdated(data);
         }, this);
       }
-    },
-
-    requestStartNode: function(nodeId) {
-      this.__workbenchUI.requestStartNode(nodeId);
-    },
-
-    requestStopNode: function(nodeId) {
-      this.__workbenchUI.requestStopNode(nodeId);
     },
 
     getStartStopButtons: function() {

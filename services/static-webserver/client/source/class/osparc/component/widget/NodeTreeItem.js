@@ -85,8 +85,6 @@ qx.Class.define("osparc.component.widget.NodeTreeItem", {
 
   events: {
     "fullscreenNode": "qx.event.type.Data",
-    "startNode": "qx.event.type.Data",
-    "stopNode": "qx.event.type.Data",
     "renameNode": "qx.event.type.Data",
     "infoNode": "qx.event.type.Data",
     "deleteNode": "qx.event.type.Data"
@@ -146,12 +144,14 @@ qx.Class.define("osparc.component.widget.NodeTreeItem", {
         node.getStatus().bind("interactive", startButton, "enabled", {
           converter: state => state === "idle"
         });
+        startButton.addListener("execute", () => node.requestStartNode());
 
         const stopButton = this.getChildControl("stop-button");
         stopButton.show();
         node.getStatus().bind("interactive", stopButton, "enabled", {
           converter: state => state === "ready"
         });
+        stopButton.addListener("execute", () => node.requestStopNode());
       }
 
       const markerBtn = this.getChildControl("marker-button");
@@ -217,7 +217,6 @@ qx.Class.define("osparc.component.widget.NodeTreeItem", {
             icon: "@FontAwesome5Solid/play/10",
             visibility: "excluded"
           });
-          control.addListener("execute", () => this.fireDataEvent("startNode", this.getId()));
           const optionsMenu = this.getChildControl("options-menu-button");
           optionsMenu.getMenu().add(control);
           break;
@@ -228,7 +227,6 @@ qx.Class.define("osparc.component.widget.NodeTreeItem", {
             icon: "@FontAwesome5Solid/stop/10",
             visibility: "excluded"
           });
-          control.addListener("execute", () => this.fireDataEvent("stopNode", this.getId()));
           const optionsMenu = this.getChildControl("options-menu-button");
           optionsMenu.getMenu().add(control);
           break;
