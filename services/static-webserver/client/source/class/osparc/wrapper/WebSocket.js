@@ -18,7 +18,7 @@
 /* global io */
 
 /**
- * @asset(socketio/socket.io.js)
+ * @asset(socketio/socket.io.min.js)
  * @ignore(io)
  */
 
@@ -30,11 +30,11 @@
 qx.Class.define("osparc.wrapper.WebSocket", {
   extend: qx.core.Object,
 
-  type : "singleton",
+  type: "singleton",
 
   statics: {
     NAME: "socket.io",
-    VERSION: "2.2.0",
+    VERSION: "4.5.4",
     URL: "https://github.com/socketio/socket.io"
   },
 
@@ -166,7 +166,7 @@ qx.Class.define("osparc.wrapper.WebSocket", {
           dir += ":" + this.getPort();
         }
         console.log("socket in", dir);
-        let mySocket = io.connect(dir, {
+        let mySocket = io(dir, {
           "reconnect": this.getReconnect(),
           "connect timeout": this.getConnectTimeout(),
           "reconnection delay": this.getReconnectionDelay(),
