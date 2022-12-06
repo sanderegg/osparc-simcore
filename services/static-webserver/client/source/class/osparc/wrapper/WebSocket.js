@@ -147,7 +147,7 @@ qx.Class.define("osparc.wrapper.WebSocket", {
      */
     connect: function() {
       // initialize the script loading
-      let socketIOPath = "socketio/socket.io.js";
+      let socketIOPath = "socketio/socket.io.min.js";
       let dynLoader = new qx.util.DynamicScriptLoader([
         socketIOPath
       ]);
@@ -167,11 +167,11 @@ qx.Class.define("osparc.wrapper.WebSocket", {
         }
         console.log("socket in", dir);
         let mySocket = io(dir, {
-          "reconnect": this.getReconnect(),
-          "connect timeout": this.getConnectTimeout(),
-          "reconnection delay": this.getReconnectionDelay(),
-          "max reconnection attempts": this.getMaxReconnectionAttemps(),
-          "force new connection": true,
+          "reconnection": this.getReconnect(),
+          "timeout": this.getConnectTimeout(),
+          "reconnectionDelay": this.getReconnectionDelay(),
+          "reconnectionAttempts": this.getMaxReconnectionAttemps(),
+          "forceNew": true,
           "query": "client_session_id="+osparc.utils.Utils.getClientSessionID()
         });
         this.setSocket(mySocket);
