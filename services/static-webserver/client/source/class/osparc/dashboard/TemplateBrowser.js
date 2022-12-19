@@ -187,7 +187,7 @@ qx.Class.define("osparc.dashboard.TemplateBrowser", {
       }
 
       const deleteButton = this.__getDeleteTemplateMenuButton(studyData);
-      if (deleteButton) {
+      if (deleteButton && editButton) {
         menu.addSeparator();
         menu.add(deleteButton);
       }
@@ -200,10 +200,10 @@ qx.Class.define("osparc.dashboard.TemplateBrowser", {
       }
 
       const editButton = new qx.ui.menu.Button(this.tr("Edit"));
-      osparc.utils.Utils.setIdToWidget(editButton, "studyItemMenuEdit");
       editButton.addListener("execute", () => this.__editTemplate(templateData), this);
       return editButton;
     },
+
     __getDeleteTemplateMenuButton: function(templateData) {
       const isCurrentUserOwner = osparc.data.model.Study.isOwner(templateData);
       if (!isCurrentUserOwner) {
