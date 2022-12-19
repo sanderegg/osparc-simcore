@@ -686,7 +686,6 @@ async def test_close_project(
         # should not be callsed request_retrieve_dyn_service
 
 
-
 @pytest.mark.parametrize(
     "user_role, expected",
     [
