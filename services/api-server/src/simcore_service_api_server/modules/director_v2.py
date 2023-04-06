@@ -1,6 +1,5 @@
 import logging
 from contextlib import contextmanager
-from typing import Optional
 from uuid import UUID
 
 from fastapi import FastAPI
@@ -29,7 +28,7 @@ class ComputationTaskGet(ComputationTask):
     url: AnyHttpUrl = Field(
         ..., description="the link where to get the status of the task"
     )
-    stop_url: Optional[AnyHttpUrl] = Field(
+    stop_url: AnyHttpUrl | None = Field(
         None, description="the link where to stop the task"
     )
 
@@ -43,7 +42,7 @@ class ComputationTaskGet(ComputationTask):
 
 class TaskLogFileGet(BaseModel):
     task_id: NodeID
-    download_link: Optional[AnyUrl] = Field(
+    download_link: AnyUrl | None = Field(
         None, description="Presigned link for log file or None if still not available"
     )
 
@@ -126,7 +125,7 @@ class DirectorV2Api(BaseServiceClientApi):
         project_id: UUID,
         user_id: PositiveInt,
         product_name: str,
-        cluster_id: Optional[ClusterID] = None,
+        cluster_id: ClusterID | None = None,
     ) -> ComputationTaskGet:
         with handle_errors_context(project_id):
             extras = {}
@@ -140,6 +139,7 @@ class DirectorV2Api(BaseServiceClientApi):
                     "project_id": str(project_id),
                     "start_pipeline": True,
                     "product_name": product_name,
+                    "force_restart": True,
                     **extras,
                 },
             )

@@ -179,7 +179,7 @@ class DaskClient:
         _EVENT_CONSUMER_MAP = [
             (self.backend.state_sub, task_handlers.task_change_handler),
             (self.backend.progress_sub, task_handlers.task_progress_handler),
-            (self.backend.logs_sub, task_handlers.task_log_handler),
+            # (self.backend.logs_sub, task_handlers.task_log_handler),
         ]
         self._subscribed_tasks = [
             asyncio.create_task(
