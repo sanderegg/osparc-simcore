@@ -101,14 +101,16 @@ def env_file_for_testing(
     #   https://docs.docker.com/compose/environment-variables/#the-env-file
 
     env_test_path = temp_folder / ".env.test"
-
     with env_test_path.open("wt") as fh:
         print(
             f"# Auto-generated from env_file_for_testing in {__file__}",
             file=fh,
         )
-        for key in sorted(testing_environ_vars.keys()):
-            print(f"{key}={testing_environ_vars[key]}", file=fh)
+        for key, value in sorted(testing_environ_vars.items()):
+            if value.startswith(("{", "[")) and value.endswith(("}", "]")):
+                print(f"{key}='{value}'", file=fh)
+            else:
+                print(f"{key}={value}", file=fh)
 
     #
     # WARNING: since compose files have references to ../.env we MUST create .env
