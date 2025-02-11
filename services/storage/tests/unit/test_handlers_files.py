@@ -26,6 +26,7 @@ from aws_library.s3 import S3KeyNotFoundError, S3ObjectKey, SimcoreS3API
 from aws_library.s3._constants import MULTIPART_UPLOADS_MIN_TOTAL_SIZE
 from faker import Faker
 from fastapi import FastAPI
+from fastapi_pagination import LimitOffsetPage
 from models_library.api_schemas_storage import (
     FileMetaDataGet,
     FileUploadCompleteFutureResponse,
@@ -1533,4 +1534,21 @@ async def test_list_paths(
     location_id: LocationID,
     user_id: UserID,
 ):
-    ...
+    query = {
+        "user_id": user_id,
+        "file_filter": None,
+    }
+    url = url_from_operation_id(
+        client, initialized_app, "list_paths", location_id=f"{location_id}"
+    ).with_query(**{k: v for k, v in query.items() if v is not None})
+    response = await client.get(f"{url}")
+
+    page_of_files, _ = assert_status(
+        response,
+        status.HTTP_200_OK,
+        LimitOffsetPage[FileMetaDataGet],
+        expect_envelope=False,
+    )
+    assert page_of_files
+    assert page_of_files.items == []
+    assert page_of_files.total == 0
