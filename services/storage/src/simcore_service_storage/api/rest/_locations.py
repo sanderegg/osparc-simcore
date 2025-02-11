@@ -3,7 +3,6 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request, status
 from models_library.api_schemas_storage import FileLocation
-from models_library.generics import Envelope
 
 # Exclusive for simcore-s3 storage -----------------------
 from ...dsm import get_dsm_provider
@@ -20,11 +19,12 @@ router = APIRouter(
 @router.get(
     "/locations",
     status_code=status.HTTP_200_OK,
-    response_model=Envelope[list[FileLocation]],
+    response_model=list[FileLocation],
 )
 async def list_storage_locations(
     query_params: Annotated[StorageQueryParamsBase, Depends()], request: Request
 ):
+    # NOTE: Used by legacy dynamic services -> MUST BE BACKWARDS COMPATIBLE
     dsm_provider = get_dsm_provider(request.app)
     location_ids = dsm_provider.locations()
     locs: list[FileLocation] = []
@@ -32,4 +32,4 @@ async def list_storage_locations(
         dsm = dsm_provider.get(loc_id)
         if await dsm.authorized(query_params.user_id):
             locs.append(FileLocation(name=dsm.location_name, id=dsm.location_id))
-    return Envelope[list[FileLocation]](data=locs)
+    return locs
