@@ -21,10 +21,10 @@ from models_library.generics import Envelope
 from models_library.projects_nodes_io import LocationID, StorageFileID
 from pydantic import AnyUrl, ByteSize, TypeAdapter
 from servicelib.aiohttp import status
-from simcore_service_storage.dsm_factory import BaseDataManager
 from yarl import URL
 
 from ...dsm import get_dsm_provider
+from ...dsm_factory import BaseDataManager
 from ...exceptions.errors import FileMetaDataNotFoundError
 from ...models import (
     FileDownloadQueryParams,
