@@ -10,13 +10,53 @@ IFS=$'\n\t'
 DOCKER_IMAGE_TAG=$(exec ci/helpers/build_docker_image_tag.bash)
 export DOCKER_IMAGE_TAG
 
+# apt keeps a stalled connection open for a very long time before giving up, so a throttled
+# distro mirror can freeze the dependency install for the whole job budget. Making every fetch
+# retry on a short timeout lets it recover instead. Playwright calls apt itself, so the options
+# need to come from the apt configuration and not from the command line.
+harden_apt() {
+  sudo -- tee /etc/apt/apt.conf.d/99-ci-acquire >/dev/null <<'EOF'
+Acquire::Retries "5";
+Acquire::http::Timeout "20";
+Acquire::https::Timeout "20";
+EOF
+}
+
+# retry <attempts> <deadline-seconds> <command...>
+# Gives every attempt its own deadline so a stalled download cannot eat the whole job.
+retry() {
+  local attempts="${1:?number of attempts}" deadline="${2:?deadline in seconds}"
+  shift 2
+  local attempt status
+  local IFS=$' \t\n' # keeps the log lines below readable
+  for ((attempt = 1; attempt <= attempts; attempt++)); do
+    echo "attempt ${attempt}/${attempts} (deadline ${deadline}s): $*"
+    status=0
+    timeout "${deadline}" "$@" || status=$?
+    if [ "${status}" -eq 0 ]; then
+      return 0
+    fi
+    echo "attempt ${attempt}/${attempts} of '$*' failed with exit code ${status}"
+  done
+  return 1
+}
+
 install() {
   make devenv
   make pull-externals
   # shellcheck source=/dev/null
   source .venv/bin/activate
+  harden_apt
   pushd tests/e2e-playwright
-  make install-ci-up-simcore
+  retry 2 360 make install-ci
+  popd
+}
+
+up_simcore() {
+  # shellcheck source=/dev/null
+  source .venv/bin/activate
+  pushd tests/e2e-playwright
+  make up-simcore-ci
   popd
 }
 

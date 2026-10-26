@@ -2061,9 +2061,22 @@ jobs:
         uses: ./.github/actions/download-load-docker-images
         with:
           artifact-name-pattern: "*"
-      - name: setup
+      - name: Cache Playwright browsers
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-ms-playwright-${{ hashFiles('**/e2e-playwright/requirements/*.txt') }}
+          restore-keys: ${{ runner.os }}-ms-playwright-
+      - name: install
+        # bounded because fetching the browsers and their system dependencies is pure network
+        # I/O: a throttled mirror used to stall here until the whole job got cancelled
+        timeout-minutes: 14
         run: |
           ./ci/github/system-testing/e2e-playwright.bash install
+      - name: up simcore
+        timeout-minutes: 10
+        run: |
+          ./ci/github/system-testing/e2e-playwright.bash up_simcore
       - name: test
         run: |
           ./ci/github/system-testing/e2e-playwright.bash test

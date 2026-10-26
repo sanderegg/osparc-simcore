@@ -58,19 +58,30 @@ requirements: ## compiles pip requirements (.in -> .txt)
 	@$(MAKE_C) requirements reqs
 
 
+# Every pytest recipe here runs on Chromium (it either omits --browser, which pytest-playwright
+# defaults to Chromium, or passes --browser chromium), so only that browser is installed by
+# default. Fewer browsers also means a much smaller apt dependency set, which is refetched on
+# every CI run. Override to test other engines, e.g.
+# make install-ci PLAYWRIGHT_BROWSERS="chromium firefox"
+PLAYWRIGHT_BROWSERS ?= chromium
+
+# CI-CONTRACT: install-ci is invoked by ci/github/system-testing/e2e-playwright.bash
 .PHONY: install-dev install-prod install-ci
-install-dev install-prod install-ci: _check_venv_active ## install app in development/production or CI mode
+install-dev install-prod install-ci: _check_venv_active ## install app in development/production or CI mode [CI]
 	# installing in $(subst install-,,$@) mode
 	@uv pip sync requirements/$(subst install-,,$@).txt
-	# installing playwright dependencies
-	@playwright install --with-deps
+	# installing the system dependencies first: fetching them is the part that can stall on a
+	# slow distro mirror, and retrying it should not repeat the browser downloads
+	@playwright install-deps $(PLAYWRIGHT_BROWSERS)
+	@playwright install $(PLAYWRIGHT_BROWSERS)
 
 
 RETRY_DURATION_SECONDS := 30
 RETRY_INTERVAL_SECONDS := 1
 
-.PHONY: install-ci-up-simcore
-install-ci-up-simcore: install-ci  ## run registry and simcore stack locally (push sleepers image and modifies DB)
+# CI-CONTRACT: up-simcore-ci is invoked by ci/github/system-testing/e2e-playwright.bash
+.PHONY: up-simcore-ci
+up-simcore-ci: ## run registry and simcore stack for CI (push sleepers image and modifies DB) [CI]
 	@$(MAKE_C) $(REPO_BASE_DIR) local-registry
 	@$(_transfer-images-to-registry)
 	@$(_up_simcore)
@@ -82,6 +93,9 @@ install-ci-up-simcore: install-ci  ## run registry and simcore stack locally (pu
 		echo "catalog not ready yet, retrying in ${RETRY_INTERVAL_SECONDS}..."; \
 		sleep $(RETRY_INTERVAL_SECONDS); \
 	done
+
+.PHONY: install-ci-up-simcore
+install-ci-up-simcore: install-ci up-simcore-ci  ## install and run registry and simcore stack locally
 
 
 

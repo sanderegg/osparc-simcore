@@ -28,6 +28,13 @@ PWDEBUG=1 pytest -s tests/sim4life.py
 
 ### Run test in different browsers
 
+Only Chromium is installed by `make install-dev`/`install-ci` (the browser this suite runs on).
+Install the other engines before selecting them:
+
+```cmd
+make install-ci PLAYWRIGHT_BROWSERS="chromium firefox webkit"
+```
+
 ```cmd
 pytest -s tests/sim4life.py --tracing on --html=report.html --browser chromium --browser firefox
 ```
